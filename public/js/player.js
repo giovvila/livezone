@@ -1,0 +1,1 @@
+export class Player{start(){console.log('start player')} fallback(){console.log('fallback')}}

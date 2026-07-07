@@ -1,0 +1,1 @@
+export class Network{check(){console.log('network check')}}

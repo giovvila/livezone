@@ -1,0 +1,1 @@
+<?php ?><!doctype html><html><body><h2>LIVEZONE Admin</h2><form><label>HLS URL <input></label><br><label>YouTube Channel <input></label><br><button>Salva</button></form></body></html>
