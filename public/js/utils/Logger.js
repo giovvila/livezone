@@ -1,0 +1,1 @@
+export default class Logger{static info(...a){console.log(...a);}}

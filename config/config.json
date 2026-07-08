@@ -1,6 +1,1 @@
-{
- "channel":{"name":"LIVEZONE"},
- "stream":{"primary":"https://YOUR-HLS/playlist.m3u8","backupChannel":"YOURCHANNEL"},
- "player":{"autoplay":true,"muted":true,"retry":10},
- "ui":{"theme":"dark"}
-}
+{"channel":"LIVEZONE","stream":{"primary":"https://65f16f0fdfc51.streamlock.net/xibilive/livestream/playlist.m3u8","youtube":""}}
