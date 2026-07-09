@@ -1,1 +1,1 @@
-// TODO
+// Reserved for future abstraction.

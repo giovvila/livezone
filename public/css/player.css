@@ -1,0 +1,1 @@
+.player-wrapper{position:relative;width:min(94vw,1400px)}#video{width:100%;display:block;aspect-ratio:16/9;background:#000;border-radius:18px;border:1px solid #333;box-shadow:0 20px 60px rgba(0,0,0,.5)}.video-overlay{position:absolute;inset:0;pointer-events:none}.channel-logo{position:absolute;top:18px;right:18px;font-weight:700;letter-spacing:2px;opacity:.9}
