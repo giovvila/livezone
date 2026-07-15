@@ -1,1 +1,1 @@
-{"channel":"LIVEZONE","stream":{"primary":"https://65f16f0fdfc51.streamlock.net/xibilive/livestream/playlist.m3u8","youtube":""}}
+{"channel":{"name":"LIVEZONE","version":"0.7.1","logo":"assets/logo/livezone.svg"},"stream":{"primary":"https://65f16f0fdfc51.streamlock.net/xibilive/livestream/playlist.m3u8","backup":""},"player":{"autoplay":true,"muted":true,"reconnect":true},"ui":{"clock":true,"ticker":true,"liveBadge":true}}
