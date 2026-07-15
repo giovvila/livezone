@@ -13,15 +13,17 @@ export default class EventBus {
 
     static emit(event, payload = null) {
 
-        if (!this.listeners.has(event)) {
-            return;
-        }
+    console.log("EVENT:", event, payload);
 
-        for (const callback of this.listeners.get(event)) {
-            callback(payload);
-        }
-
+    if (!this.listeners.has(event)) {
+        return;
     }
+
+    for (const callback of this.listeners.get(event)) {
+        callback(payload);
+    }
+
+}
 
     static off(event, callback) {
 

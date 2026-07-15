@@ -1,153 +1,148 @@
 /**
  * LIVEZONE Broadcast Suite
- * HLSAdapter v1.0
- *
- * Gestisce esclusivamente la riproduzione HLS.
- * Player.js non deve conoscere Hls.js.
+ * HLSAdapter v1.1
  */
+import EventBus from "../core/EventBus.js";
+import Events from "../core/Events.js";
 
 export default class HLSAdapter {
 
-    constructor() {
-
-        this.hls = null;
-        this.video = null;
-        this.url = null;
-
-        this.state = "IDLE";
-
+    constructor(){
+        this.hls=null;
+        this.video=null;
+        this.url=null;
+        this.state="IDLE";
+        this.retryDelay=5000;
+        this.retryTimer=null;
+        this.destroyed=false;
     }
 
-    async connect(video, url) {
+    async connect(video,url){
 
-        this.video = video;
-        this.url = url;
+        this.video=video;
+        this.url=url;
+        this.destroyed=false;
+        this.clearRetry();
 
-        this.state = "CONNECTING";
+        this.state="CONNECTING";
+        EventBus.emit(Events.STREAM_RECONNECT);
 
-        // Safari
-        if (!window.Hls || !Hls.isSupported()) {
+        if(!window.Hls || !Hls.isSupported()){
 
-            if (video.canPlayType("application/vnd.apple.mpegurl")) {
-
-                video.src = url;
-
-                await video.play().catch(() => {});
-
-                this.state = "CONNECTED";
-
-                return true;
-
+            if(video.canPlayType("application/vnd.apple.mpegurl")){
+                video.src=url;
+                try{ await video.play(); }catch(e){}
+                this.state="CONNECTED";
+                EventBus.emit(Events.STREAM_READY);
+                return;
             }
 
-            this.state = "ERROR";
-
-            throw new Error("HLS non supportato.");
-
+            this.state="ERROR";
+            EventBus.emit(Events.STREAM_ERROR,"HLS unsupported");
+            return;
         }
 
-        // Elimina eventuale istanza precedente
-        this.destroy();
+        if(this.hls){
+            this.hls.destroy();
+        }
 
-        this.state = "CONNECTING";
-
-        this.hls = new Hls({
-
-            enableWorker: true,
-
-            lowLatencyMode: true,
-
-            backBufferLength: 90
-
+        this.hls=new Hls({
+            enableWorker:true,
+            lowLatencyMode:true,
+            backBufferLength:90
         });
 
         this.hls.loadSource(url);
-
         this.hls.attachMedia(video);
 
-        return new Promise((resolve, reject) => {
+        this.hls.on(Hls.Events.MANIFEST_PARSED, async ()=>{
+            try{ await video.play(); }catch(e){}
+            this.state="CONNECTED";
+            EventBus.emit(Events.STREAM_READY);
+        });
 
-            this.hls.on(Hls.Events.MANIFEST_PARSED, async () => {
+        this.hls.on(Hls.Events.ERROR,(event,data)=>{
 
-                try {
+            if(!data.fatal) return;
 
-                    await video.play();
+            if(data.type===Hls.ErrorTypes.MEDIA_ERROR){
+                try{
+                    this.hls.recoverMediaError();
+                    return;
+                }catch(e){}
+            }
 
-                    this.state = "CONNECTED";
-
-                    console.log("HLS CONNECTED");
-
-                    resolve(true);
-
-                }
-                catch (error) {
-
-                    this.state = "ERROR";
-
-                    reject(error);
-
-                }
-
-            });
-
-            this.hls.on(Hls.Events.ERROR, (event, data) => {
-
-                console.error("HLS ERROR", data);
-
-                this.state = "ERROR";
-
-                reject(data);
-
-            });
+            this.goOffline();
 
         });
 
     }
 
-    disconnect() {
+    goOffline(){
 
-        if (this.video) {
+        if(this.destroyed) return;
 
-            this.video.pause();
+        this.state="OFFLINE";
+        EventBus.emit(Events.STREAM_OFFLINE);
 
-            this.video.removeAttribute("src");
-
-            this.video.load();
-
-        }
-
-        this.destroy();
-
-    }
-
-    destroy() {
-
-        if (this.hls) {
-
+        if(this.hls){
             this.hls.destroy();
-
-            this.hls = null;
-
+            this.hls=null;
         }
 
-        if (this.state !== "ERROR") {
+        this.scheduleReconnect();
 
-            this.state = "DESTROYED";
+    }
 
+    scheduleReconnect(){
+
+        if(this.retryTimer || this.destroyed) return;
+
+        this.retryTimer=setTimeout(async()=>{
+
+            this.retryTimer=null;
+
+            if(this.destroyed) return;
+
+            await this.connect(this.video,this.url);
+
+        },this.retryDelay);
+
+    }
+
+    clearRetry(){
+
+        if(this.retryTimer){
+            clearTimeout(this.retryTimer);
+            this.retryTimer=null;
         }
 
     }
 
-    isConnected() {
+    disconnect(){
+        this.destroy();
+    }
 
-        return this.state === "CONNECTED";
+    destroy(){
+
+        this.destroyed=true;
+        this.clearRetry();
+
+        if(this.hls){
+            this.hls.destroy();
+            this.hls=null;
+        }
+
+        this.state="DESTROYED";
 
     }
 
-    getState() {
+    isConnected(){
+        return this.state==="CONNECTED";
+    }
 
+    getState(){
         return this.state;
-
     }
 
 }

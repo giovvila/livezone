@@ -35,11 +35,12 @@ export default class Engine {
 
             this.player = new Player(this.config);
 
-            await this.player.init();
+            this.player.init();
 
-            EventBus.emit(Events.PLAYER_READY);
-
-            console.log("=== ENGINE READY ===");
+            EventBus.on(Events.STREAM_READY, ()=>{
+                EventBus.emit(Events.PLAYER_READY);
+                console.log("=== ENGINE READY ===");
+            });
 
         }
         catch (error) {

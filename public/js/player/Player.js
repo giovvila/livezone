@@ -47,7 +47,6 @@ export default class Player {
             stream
         );
 
-        console.log("=== PLAYER READY ===");
 
     }
 
