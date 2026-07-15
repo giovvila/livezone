@@ -1,3 +1,13 @@
+/**
+ * LIVEZONE Broadcast Suite
+ * Player v1.0
+ *
+ * Il Player coordina la riproduzione.
+ * Non conosce Hls.js.
+ */
+
+import HLSAdapter from "./HLSAdapter.js";
+
 export default class Player {
 
     constructor(config) {
@@ -5,51 +15,63 @@ export default class Player {
         this.config = config;
         this.video = document.getElementById("video");
 
+        this.adapter = new HLSAdapter();
+
     }
 
     async init() {
 
         if (!this.video) {
-            throw new Error("Elemento video non trovato");
+            throw new Error("Elemento VIDEO non trovato.");
+        }
+
+        if (!this.config) {
+            throw new Error("Configurazione non disponibile.");
+        }
+
+        if (!this.config.stream) {
+            throw new Error("Configurazione STREAM mancante.");
+        }
+
+        if (!this.config.stream.primary) {
+            throw new Error("URL HLS non configurato.");
         }
 
         const stream = this.config.stream.primary;
 
-        console.log("Stream:", stream);
+        console.log("=== PLAYER START ===");
+        console.log(stream);
 
-        if (window.Hls && Hls.isSupported()) {
+        await this.adapter.connect(
+            this.video,
+            stream
+        );
 
-            const hls = new Hls();
+        console.log("=== PLAYER READY ===");
 
-            hls.loadSource(stream);
+    }
 
-            hls.attachMedia(this.video);
+    stop() {
 
-            hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        this.adapter.disconnect();
 
-                console.log("STREAM READY");
+    }
 
-                this.video.play().catch(() => {});
+    destroy() {
 
-            });
+        this.adapter.destroy();
 
-            hls.on(Hls.Events.ERROR, (event, data) => {
+    }
 
-                console.error("HLS ERROR", data);
+    getState() {
 
-            });
+        return this.adapter.getState();
 
-        } else if (this.video.canPlayType("application/vnd.apple.mpegurl")) {
+    }
 
-            this.video.src = stream;
+    isConnected() {
 
-            this.video.play().catch(() => {});
-
-        } else {
-
-            console.error("Browser non compatibile con HLS");
-
-        }
+        return this.adapter.isConnected();
 
     }
 
