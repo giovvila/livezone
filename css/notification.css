@@ -1,0 +1,146 @@
+/*====================================================
+
+LIVEZONE Broadcast Engine
+notification.css
+
+Version : 1.0
+Build   : 1003 DEV
+
+====================================================*/
+
+.notification-center{
+
+    position:fixed;
+
+    top:20px;
+
+    right:20px;
+
+    z-index:1000;
+
+    display:flex;
+
+    flex-direction:column;
+
+    gap:12px;
+
+    pointer-events:none;
+
+}
+
+.notification{
+
+    min-width:300px;
+    max-width:360px;
+
+    padding:16px 18px;
+
+    border-radius:16px;
+
+    background:rgba(18,18,18,.92);
+
+    border:1px solid rgba(255,255,255,.08);
+
+    box-shadow:
+        0 20px 45px rgba(0,0,0,.45);
+
+    backdrop-filter:blur(12px);
+
+    color:#fff;
+
+    transform:translateX(120%);
+    opacity:0;
+
+    transition:
+        transform .35s ease,
+        opacity .35s ease;
+
+}
+
+.notification--visible{
+
+    transform:translateX(0);
+
+    opacity:1;
+
+}
+
+.notification__title{
+
+    font-size:14px;
+
+    font-weight:700;
+
+    letter-spacing:1px;
+
+    text-transform:uppercase;
+
+    margin-bottom:6px;
+
+}
+
+.notification__message{
+
+    font-size:15px;
+
+    color:#d8d8d8;
+
+}
+
+.notification--success{
+
+    border-left:4px solid #21c55d;
+
+}
+
+.notification--warning{
+
+    border-left:4px solid #f59e0b;
+
+}
+
+.notification--error{
+
+    border-left:4px solid #ef4444;
+
+}
+
+@media (max-width:768px){
+
+    .notification-center{
+
+    position:fixed;
+
+    top:24px;
+
+    right:24px;
+
+    width:360px;
+
+    display:flex;
+
+    flex-direction:column;
+
+    align-items:flex-end;
+
+    gap:12px;
+
+    z-index:99999;
+
+    pointer-events:none;
+
+}
+
+    .notification{
+
+    width:100%;
+
+    box-sizing:border-box;
+
+    min-width:unset;
+
+    max-width:unset;
+
+}
+
+}

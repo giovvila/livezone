@@ -1,0 +1,206 @@
+/*====================================================
+
+LIVEZONE Broadcast Engine
+overlay.css
+
+Version : 1.0
+Build   : 1003 DEV
+
+====================================================*/
+
+#overlay{
+
+    position:absolute;
+    inset:0;
+
+    display:none;
+
+    justify-content:center;
+    align-items:center;
+
+    z-index:500;
+
+    background:rgba(0,0,0,.42);
+    backdrop-filter:blur(12px);
+
+    transition:
+        opacity .35s ease,
+        backdrop-filter .35s ease;
+
+}
+
+#overlay.overlay--visible{
+
+    display:flex;
+
+}
+
+/* ==============================
+   PANEL
+============================== */
+
+.overlay__panel{
+
+    width:min(92%,520px);
+
+    padding:42px;
+
+    border-radius:24px;
+
+    background:rgba(18,18,18,.78);
+
+    border:1px solid rgba(255,255,255,.08);
+
+    box-shadow:
+
+        0 25px 80px rgba(0,0,0,.55),
+
+        inset 0 1px 0 rgba(255,255,255,.06);
+
+    text-align:center;
+
+    animation:overlayAppear .35s ease;
+
+}
+
+/* ==============================
+   LOGO
+============================== */
+
+.overlay__logo{
+
+    font-size:72px;
+
+    font-weight:700;
+
+    letter-spacing:4px;
+
+    color:#ffffff;
+
+    margin-bottom:18px;
+
+}
+
+/* ==============================
+   TITLE
+============================== */
+
+.overlay__title{
+
+    font-size:30px;
+
+    font-weight:700;
+
+    color:#ffffff;
+
+    margin-bottom:12px;
+
+}
+
+/* ==============================
+   SUBTITLE
+============================== */
+
+.overlay__subtitle{
+
+    font-size:17px;
+
+    color:#cfcfcf;
+
+    margin-bottom:26px;
+
+}
+
+/* ==============================
+   COUNTDOWN
+============================== */
+
+.overlay__countdown{
+
+    font-size:64px;
+
+    font-weight:700;
+
+    color:#ff2c3f;
+
+    text-shadow:
+
+        0 0 18px rgba(255,30,30,.45);
+
+    margin-bottom:18px;
+
+}
+
+/* ==============================
+   FOOTER
+============================== */
+
+.overlay__footer{
+
+    font-size:13px;
+
+    letter-spacing:2px;
+
+    text-transform:uppercase;
+
+    color:rgba(255,255,255,.45);
+
+}
+
+/* ==============================
+   ANIMATION
+============================== */
+
+@keyframes overlayAppear{
+
+    from{
+
+        opacity:0;
+
+        transform:translateY(18px) scale(.96);
+
+    }
+
+    to{
+
+        opacity:1;
+
+        transform:translateY(0) scale(1);
+
+    }
+
+}
+
+/* ==============================
+   MOBILE
+============================== */
+
+@media(max-width:700px){
+
+    .overlay__panel{
+
+        padding:28px;
+
+        width:92%;
+
+    }
+
+    .overlay__logo{
+
+        font-size:52px;
+
+    }
+
+    .overlay__title{
+
+        font-size:24px;
+
+    }
+
+    .overlay__countdown{
+
+        font-size:48px;
+
+    }
+
+}
