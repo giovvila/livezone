@@ -1,0 +1,81 @@
+/*====================================================
+
+LIVEZONE Broadcast Engine
+
+theme.css
+
+Version : 1.0
+Build   : 1004
+
+====================================================*/
+
+:root{
+
+    /* ========= BRAND ========= */
+
+    --lz-primary:#d6001c;
+    --lz-primary-hover:#ef1d38;
+
+    --lz-success:#22c55e;
+    --lz-warning:#f59e0b;
+    --lz-error:#ef4444;
+
+    /* ========= SURFACES ========= */
+
+    --lz-bg:#090909;
+    --lz-surface:#101010;
+    --lz-panel:#151515;
+
+    --lz-border:rgba(255,255,255,.08);
+
+    /* ========= TEXT ========= */
+
+    --lz-text:#ffffff;
+    --lz-text-soft:#d0d0d0;
+    --lz-text-muted:#8b8b8b;
+
+    /* ========= HEADER ========= */
+
+    --header-height:68px;
+
+    /* ========= STATUS ========= */
+
+    --status-height:52px;
+
+    /* ========= TICKER ========= */
+
+    --ticker-height:56px;
+
+    /* ========= PLAYER ========= */
+
+    --player-radius:22px;
+
+    --player-max-width:1600px;
+
+    /* ========= SHADOW ========= */
+
+    --shadow-sm:
+        0 8px 20px rgba(0,0,0,.18);
+
+    --shadow-md:
+        0 18px 45px rgba(0,0,0,.30);
+
+    --shadow-lg:
+        0 30px 70px rgba(0,0,0,.45);
+
+    /* ========= TRANSITIONS ========= */
+
+    --transition-fast:.18s;
+
+    --transition:.30s;
+
+    --transition-slow:.60s;
+
+    /* ========= TYPOGRAPHY ========= */
+
+    --font-family:
+        Poppins,
+        Arial,
+        sans-serif;
+
+}
