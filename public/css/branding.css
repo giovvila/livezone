@@ -1,40 +1,34 @@
 /*====================================================
 
-LIVEZONE Broadcast Engine
+LIVEZONE Broadcast Engine X
 branding.css
 
 Version : 1.0
-Build   : 1003.1 STABLE
+Build   : 1003.3
 
 ====================================================*/
 
+
 /* ===================================================
-   WATERMARK
+   PLAYER WATERMARK
 =================================================== */
 
 .lz-watermark{
+    position:absolute !important;
+    top:28px !important;
+    left:28px !important;
 
-    position:absolute;
+    width:var(--watermark-size,46px) !important;
+    height:var(--watermark-size,46px) !important;
 
-    top:28px;
-    left:28px;
+    display:block !important;
+    object-fit:contain !important;
 
-    width:46px;
+    opacity:var(--watermark-opacity,.18) !important;
 
-    opacity:.18;
+    pointer-events:none !important;
 
-    z-index:30;
-
-    pointer-events:none;
-
-    transition:
-        opacity .35s ease,
-        transform .35s ease;
-
-    filter:drop-shadow(
-        0 4px 12px rgba(0,0,0,.45)
-    );
-
+    z-index:20 !important;
 }
 
 .player-wrapper:hover .lz-watermark{
@@ -44,6 +38,7 @@ Build   : 1003.1 STABLE
     transform:scale(1.03);
 
 }
+
 
 /* ===================================================
    BRAND
@@ -55,11 +50,12 @@ Build   : 1003.1 STABLE
 
     align-items:center;
 
-    gap:16px;
+    gap:var(--space-md);
 
     user-select:none;
 
 }
+
 
 /* ===================================================
    LOGO
@@ -75,17 +71,18 @@ Build   : 1003.1 STABLE
 
 }
 
+
 /* ===================================================
-   TEXT
+   BRAND TEXT
 =================================================== */
 
 .brand-live{
 
+    color:var(--lz-text);
+
     font-size:30px;
 
     font-weight:700;
-
-    color:#ffffff;
 
     letter-spacing:-1px;
 
@@ -95,17 +92,18 @@ Build   : 1003.1 STABLE
 
 .brand-zone{
 
+    color:var(--lz-primary);
+
     font-size:30px;
 
     font-weight:700;
-
-    color:#d6001c;
 
     letter-spacing:-1px;
 
     line-height:1;
 
 }
+
 
 /* ===================================================
    RESPONSIVE
@@ -133,7 +131,7 @@ Build   : 1003.1 STABLE
 
     .brand{
 
-        gap:12px;
+        gap:var(--space-sm);
 
     }
 
