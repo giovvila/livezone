@@ -13,6 +13,12 @@ export default class EventBus {
 
     static emit(event, payload = null) {
 
+    if (!event) {
+        console.error("[EventBus] emit() chiamato senza event.");
+        console.trace();
+        return;
+    }
+
     console.log("EVENT:", event, payload);
 
     if (!this.listeners.has(event)) {
@@ -20,7 +26,17 @@ export default class EventBus {
     }
 
     for (const callback of this.listeners.get(event)) {
-        callback(payload);
+
+        try {
+            callback(payload);
+        }
+        catch (err) {
+            console.error(
+                `[EventBus] errore nel listener "${event}"`,
+                err
+            );
+        }
+
     }
 
 }

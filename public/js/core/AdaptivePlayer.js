@@ -48,6 +48,16 @@ export default class AdaptivePlayer {
         this.wrapper.style.width = `${width}px`;
         this.wrapper.style.height = `${height}px`;
 
+        document.documentElement.style.setProperty(
+    "--player-width",
+    `${width}px`
+);
+
+       document.documentElement.style.setProperty(
+    "--player-height",
+    `${height}px`
+);
+
     }
 
 }
