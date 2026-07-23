@@ -55,3 +55,19 @@ BUILD 1007
 - Eliminato lo scroll verticale
 - Player completamente adattivo
 - Layout stabilizzato
+## BUILD 1006.1 – Foundation Cleanup
+
+### Added
+- status.css
+- Modular status component
+
+### Refactored
+- Moved LIVE badge styles from style.css
+- Moved clock styles from style.css
+- Moved live animation from style.css
+
+### Verified
+- Responsive layout
+- Adaptive Player
+- Status bar
+- Header

@@ -1,0 +1,89 @@
+/*=====================================================
+
+LIVEZONE Broadcast Engine
+
+ticker.css
+
+Version : 1.0
+Build   : 1006.2
+
+=====================================================*/
+
+
+/*=====================================================
+TICKER BAR
+=====================================================*/
+
+.ticker{
+
+    display:flex;
+
+    align-items:center;
+
+    height:var(--ticker-height);
+
+    overflow:hidden;
+
+    background:linear-gradient(
+        90deg,
+        #b50018,
+        #d6001c,
+        #ff243e
+    );
+
+    color:#ffffff;
+
+    font-weight:600;
+
+}
+
+
+/*=====================================================
+CONTENT
+=====================================================*/
+
+.ticker-content{
+
+    white-space:nowrap;
+
+    padding-left:100%;
+
+    animation:tickerMove 24s linear infinite;
+
+}
+
+
+/*=====================================================
+ANIMATION
+=====================================================*/
+
+@keyframes tickerMove{
+
+    from{
+
+        transform:translateX(0);
+
+    }
+
+    to{
+
+        transform:translateX(-100%);
+
+    }
+
+}
+
+
+/*=====================================================
+RESPONSIVE
+=====================================================*/
+
+@media (max-width:700px){
+
+    .ticker{
+
+        font-size:.85rem;
+
+    }
+
+}
