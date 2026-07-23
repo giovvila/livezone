@@ -77,5 +77,65 @@ Build   : 1004
         Poppins,
         Arial,
         sans-serif;
+/* ========= Z INDEX ========= */
+
+--z-base:1;
+--z-player:10;
+--z-overlay:100;
+--z-header:500;
+--z-modal:900;
+--z-debug:9999;
+
+
+/* ========= SAFE AREA ========= */
+
+--safe-padding:3%;
+
+
+/* ========= PLAYER SCALE ========= */
+
+--player-width:1280;
+--player-height:720;
+--player-scale:1;
+
+
+/* ========= ANIMATION ========= */
+
+--animation-fast:.20s ease;
+--animation-normal:.35s ease;
+--animation-slow:.60s ease;
+}
+/* ========= EFFECTS ========= */
+
+.header-glow{
+
+    box-shadow:
+
+        0 1px 0 rgba(255,255,255,.04),
+
+        0 8px 25px rgba(0,0,0,.35);
+
+}
+
+/* ========= Z INDEX ========= */
+
+:root{
+
+    --z-base:1;
+    --z-player:10;
+    --z-overlay:100;
+    --z-header:500;
+    --z-modal:900;
+    --z-debug:9999;
+
+    --safe-padding:3%;
+
+    --player-width:1280;
+    --player-height:720;
+    --player-scale:1;
+
+    --animation-fast:.20s ease;
+    --animation-normal:.35s ease;
+    --animation-slow:.60s ease;
 
 }

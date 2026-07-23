@@ -71,3 +71,17 @@ BUILD 1007
 - Adaptive Player
 - Status bar
 - Header
+## BUILD 1006.2 – Extract Ticker Module
+
+### Added
+- ticker.css
+- Modular ticker component
+
+### Refactored
+- Moved ticker styles from style.css
+- Moved ticker animation from style.css
+
+### Verified
+- Ticker animation
+- Responsive layout
+- Adaptive Player

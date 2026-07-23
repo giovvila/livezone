@@ -85,3 +85,80 @@ box-shadow:
         inset 0 -40px 80px rgba(0,0,0,.15);
 
 }
+/*====================================================
+PLAYER CONTAINER
+====================================================*/
+
+.player-container{
+
+    position:relative;
+
+    width:min(94vw,var(--player-max-width));
+
+    margin:auto;
+
+    transition:
+
+        transform var(--transition),
+
+        box-shadow var(--transition);
+
+}
+
+.player-container:hover{
+
+    transform:translateY(-2px);
+
+}
+
+.player-container video{
+
+    width:100%;
+
+    display:block;
+
+    aspect-ratio:16/9;
+
+    object-fit:cover;
+
+    background:#000;
+
+    border-radius:var(--player-radius);
+
+    border:1px solid rgba(255,255,255,.08);
+
+    box-shadow:
+
+        var(--shadow-lg),
+
+        0 0 1px rgba(255,255,255,.04),
+
+        var(--glow-red);
+
+}
+
+/*====================================================
+OVERLAY ELEMENTS
+====================================================*/
+
+.channel-logo{
+
+    width:calc(var(--player-width) * .055);
+
+    min-width:38px;
+
+    max-width:72px;
+
+}
+
+.video-clock{
+
+    font-size:calc(var(--player-width) * .012);
+
+}
+
+.live-badge{
+
+    font-size:calc(var(--player-width) * .011);
+
+}

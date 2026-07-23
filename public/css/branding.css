@@ -173,3 +173,58 @@ Build   : 1004.2
     }
 
 }
+/*====================================================
+HEADER BRAND
+====================================================*/
+
+.brand{
+
+    display:flex;
+    align-items:center;
+    gap:clamp(8px,1vw,12px);
+
+    height:100%;
+
+    overflow:hidden;
+
+    font-size:clamp(22px,2vw,30px);
+
+}
+
+.brand-logo{
+
+    display:block;
+
+    width:auto;
+
+    height:40px;
+
+    max-height:calc(var(--header-height) - 16px);
+
+    object-fit:contain;
+
+    flex-shrink:0;
+
+}
+
+.brand > div{
+
+    display:flex;
+
+    align-items:baseline;
+
+    white-space:nowrap;
+
+}
+
+.brand-live{
+
+    color:var(--lz-text);
+
+}
+
+.brand-zone{
+
+    color:var(--lz-primary);
+
+}
