@@ -4,12 +4,14 @@ LIVEZONE Broadcast Engine
 
 StateManager.js
 
-Version : 1.0
-Build   : 1005.2
+Version : 1.1
+Build   : 1007.1
 
 =====================================================*/
 
 export const STATES = Object.freeze({
+
+    BOOT: "BOOT",
 
     INIT: "INIT",
 
@@ -17,33 +19,45 @@ export const STATES = Object.freeze({
 
     ONLINE: "ONLINE",
 
-    OFFLINE: "OFFLINE",
-
     BUFFERING: "BUFFERING",
 
-    ERROR: "ERROR"
+    RECONNECTING: "RECONNECTING",
+
+    OFFLINE: "OFFLINE",
+
+    ERROR: "ERROR",
+
+    STOPPED: "STOPPED"
 
 });
 
 class StateManager {
 
-    constructor(){
+    constructor() {
 
         this.currentState = STATES.INIT;
+
+        this.history = [];
 
         this.listeners = [];
 
     }
 
-    getState(){
+    getState() {
 
         return this.currentState;
 
     }
 
-    setState(state){
+    hasState(state) {
 
-        if(state === this.currentState){
+        return this.currentState === state;
+
+    }
+
+    setState(state) {
+
+        if (state === this.currentState) {
 
             return;
 
@@ -53,21 +67,60 @@ class StateManager {
 
         this.currentState = state;
 
-        console.log(
-            `[State] ${previous} -> ${state}`
-        );
+        this.history.push({
 
-        this.listeners.forEach(listener=>{
+            previous,
 
-            listener(state, previous);
+            state,
+
+            timestamp: new Date()
+
+        });
+
+        console.log(`[State] ${previous} -> ${state}`);
+
+        this.listeners.forEach(listener => {
+
+            try {
+
+                listener(state, previous);
+
+            }
+            catch (err) {
+
+                console.error("[StateManager]", err);
+
+            }
 
         });
 
     }
 
-    subscribe(callback){
+    subscribe(callback) {
 
         this.listeners.push(callback);
+
+    }
+
+    unsubscribe(callback) {
+
+        this.listeners = this.listeners.filter(
+
+            listener => listener !== callback
+
+        );
+
+    }
+
+    getHistory() {
+
+        return [...this.history];
+
+    }
+
+    clearHistory() {
+
+        this.history = [];
 
     }
 

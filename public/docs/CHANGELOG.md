@@ -85,3 +85,24 @@ BUILD 1007
 - Ticker animation
 - Responsive layout
 - Adaptive Player
+## BUILD 1006.4
+
+### Removed
+
+- legacy style.css
+
+### Completed
+
+- CSS modularization
+- Foundation Cleanup
+
+### Architecture
+
+- layout.css
+- player.css
+- branding.css
+- status.css
+- ticker.css
+- theme.css
+
+Project no longer depends on legacy CSS.

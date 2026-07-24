@@ -1,3 +1,14 @@
+/*=====================================================
+
+LIVEZONE Broadcast Engine
+
+Engine.js
+
+Version : 1.1
+Build   : 1007.1
+
+=====================================================*/
+
 import ConfigService from "../services/ConfigService.js";
 import Player from "../player/Player.js";
 import BroadcastUI from "../ui/BroadcastUI.js";
@@ -16,7 +27,6 @@ export default class Engine {
         this.ui = null;
         this.overlay = null;
         this.notifications = null;
-        
 
     }
 
@@ -24,30 +34,55 @@ export default class Engine {
 
         try {
 
-            console.log("=== LIVEZONE ENGINE START ===");
+            console.log("");
+            console.log("══════════════════════════════");
+            console.log("LIVEZONE Broadcast Engine");
+            console.log("══════════════════════════════");
 
             EventBus.emit(Events.ENGINE_START);
+
+            // -------------------------------------------------
+            // CONFIG
+            // -------------------------------------------------
 
             this.config = await ConfigService.load();
 
             EventBus.emit(Events.CONFIG_LOADED, this.config);
 
+            // -------------------------------------------------
+            // UI
+            // -------------------------------------------------
+
             this.ui = new BroadcastUI();
 
             this.ui.start(this.config);
+
             this.overlay = new OverlayController();
+
             this.notifications = new NotificationCenter();
-            
 
             EventBus.emit(Events.UI_READY);
+
+            // -------------------------------------------------
+            // PLAYER
+            // -------------------------------------------------
 
             this.player = new Player(this.config);
 
             this.player.init();
 
-            EventBus.on(Events.STREAM_READY, ()=>{
-                EventBus.emit(Events.PLAYER_READY);
-                console.log("=== ENGINE READY ===");
+            // -------------------------------------------------
+            // ENGINE READY
+            // -------------------------------------------------
+
+            EventBus.on(Events.STREAM_READY, () => {
+
+                
+
+                console.log("══════════════════════════════");
+                console.log("ENGINE READY");
+                console.log("══════════════════════════════");
+
             });
 
         }
