@@ -1,16 +1,15 @@
-/*export default class NotificationCenter{
-  show(message){
-    console.log("[NOTIFY]",message);
-  }
-}*/
 /*
 ====================================================
 
 LIVEZONE Broadcast Engine
-NotificationCenter.js
 
-Version : 1.0
-Build   : 1003 DEV
+Module  : NotificationCenter
+
+Version : 1.1.0
+
+Build   : 1007.5
+
+Status  : STABLE
 
 ====================================================
 */
@@ -18,82 +17,248 @@ Build   : 1003 DEV
 import EventBus from "../core/EventBus.js";
 import Events from "../core/Events.js";
 
-export default class NotificationCenter{
+export default class NotificationCenter {
 
-   constructor(){
+    constructor() {
 
-    this.container = document.getElementById("notification-center");
+        this.container =
+            document.getElementById(
+                "notification-center"
+            );
 
-    if(!this.container){
+        if (!this.container) {
 
-        this.container = document.createElement("div");
+            this.container =
+                document.createElement("div");
 
-        this.container.id = "notification-center";
-        this.container.className = "notification-center";
+            this.container.id =
+                "notification-center";
 
-        document.body.appendChild(this.container);
+            this.container.className =
+                "notification-center";
+
+            document.body.appendChild(
+                this.container
+            );
+
+        }
+
+        /*
+        ============================================
+        Runtime
+        ============================================
+        */
+
+        this.currentToast = null;
+
+        this.currentTimer = null;
+
+        this.lastMessage = "";
+
+        this.lastType = "";
+
+        this.lastTimestamp = 0;
+
+        this.bind();
 
     }
 
-    this.bind();
+    /*
+    ============================================
+    Event Binding
+    ============================================
+    */
 
-}
-
-    bind(){
+    bind() {
 
         EventBus.on(
+
             Events.STREAM_READY,
-            ()=>this.success(
-                "LIVEZONE",
-                "Stream connesso"
-            )
+
+            () => {
+
+                this.success(
+
+                    "LIVEZONE",
+
+                    "Stream connesso"
+
+                );
+
+            }
+
         );
 
         EventBus.on(
-            Events.STREAM_OFFLINE,
-            ()=>this.error(
-                "LIVEZONE",
-                "Segnale assente"
-            )
-        );
 
-        EventBus.on(
             Events.STREAM_RECONNECT,
-            ()=>this.warning(
-                "LIVEZONE",
-                "Riconnessione..."
-            )
+
+            () => {
+
+                this.warning(
+
+                    "LIVEZONE",
+
+                    "Riconnessione..."
+
+                );
+
+            }
+
+        );
+
+        EventBus.on(
+
+            Events.STREAM_OFFLINE,
+
+            () => {
+
+                this.error(
+
+                    "LIVEZONE",
+
+                    "Segnale assente"
+
+                );
+
+            }
+
+        );
+
+        EventBus.on(
+
+            Events.STREAM_ERROR,
+
+            () => {
+
+                this.error(
+
+                    "LIVEZONE",
+
+                    "Errore stream"
+
+                );
+
+            }
+
         );
 
     }
 
-    success(title,message){
+    /*
+    ============================================
+    Public API
+    ============================================
+    */
 
-        this.show(title,message,"success");
+    success(title, message) {
+
+        this.show(
+
+            title,
+
+            message,
+
+            "success"
+
+        );
 
     }
 
-    warning(title,message){
+    warning(title, message) {
 
-        this.show(title,message,"warning");
+        this.show(
+
+            title,
+
+            message,
+
+            "warning"
+
+        );
 
     }
 
-    error(title,message){
+    error(title, message) {
 
-        this.show(title,message,"error");
+        this.show(
+
+            title,
+
+            message,
+
+            "error"
+
+        );
 
     }
 
-    show(title,message,type){
+    /*
+    ============================================
+    Main
+    ============================================
+    */
 
-        const toast=document.createElement("div");
+    show(title, message, type) {
 
-        toast.className=`notification notification--${type}`;
+        const now = Date.now();
 
-        toast.innerHTML=`
+        /*
+        ----------------------------------------
+        Duplicate protection
+        ----------------------------------------
+        */
 
-            <div class="notification__title">
+        if (
+
+            message === this.lastMessage &&
+
+            type === this.lastType &&
+
+            (now - this.lastTimestamp) < 1000
+
+        ) {
+
+            return;
+
+        }
+
+        this.lastMessage = message;
+
+        this.lastType = type;
+
+        this.lastTimestamp = now;
+
+        /*
+        ----------------------------------------
+        Remove previous toast
+        ----------------------------------------
+        */
+
+        if (this.currentTimer) {
+
+            clearTimeout(this.currentTimer);
+
+            this.currentTimer = null;
+
+        }
+
+        if (this.currentToast) {
+
+            this.currentToast.remove();
+
+            this.currentToast = null;
+
+        }
+
+        const toast =
+            document.createElement("div");
+
+        toast.className =
+            `notification notification--${type}`;
+
+        toast.innerHTML = `
+                    <div class="notification__title">
 
                 ${title}
 
@@ -108,27 +273,73 @@ export default class NotificationCenter{
         `;
 
         this.container.appendChild(toast);
-        console.log("Container:", this.container);
-        console.log("Toast:", toast);
-        console.log("Parent:", toast.parentElement);
 
-        requestAnimationFrame(()=>{
+        this.currentToast = toast;
 
-            toast.classList.add("notification--visible");
+        requestAnimationFrame(() => {
+
+            toast.classList.add(
+                "notification--visible"
+            );
 
         });
 
-        setTimeout(()=>{
+        this.currentTimer = setTimeout(() => {
 
-            toast.classList.remove("notification--visible");
+            if (!this.currentToast) {
 
-            setTimeout(()=>{
+                return;
 
-                toast.remove();
+            }
 
-            },350);
+            this.currentToast.classList.remove(
+                "notification--visible"
+            );
 
-        },3000);
+            const toastToRemove =
+                this.currentToast;
+
+            this.currentToast = null;
+
+            setTimeout(() => {
+
+                if (toastToRemove) {
+
+                    toastToRemove.remove();
+
+                }
+
+            }, 350);
+
+        }, 3000);
+
+    }
+
+    /*
+    ============================================
+    Cleanup
+    ============================================
+    */
+
+    destroy() {
+
+        if (this.currentTimer) {
+
+            clearTimeout(
+                this.currentTimer
+            );
+
+            this.currentTimer = null;
+
+        }
+
+        if (this.currentToast) {
+
+            this.currentToast.remove();
+
+            this.currentToast = null;
+
+        }
 
     }
 

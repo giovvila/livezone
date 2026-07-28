@@ -31,7 +31,7 @@ export default class Engine {
     }
 
     async start() {
-
+console.count("[DEBUG] Engine.start()");
         try {
 
             console.log("");
@@ -82,6 +82,7 @@ export default class Engine {
                 
 
                 console.log("══════════════════════════════");
+                console.trace("[DEBUG] ENGINE READY");
                 console.log("ENGINE READY");
                 console.log("══════════════════════════════");
 

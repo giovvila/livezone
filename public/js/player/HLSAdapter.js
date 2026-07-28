@@ -35,7 +35,7 @@ export default class HLSAdapter {
                 try{ await video.play(); }catch(e){}
 
                 this.state = PlayerState.CONNECTED;
-                EventBus.emit(Events.STREAM_READY);
+                //EventBus.emit(Events.STREAM_READY);
                 return;
             }
 
@@ -60,6 +60,7 @@ export default class HLSAdapter {
         this.hls.on(Hls.Events.MANIFEST_PARSED, async ()=>{
             try{ await video.play(); }catch(e){}
             this.state=PlayerState.CONNECTED;
+            console.count("[DEBUG] HLSAdapter emits READY");
             EventBus.emit(Events.STREAM_READY);
         });
 
