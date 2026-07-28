@@ -1,21 +1,25 @@
 /**
  * LIVEZONE Broadcast Suite
- * Player v1.0
+ * Player v1.1
  *
  * Il Player coordina la riproduzione.
  * Non conosce Hls.js.
  */
 
 import HLSAdapter from "./HLSAdapter.js";
+import StreamMonitor from "./StreamMonitor.js";
 
 export default class Player {
 
     constructor(config) {
 
         this.config = config;
+
         this.video = document.getElementById("video");
 
         this.adapter = new HLSAdapter();
+
+        this.monitor = new StreamMonitor();
 
     }
 
@@ -47,16 +51,22 @@ export default class Player {
             stream
         );
 
+        // Avvia il monitor dello stream
+        this.monitor.start(this.video);
 
     }
 
     stop() {
+
+        this.monitor.stop();
 
         this.adapter.disconnect();
 
     }
 
     destroy() {
+
+        this.monitor.stop();
 
         this.adapter.destroy();
 
