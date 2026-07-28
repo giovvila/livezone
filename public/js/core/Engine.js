@@ -8,7 +8,7 @@ Version : 1.1
 Build   : 1007.1
 
 =====================================================*/
-
+import LifecycleManager from "./LifecycleManager.js";
 import ConfigService from "../services/ConfigService.js";
 import Player from "../player/Player.js";
 import BroadcastUI from "../ui/BroadcastUI.js";
@@ -39,6 +39,8 @@ export default class Engine {
             console.log("LIVEZONE Broadcast Engine");
             console.log("══════════════════════════════");
 
+            
+            LifecycleManager.init();
             EventBus.emit(Events.ENGINE_START);
 
             // -------------------------------------------------
