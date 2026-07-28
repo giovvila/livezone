@@ -4,8 +4,8 @@ LIVEZONE Broadcast Engine
 
 StreamMonitor.js
 
-Version : 1.0
-Build   : 1007.3
+Version : 1.1
+Build   : 1007.3 Stable
 
 =====================================================*/
 
@@ -18,10 +18,17 @@ export default class StreamMonitor {
 
         this.video = null;
         this.timer = null;
+        this.started = false;
 
     }
 
     start(video) {
+
+        if (this.started) {
+            return;
+        }
+
+        this.started = true;
 
         this.video = video;
 
@@ -38,6 +45,8 @@ export default class StreamMonitor {
         this.video.addEventListener("playing", () => {
 
             console.log("[Monitor] PLAYING");
+
+            EventBus.emit(Events.STREAM_READY);
 
         });
 
@@ -71,18 +80,16 @@ export default class StreamMonitor {
 
         this.timer = setInterval(() => {
 
-            if (!this.video) return;
+            if (!this.video) {
+                return;
+            }
 
             console.log("[Heartbeat]", {
-
                 currentTime: this.video.currentTime.toFixed(1),
-
                 readyState: this.video.readyState,
-
                 networkState: this.video.networkState,
-
-                paused: this.video.paused
-
+                paused: this.video.paused,
+                ended: this.video.ended
             });
 
         }, 5000);
@@ -98,6 +105,8 @@ export default class StreamMonitor {
             this.timer = null;
 
         }
+
+        this.started = false;
 
     }
 
