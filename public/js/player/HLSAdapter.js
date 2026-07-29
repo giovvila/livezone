@@ -57,12 +57,15 @@ export default class HLSAdapter {
         this.hls.loadSource(url);
         this.hls.attachMedia(video);
 
-        this.hls.on(Hls.Events.MANIFEST_PARSED, async ()=>{
-            try{ await video.play(); }catch(e){}
-            this.state=PlayerState.CONNECTED;
-            console.count("[DEBUG] HLSAdapter emits READY");
-            EventBus.emit(Events.STREAM_READY);
-        });
+        this.hls.on(Hls.Events.MANIFEST_PARSED, async () => {
+
+    try {
+        await video.play();
+    } catch (e) {}
+
+    this.state = PlayerState.CONNECTED;
+
+});
 
         this.hls.on(Hls.Events.ERROR,(event,data)=>{
 
