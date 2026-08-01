@@ -39,31 +39,48 @@ export default class StreamHealth {
 
         }
 
-        return{
+        return {
 
-            online:
-                !this.video.paused &&
-                !this.video.ended,
+    online:
+        !this.video.paused &&
+        !this.video.ended,
 
-            currentTime:
-                this.video.currentTime,
+    currentTime:
+        this.video.currentTime,
 
-            buffer:
-                Number(buffer.toFixed(2)),
+    duration:
+        Number.isFinite(this.video.duration)
+            ? Number(this.video.duration.toFixed(2))
+            : 0,
 
-            readyState:
-                this.video.readyState,
+    buffer:
+        Number(buffer.toFixed(2)),
 
-            networkState:
-                this.video.networkState,
+    readyState:
+        this.video.readyState,
 
-            paused:
-                this.video.paused,
+    networkState:
+        this.video.networkState,
 
-            ended:
-                this.video.ended
+    paused:
+        this.video.paused,
 
-        };
+    ended:
+        this.video.ended,
+
+    muted:
+        this.video.muted,
+
+    volume:
+        Number(this.video.volume.toFixed(2)),
+
+    playbackRate:
+        this.video.playbackRate,
+
+    seeking:
+        this.video.seeking
+
+};
 
     }
 
