@@ -78,7 +78,64 @@ export default class StreamHealth {
         this.video.playbackRate,
 
     seeking:
-        this.video.seeking
+        this.video.seeking,
+videoWidth:
+    this.video.videoWidth,
+
+videoHeight:
+    this.video.videoHeight,
+
+duration:
+    Number.isFinite(this.video.duration)
+        ? Number(this.video.duration.toFixed(2))
+        : 0,
+
+isLive:
+    this.video.duration === Infinity,
+
+playbackRate:
+    this.video.playbackRate,
+
+seeking:
+    this.video.seeking,
+
+muted:
+    this.video.muted,
+
+volume:
+    Number(this.video.volume.toFixed(2)),
+   
+    videoWidth:
+    this.video.videoWidth,
+
+videoHeight:
+    this.video.videoHeight,
+
+aspectRatio:
+    this.video.videoWidth && this.video.videoHeight
+        ? Number(
+            (
+                this.video.videoWidth /
+                this.video.videoHeight
+            ).toFixed(3)
+        )
+        : 0,
+
+hasVideo:
+    this.video.videoWidth > 0,
+
+isLive:
+    this.video.duration === Infinity,
+
+hasAudio:
+    typeof this.video.mozHasAudio === "boolean"
+        ? this.video.mozHasAudio
+        : (
+            this.video.audioTracks
+                ? this.video.audioTracks.length > 0
+                : true
+        )
+        
 
 };
 
