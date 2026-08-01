@@ -151,4 +151,18 @@ export default class HLSAdapter {
         return this.state;
     }
 
+
+    classifyError(error) {
+        if (!error) return "UNKNOWN_ERROR";
+        if (error.fatal) return "FATAL_ERROR";
+        switch (error.type) {
+            case "networkError":
+                return "NETWORK_ERROR";
+            case "mediaError":
+                return "MEDIA_ERROR";
+            default:
+                return "UNKNOWN_ERROR";
+        }
+    }
+
 }

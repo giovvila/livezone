@@ -1,3 +1,4 @@
+import Logger from "../utils/Logger.js";
 /*=====================================================
 
 LIVEZONE Broadcast Engine
@@ -34,10 +35,10 @@ export default class Engine {
 console.count("[DEBUG] Engine.start()");
         try {
 
-            console.log("");
-            console.log("══════════════════════════════");
-            console.log("LIVEZONE Broadcast Engine");
-            console.log("══════════════════════════════");
+            Logger.info("");
+            Logger.info("══════════════════════════════");
+            Logger.info("LIVEZONE Broadcast Engine");
+            Logger.info("══════════════════════════════");
 
             
             LifecycleManager.init();
@@ -81,17 +82,17 @@ console.count("[DEBUG] Engine.start()");
 
                 
 
-                console.log("══════════════════════════════");
+                Logger.info("══════════════════════════════");
                 console.trace("[DEBUG] ENGINE READY");
-                console.log("ENGINE READY");
-                console.log("══════════════════════════════");
+                Logger.info("ENGINE READY");
+                Logger.info("══════════════════════════════");
 
             });
 
         }
         catch (error) {
 
-            console.error(error);
+            Logger.error(error);
 
             EventBus.emit(Events.STREAM_ERROR, error);
 
