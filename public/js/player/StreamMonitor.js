@@ -22,10 +22,12 @@ getStatus()
 
 import EventBus from "../core/EventBus.js";
 import Events from "../core/Events.js";
+import StreamHealth from "./StreamHealth.js";
 
 export default class StreamMonitor {
 
     constructor() {
+        this.health = null;
 
         this.video = null;
         this.timer = null;
@@ -60,6 +62,7 @@ export default class StreamMonitor {
         }
 
         this.video = video;
+        this.health = new StreamHealth(video);
         this.started = true;
 
         this.registerVideoEvents();
@@ -72,6 +75,7 @@ export default class StreamMonitor {
 
         if (this.timer) {
             clearInterval(this.timer);
+            this.health = null;
             this.timer = null;
         }
 
@@ -84,11 +88,13 @@ export default class StreamMonitor {
 
     getStatus() {
 
-        this.updateStatus();
+       if (!this.health) {
+    return {
+        ...this.status
+    };
+}
 
-        return {
-            ...this.status
-        };
+return this.health.getStatus();
 
     }
 
