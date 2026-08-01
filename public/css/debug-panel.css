@@ -1,0 +1,65 @@
+.debug-panel {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+
+    width: 300px;
+
+    background: rgba(10, 10, 10, 0.92);
+
+    border: 1px solid #d51f26;
+
+    border-radius: 10px;
+
+    padding: 14px;
+
+    color: #ffffff;
+
+    font-family: Consolas, monospace;
+
+    font-size: 13px;
+
+    line-height: 1.6;
+
+    z-index: 99999;
+
+    box-shadow: 0 0 25px rgba(0,0,0,.45);
+}
+
+.debug-panel.hidden {
+    display: none;
+}
+
+.debug-title {
+    color: #d51f26;
+
+    font-weight: bold;
+
+    margin-bottom: 10px;
+
+    text-transform: uppercase;
+
+    letter-spacing: 1px;
+
+    border-bottom: 1px solid rgba(255,255,255,.15);
+
+    padding-bottom: 6px;
+}
+
+.debug-row {
+    display: flex;
+
+    justify-content: space-between;
+
+    margin: 4px 0;
+}
+
+.debug-label {
+    color: #aaaaaa;
+}
+
+.debug-value {
+    color: #ffffff;
+
+    font-weight: bold;
+}
