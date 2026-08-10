@@ -1,3 +1,5 @@
+import StateManager from "../core/StateManager.js";
+
 export default class DebugPanel {
 
     constructor(container) {
@@ -35,6 +37,11 @@ export default class DebugPanel {
                 </div>
 
                 <div class="debug-row">
+                    <span class="debug-label">Playback</span>
+                    <span id="dbg-playback" class="debug-value">--</span>
+                </div>
+
+                <div class="debug-row">
                     <span class="debug-label">Buffer</span>
                     <span id="dbg-buffer" class="debug-value">--</span>
                 </div>
@@ -43,13 +50,56 @@ export default class DebugPanel {
                     <span class="debug-label">Resolution</span>
                     <span id="dbg-resolution" class="debug-value">--</span>
                 </div>
+
+                <div class="debug-row">
+                    <span class="debug-label">Stream</span>
+                    <span id="dbg-stream" class="debug-value">--</span>
+                </div>
+
+                <div class="debug-row">
+                    <span class="debug-label">Ready</span>
+                    <span id="dbg-ready" class="debug-value">--</span>
+                </div>
+
+                <div class="debug-row">
+                    <span class="debug-label">Network</span>
+                    <span id="dbg-network" class="debug-value">--</span>
+                </div>
+
+                <div class="debug-row">
+                    <span class="debug-label">Muted</span>
+                    <span id="dbg-muted" class="debug-value">--</span>
+                </div>
+
+                <div class="debug-row">
+                    <span class="debug-label">Volume</span>
+                    <span id="dbg-volume" class="debug-value">--</span>
+                </div>
+
+                <div class="debug-row">
+                    <span class="debug-label">Audio</span>
+                    <span id="dbg-audio" class="debug-value">--</span>
+                </div>
+
+                <div class="debug-row">
+                    <span class="debug-label">Video</span>
+                    <span id="dbg-video" class="debug-value">--</span>
+                </div>
             </div>
         `;
 
         this.fields.engine = this.container.querySelector("#dbg-engine");
         this.fields.player = this.container.querySelector("#dbg-player");
+        this.fields.playback = this.container.querySelector("#dbg-playback");
         this.fields.buffer = this.container.querySelector("#dbg-buffer");
         this.fields.resolution = this.container.querySelector("#dbg-resolution");
+        this.fields.stream = this.container.querySelector("#dbg-stream");
+        this.fields.ready = this.container.querySelector("#dbg-ready");
+        this.fields.network = this.container.querySelector("#dbg-network");
+        this.fields.muted = this.container.querySelector("#dbg-muted");
+        this.fields.volume = this.container.querySelector("#dbg-volume");
+        this.fields.audio = this.container.querySelector("#dbg-audio");
+        this.fields.video = this.container.querySelector("#dbg-video");
 
         const header = this.container.querySelector(".debug-header");
         const open = localStorage.getItem("engineInspector.open");
@@ -173,11 +223,67 @@ export default class DebugPanel {
         }
 
         this.update({
-            engine: "ONLINE",
-            player: playerState,
-            buffer: `${Number(health.buffer || 0).toFixed(2)} s`,
-            resolution: `${health.videoWidth || 0}×${health.videoHeight || 0}`
+            engine: this.valueOrUnavailable(StateManager.getState()),
+            player: this.valueOrUnavailable(this.player.getState?.()),
+            playback: playerState,
+            buffer: this.formatBuffer(health.buffer),
+            resolution: this.formatResolution(
+                health.videoWidth,
+                health.videoHeight
+            ),
+            stream: this.formatBoolean(health.isLive, "LIVE", "VOD"),
+            ready: this.formatMediaState(
+                health.readyState,
+                DebugPanel.READY_STATES
+            ),
+            network: this.formatMediaState(
+                health.networkState,
+                DebugPanel.NETWORK_STATES
+            ),
+            muted: this.formatBoolean(health.muted, "YES", "NO"),
+            volume: this.formatVolume(health.volume),
+            audio: this.formatBoolean(health.hasAudio, "PRESENT", "ABSENT"),
+            video: this.formatBoolean(health.hasVideo, "PRESENT", "ABSENT")
         });
+    }
+
+    valueOrUnavailable(value) {
+        return value === undefined || value === null || value === ""
+            ? "--"
+            : value;
+    }
+
+    formatBuffer(buffer) {
+        return typeof buffer === "number" && Number.isFinite(buffer)
+            ? `${buffer.toFixed(2)} s`
+            : "--";
+    }
+
+    formatResolution(width, height) {
+        return typeof width === "number" && width > 0 &&
+            typeof height === "number" && height > 0
+            ? `${width}×${height}`
+            : "--";
+    }
+
+    formatBoolean(value, trueLabel, falseLabel) {
+        if (typeof value !== "boolean") {
+            return "--";
+        }
+
+        return value ? trueLabel : falseLabel;
+    }
+
+    formatVolume(volume) {
+        return typeof volume === "number" && Number.isFinite(volume)
+            ? `${Math.round(volume * 100)}%`
+            : "--";
+    }
+
+    formatMediaState(value, states) {
+        return typeof value === "number" && states[value] !== undefined
+            ? `${states[value]} (${value})`
+            : "--";
     }
 
     update(data) {
@@ -189,6 +295,10 @@ export default class DebugPanel {
             this.fields.player.textContent = data.player;
         }
 
+        if (data.playback !== undefined && this.fields.playback) {
+            this.fields.playback.textContent = data.playback;
+        }
+
         if (data.buffer !== undefined && this.fields.buffer) {
             this.fields.buffer.textContent = data.buffer;
         }
@@ -196,5 +306,48 @@ export default class DebugPanel {
         if (data.resolution !== undefined && this.fields.resolution) {
             this.fields.resolution.textContent = data.resolution;
         }
+
+        if (data.stream !== undefined && this.fields.stream) {
+            this.fields.stream.textContent = data.stream;
+        }
+
+        if (data.ready !== undefined && this.fields.ready) {
+            this.fields.ready.textContent = data.ready;
+        }
+
+        if (data.network !== undefined && this.fields.network) {
+            this.fields.network.textContent = data.network;
+        }
+
+        if (data.muted !== undefined && this.fields.muted) {
+            this.fields.muted.textContent = data.muted;
+        }
+
+        if (data.volume !== undefined && this.fields.volume) {
+            this.fields.volume.textContent = data.volume;
+        }
+
+        if (data.audio !== undefined && this.fields.audio) {
+            this.fields.audio.textContent = data.audio;
+        }
+
+        if (data.video !== undefined && this.fields.video) {
+            this.fields.video.textContent = data.video;
+        }
     }
 }
+
+DebugPanel.READY_STATES = Object.freeze({
+    0: "HAVE_NOTHING",
+    1: "HAVE_METADATA",
+    2: "HAVE_CURRENT_DATA",
+    3: "HAVE_FUTURE_DATA",
+    4: "HAVE_ENOUGH_DATA"
+});
+
+DebugPanel.NETWORK_STATES = Object.freeze({
+    0: "EMPTY",
+    1: "IDLE",
+    2: "LOADING",
+    3: "NO_SOURCE"
+});
