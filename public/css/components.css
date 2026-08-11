@@ -46,6 +46,99 @@ box-shadow:
 0 0 10px rgba(255,0,0,.55);
 
 }
+.broadcast-live .live-dot{
+
+background:#00d26a;
+
+box-shadow:0 0 10px rgba(0,210,106,.55);
+
+}
+.broadcast-break .live-dot{
+
+background:#ffb300;
+
+box-shadow:0 0 10px rgba(255,179,0,.55);
+
+animation:none;
+
+}
+.broadcast-offline .live-dot{
+
+background:#ff3b30;
+
+box-shadow:0 0 10px rgba(255,59,48,.55);
+
+animation:none;
+
+opacity:.55;
+
+}
+.broadcast-program .live-dot{
+
+background:#3b82f6;
+
+box-shadow:0 0 10px rgba(59,130,246,.55);
+
+animation:none;
+
+}
+.broadcast-controls{
+
+display:flex;
+
+align-items:center;
+
+gap:4px;
+
+padding:4px;
+
+border:1px solid rgba(255,255,255,.08);
+
+border-radius:10px;
+
+background:rgba(255,255,255,.03);
+
+}
+.broadcast-control{
+
+border:0;
+
+border-radius:6px;
+
+padding:5px 7px;
+
+background:transparent;
+
+color:rgba(255,255,255,.65);
+
+font:inherit;
+
+font-size:10px;
+
+font-weight:700;
+
+letter-spacing:.04em;
+
+cursor:pointer;
+
+}
+.broadcast-control:hover,
+.broadcast-control:focus-visible{
+
+color:#fff;
+
+background:rgba(255,255,255,.1);
+
+outline:none;
+
+}
+.broadcast-control--active{
+
+color:#fff;
+
+background:rgba(255,255,255,.16);
+
+}
 @keyframes blink{50%{opacity:.2}}
 .video-overlay{position:absolute;inset:0;pointer-events:none}
 /*.channel-logo{position:absolute;top:18px;right:18px;padding:8px 12px;background:rgba(0,0,0,.25);backdrop-filter:blur(6px);border-radius:8px;font-weight:700}*/

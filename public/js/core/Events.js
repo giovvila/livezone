@@ -16,6 +16,9 @@ const Events = Object.freeze({
     STREAM_ONLINE: "stream:online",
     STREAM_ERROR: "stream:error",
 
+    // Editorial broadcast state
+    BROADCAST_STATE_CHANGED: "broadcast:state-changed",
+
     // UI
     UI_READY: "ui:ready"
 

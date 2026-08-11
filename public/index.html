@@ -40,9 +40,16 @@ background:#ff0000;
 
     <div class="header-info">
 
-        <div class="live-badge">
+        <div class="broadcast-controls" role="group" aria-label="Broadcast control">
+            <button class="broadcast-control" type="button" data-broadcast-state="LIVE" aria-pressed="false">LIVE</button>
+            <button class="broadcast-control" type="button" data-broadcast-state="BREAK" aria-pressed="false">BREAK</button>
+            <button class="broadcast-control" type="button" data-broadcast-state="OFFLINE" aria-pressed="true">OFFLINE</button>
+            <button class="broadcast-control" type="button" data-broadcast-state="PROGRAM" aria-pressed="false">PROGRAM</button>
+        </div>
+
+        <div class="live-badge broadcast-offline">
             <span class="live-dot"></span>
-            LIVE
+            <span id="broadcast-state-label">OFFLINE</span>
         </div>
 
         <div id="clock">--:--:--</div>

@@ -1,4 +1,5 @@
 import StateManager from "../core/StateManager.js";
+import BroadcastStateManager from "../core/BroadcastStateManager.js";
 
 export default class DebugPanel {
 
@@ -39,6 +40,11 @@ export default class DebugPanel {
                 <div class="debug-row">
                     <span class="debug-label">Playback</span>
                     <span id="dbg-playback" class="debug-value">--</span>
+                </div>
+
+                <div class="debug-row">
+                    <span class="debug-label">Broadcast</span>
+                    <span id="dbg-broadcast" class="debug-value">--</span>
                 </div>
 
                 <div class="debug-row">
@@ -113,6 +119,7 @@ export default class DebugPanel {
         this.fields.engine = this.container.querySelector("#dbg-engine");
         this.fields.player = this.container.querySelector("#dbg-player");
         this.fields.playback = this.container.querySelector("#dbg-playback");
+        this.fields.broadcast = this.container.querySelector("#dbg-broadcast");
         this.fields.buffer = this.container.querySelector("#dbg-buffer");
         this.fields.resolution = this.container.querySelector("#dbg-resolution");
         this.fields.stream = this.container.querySelector("#dbg-stream");
@@ -226,6 +233,7 @@ export default class DebugPanel {
             engine: this.valueOrUnavailable(StateManager.getState()),
             player: this.valueOrUnavailable(this.player.getState?.()),
             playback: playerState,
+            broadcast: BroadcastStateManager.getState(),
             buffer: this.formatBuffer(health.buffer),
             resolution: this.formatResolution(
                 health.videoWidth,
@@ -358,6 +366,10 @@ export default class DebugPanel {
 
         if (data.playback !== undefined && this.fields.playback) {
             this.fields.playback.textContent = data.playback;
+        }
+
+        if (data.broadcast !== undefined && this.fields.broadcast) {
+            this.fields.broadcast.textContent = data.broadcast;
         }
 
         if (data.buffer !== undefined && this.fields.buffer) {
