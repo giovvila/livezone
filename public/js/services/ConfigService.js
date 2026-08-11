@@ -2,7 +2,9 @@ export default class ConfigService {
 
     static config = null;
 
-    static async load() {
+    static async load(
+        url = new URL("../../config/config.json", import.meta.url)
+    ) {
 
         if (this.config) {
             return this.config;
@@ -10,7 +12,7 @@ export default class ConfigService {
 
         try {
 
-            const response = await fetch("config/config.json");
+            const response = await fetch(url);
 
             if (!response.ok) {
                 throw new Error("Impossibile leggere config.json");

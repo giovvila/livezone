@@ -1,0 +1,47 @@
+import PlaybackRuntime from "../runtime/PlaybackRuntime.js";
+import AdaptivePlayer from "../core/AdaptivePlayer.js";
+import BroadcastStateManager from "../core/BroadcastStateManager.js";
+import StudioStateManager from "../core/StudioStateManager.js";
+import BroadcastUI from "../ui/BroadcastUI.js";
+import StudioUI from "../ui/StudioUI.js";
+import OverlayController from "../ui/OverlayController.js";
+import NotificationCenter from "../ui/NotificationCenter.js";
+import DebugPanel from "../debug/DebugPanel.js";
+
+const adaptivePlayer = new AdaptivePlayer(
+    document.querySelector(".player-wrapper"),
+    document.getElementById("video")
+);
+
+adaptivePlayer.start();
+
+BroadcastStateManager.initialize();
+StudioStateManager.initialize();
+
+const runtime = new PlaybackRuntime();
+let studioUI = null;
+
+runtime.start({
+    beforePlayerStart(config) {
+        const broadcastUI = new BroadcastUI();
+        broadcastUI.start(config);
+
+        studioUI = new StudioUI(document.getElementById("studio-panel"));
+        studioUI.start();
+
+        new OverlayController();
+        new NotificationCenter();
+    }
+}).then(({ player }) => {
+    const debugContainer = document.getElementById("debug-panel");
+
+    if (!debugContainer) {
+        return;
+    }
+
+    const debugPanel = new DebugPanel(debugContainer);
+    debugPanel.render();
+    debugPanel.attach(player);
+}).catch(() => {
+    // PlaybackRuntime already reports the startup failure to the UI/EventBus.
+});

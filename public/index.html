@@ -3,7 +3,6 @@
     <head><meta charset='UTF-8'>
     <meta name='viewport' content='width=device-width,initial-scale=1'>
     <title>LIVEZONE</title>
-    <link rel="stylesheet" href="css/debug-panel.css">
     <link rel='preconnect' href='https://fonts.googleapis.com'>
     <link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
     <link href='https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap' rel='stylesheet'>
@@ -17,7 +16,6 @@
 <link rel="stylesheet" href="css/components.css">
 <link rel="stylesheet" href="css/overlay.css">
 <link rel="stylesheet" href="css/notification.css">
-<link rel="stylesheet" href="css/studio.css">
 </head><body>
     <div id='app'>
         <header class="header">
@@ -41,16 +39,9 @@ background:#ff0000;
 
     <div class="header-info">
 
-        <div class="broadcast-controls" role="group" aria-label="Broadcast control">
-            <button class="broadcast-control" type="button" data-broadcast-state="LIVE" aria-pressed="false">LIVE</button>
-            <button class="broadcast-control" type="button" data-broadcast-state="BREAK" aria-pressed="false">BREAK</button>
-            <button class="broadcast-control" type="button" data-broadcast-state="OFFLINE" aria-pressed="true">OFFLINE</button>
-            <button class="broadcast-control" type="button" data-broadcast-state="PROGRAM" aria-pressed="false">PROGRAM</button>
-        </div>
-
         <div class="live-badge broadcast-offline">
             <span class="live-dot"></span>
-            <span id="broadcast-state-label">BROADCAST · OFFLINE</span>
+            <span id="connection-state-label">SIGNAL · CONNECTING</span>
         </div>
 
         <div id="clock">--:--:--</div>
@@ -105,49 +96,19 @@ background:#ff0000;
 
 </div>
 </div>
-<aside id="studio-panel" class="studio-panel" aria-labelledby="studio-title" hidden>
-    <div class="studio-panel__header">
-        <h2 id="studio-title">LIVEZONE STUDIO</h2>
-        <button id="studio-close" class="studio-panel__close" type="button" aria-label="Close Studio">×</button>
-    </div>
-
-    <section class="studio-section" aria-labelledby="studio-scenes-title">
-        <h3 id="studio-scenes-title">SCENES</h3>
-        <div id="studio-scene-list" class="studio-scene-list"></div>
-        <p id="studio-empty-state" class="studio-empty-state">No scenes configured</p>
-    </section>
-
-    <section class="studio-state studio-state--preview" aria-labelledby="studio-preview-title">
-        <h3 id="studio-preview-title">PREVIEW</h3>
-        <p id="studio-preview-scene" class="studio-state__scene">—</p>
-    </section>
-
-    <button id="studio-take" class="studio-take" type="button" disabled>TAKE</button>
-
-    <section class="studio-state studio-state--program" aria-labelledby="studio-program-title">
-        <h3 id="studio-program-title">PROGRAM</h3>
-        <p id="studio-program-scene" class="studio-state__scene">—</p>
-        <p class="studio-state__note">Control-plane scene state; rendering output is not connected yet.</p>
-    </section>
-</aside>
 </main>
 <section class='status-bar'>
     <div id='status'>● CONNECTING...</div>
 <div>HLS</div>
 <div>FULL HD</div>
-<div class="operator-utilities" role="group" aria-label="Operator utilities">
-    <button id="studio-toggle" type="button" aria-controls="studio-panel" aria-expanded="false">STUDIO</button>
-    <button id="engine-monitor-toggle" type="button">MON</button>
-</div>
 </section>
 <section class='ticker'>
     <div class='ticker-text'>► Benvenuti su LIVEZONE • Broadcast Engine •</div>
 </section>
+</div>
 <div id="notification-center" class="notification-center"></div>
-    <script src='lib/hls.min.js'></script><script type='module' src='js/app.js'>
+    <script src='lib/hls.min.js'></script><script type='module' src='js/entries/public-app.js'>
 
 </script>
-<!-- Engine Debug Panel -->
-<div id="debug-panel" class="debug-panel hidden"></div>
 </body>
 </html>
