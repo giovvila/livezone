@@ -17,6 +17,7 @@ import Player from "../player/Player.js";
 import BroadcastUI from "../ui/BroadcastUI.js";
 import NotificationCenter from "../ui/NotificationCenter.js";
 import OverlayController from "../ui/OverlayController.js";
+import StudioUI from "../ui/StudioUI.js";
 
 import EventBus from "./EventBus.js";
 import Events from "./Events.js";
@@ -33,6 +34,7 @@ export default class Engine {
         this.ui = null;
         this.overlay = null;
         this.notifications = null;
+        this.studioUI = null;
     }
 
     async start() {
@@ -60,6 +62,11 @@ export default class Engine {
             // -------------------------------------------------
             this.ui = new BroadcastUI();
             this.ui.start(this.config);
+
+            this.studioUI = new StudioUI(
+                document.getElementById("studio-panel")
+            );
+            this.studioUI.start();
 
             this.overlay = new OverlayController();
             this.notifications = new NotificationCenter();
