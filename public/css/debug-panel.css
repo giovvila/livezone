@@ -71,17 +71,6 @@
     cursor:grab;
     user-select:none;
 }
-.debug-body{
-    overflow:hidden;
-    max-height:500px;
-    opacity:1;
-    transition:max-height .2s ease,opacity .2s ease;
-}
-.debug-panel.collapsed .debug-body{
-    max-height:0;
-    opacity:0;
-}
-
 .debug-label{flex:1;min-width:0;}
 .debug-value{white-space:nowrap;flex-shrink:0;}
 

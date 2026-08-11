@@ -88,7 +88,6 @@ export default class Engine {
                 this.debugPanel = new DebugPanel(debugContainer);
                 this.debugPanel.render();
                 this.debugPanel.attach(this.player);
-                this.debugPanel.show();
             }
         }
         catch (error) {

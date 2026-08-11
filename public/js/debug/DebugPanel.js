@@ -101,50 +101,24 @@ export default class DebugPanel {
         this.fields.audio = this.container.querySelector("#dbg-audio");
         this.fields.video = this.container.querySelector("#dbg-video");
 
-        const header = this.container.querySelector(".debug-header");
-        const open = localStorage.getItem("engineInspector.open");
+        const monitorToggle = document.getElementById("engine-monitor-toggle");
 
-        if (open === "false") {
-            this.container.classList.add("collapsed");
-        }
-
-        header?.addEventListener("click", () => {
-            if (this.drag.active) return;
-            this.toggle();
+        monitorToggle?.addEventListener("click", () => {
+            this.container.classList.toggle("hidden");
         });
 
         window.addEventListener("keydown", (e) => {
-            if (e.key === "F2") {
+            if (
+                e.key === "F2" &&
+                !window.matchMedia("(pointer: coarse)").matches
+            ) {
                 e.preventDefault();
                 this.container.classList.toggle("hidden");
             }
         });
 
-
-        // Mobile floating button (touch devices only)
-        if (window.matchMedia("(pointer: coarse)").matches && !document.getElementById("engine-monitor-toggle")) {
-            const btn=document.createElement("button");
-            btn.id="engine-monitor-toggle";
-            btn.textContent="MON";
-            Object.assign(btn.style,{
-                position:"fixed",right:"16px",bottom:"16px",zIndex:"99999",
-                padding:"10px 14px",borderRadius:"20px",border:"0",
-                background:"#d60000",color:"#fff",fontWeight:"700",cursor:"pointer"
-            });
-            btn.addEventListener("click",()=>this.container.classList.toggle("hidden"));
-            document.body.appendChild(btn);
-        }
-
         this.enableDrag();
 
-    }
-
-    toggle() {
-        this.container.classList.toggle("collapsed");
-        localStorage.setItem(
-            "engineInspector.open",
-            (!this.container.classList.contains("collapsed")).toString()
-        );
     }
 
 
