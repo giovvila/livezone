@@ -14,7 +14,6 @@ Gestisce esclusivamente il layout della pagina.
 
     --header-height:68px;
     --status-height:52px;
-    --ticker-height:56px;
 
     --page-bg:#0f0f10;
     --panel-bg:#141414;
@@ -140,20 +139,6 @@ STATUS BAR
 }
 
 /*====================================================
-TICKER
-====================================================*/
-
-.ticker{
-
-    display:flex;
-
-    align-items:center;
-
-    overflow:hidden;
-
-}
-
-/*====================================================
 RESPONSIVE
 ====================================================*/
 
@@ -163,7 +148,6 @@ RESPONSIVE
 
         --header-height:60px;
         --status-height:48px;
-        --ticker-height:48px;
 
     }
 
@@ -187,7 +171,6 @@ RESPONSIVE
 
         --header-height:56px;
         --status-height:44px;
-        --ticker-height:44px;
 
     }
 
