@@ -85,6 +85,28 @@ export default class DebugPanel {
                     <span class="debug-label">Video</span>
                     <span id="dbg-video" class="debug-value">--</span>
                 </div>
+
+                <div class="debug-title">PRO DIAGNOSTICS</div>
+
+                <div class="debug-row">
+                    <span class="debug-label">Mode</span>
+                    <span id="dbg-mode" class="debug-value">UNAVAILABLE</span>
+                </div>
+
+                <div class="debug-row">
+                    <span class="debug-label">Live Edge</span>
+                    <span id="dbg-live-edge" class="debug-value">UNAVAILABLE</span>
+                </div>
+
+                <div class="debug-row">
+                    <span class="debug-label">Dropped Frames</span>
+                    <span id="dbg-dropped-frames" class="debug-value">UNAVAILABLE</span>
+                </div>
+
+                <div class="debug-row">
+                    <span class="debug-label">HLS BW</span>
+                    <span id="dbg-hls-bandwidth" class="debug-value">UNAVAILABLE</span>
+                </div>
             </div>
         `;
 
@@ -100,6 +122,10 @@ export default class DebugPanel {
         this.fields.volume = this.container.querySelector("#dbg-volume");
         this.fields.audio = this.container.querySelector("#dbg-audio");
         this.fields.video = this.container.querySelector("#dbg-video");
+        this.fields.mode = this.container.querySelector("#dbg-mode");
+        this.fields.liveEdge = this.container.querySelector("#dbg-live-edge");
+        this.fields.droppedFrames = this.container.querySelector("#dbg-dropped-frames");
+        this.fields.hlsBandwidth = this.container.querySelector("#dbg-hls-bandwidth");
 
         const monitorToggle = document.getElementById("engine-monitor-toggle");
 
@@ -217,7 +243,15 @@ export default class DebugPanel {
             muted: this.formatBoolean(health.muted, "YES", "NO"),
             volume: this.formatVolume(health.volume),
             audio: this.formatBoolean(health.hasAudio, "PRESENT", "ABSENT"),
-            video: this.formatBoolean(health.hasVideo, "PRESENT", "ABSENT")
+            video: this.formatBoolean(health.hasVideo, "PRESENT", "ABSENT"),
+            mode: this.formatProMode(health.proDiagnostics?.mode),
+            liveEdge: this.formatLiveEdge(health.proDiagnostics?.liveEdge),
+            droppedFrames: this.formatDroppedFrames(
+                health.proDiagnostics?.videoFrames
+            ),
+            hlsBandwidth: this.formatHlsBandwidth(
+                health.proDiagnostics?.hlsBandwidth
+            )
         });
     }
 
@@ -258,6 +292,53 @@ export default class DebugPanel {
         return ["LIVE", "VOD", "EVENT", "UNKNOWN"].includes(type)
             ? type
             : "UNKNOWN";
+    }
+
+    formatProMode(mode) {
+        const modes={
+            HLS_JS:"HLS.JS",
+            NATIVE_HLS:"NATIVE HLS"
+        };
+
+        return modes[mode] || "UNAVAILABLE";
+    }
+
+    formatLiveEdge(liveEdge) {
+        if(!liveEdge?.available ||
+            !Number.isFinite(liveEdge.distanceSeconds)){
+            return "UNAVAILABLE";
+        }
+
+        return `${liveEdge.distanceSeconds.toFixed(1)} s behind`;
+    }
+
+    formatDroppedFrames(videoFrames) {
+        if(!videoFrames?.available ||
+            !Number.isFinite(videoFrames.droppedVideoFrames) ||
+            !Number.isFinite(videoFrames.totalVideoFrames)){
+            return "UNAVAILABLE";
+        }
+
+        const dropped=videoFrames.droppedVideoFrames;
+        const total=videoFrames.totalVideoFrames;
+        const percentage=total>0 ? (dropped/total)*100 : 0;
+
+        return `${dropped.toLocaleString("en-US")} / `+
+            `${total.toLocaleString("en-US")} (${percentage.toFixed(2)}%)`;
+    }
+
+    formatHlsBandwidth(hlsBandwidth) {
+        if(!hlsBandwidth?.available ||
+            !Number.isFinite(hlsBandwidth.bitsPerSecond) ||
+            hlsBandwidth.bitsPerSecond<=0){
+            return "UNAVAILABLE";
+        }
+
+        const bitsPerSecond=hlsBandwidth.bitsPerSecond;
+
+        return bitsPerSecond>=1000000
+            ? `${(bitsPerSecond/1000000).toFixed(2)} Mbps`
+            : `${Math.round(bitsPerSecond/1000)} Kbps`;
     }
 
     formatMediaState(value, states) {
@@ -313,6 +394,22 @@ export default class DebugPanel {
 
         if (data.video !== undefined && this.fields.video) {
             this.fields.video.textContent = data.video;
+        }
+
+        if (data.mode !== undefined && this.fields.mode) {
+            this.fields.mode.textContent = data.mode;
+        }
+
+        if (data.liveEdge !== undefined && this.fields.liveEdge) {
+            this.fields.liveEdge.textContent = data.liveEdge;
+        }
+
+        if (data.droppedFrames !== undefined && this.fields.droppedFrames) {
+            this.fields.droppedFrames.textContent = data.droppedFrames;
+        }
+
+        if (data.hlsBandwidth !== undefined && this.fields.hlsBandwidth) {
+            this.fields.hlsBandwidth.textContent = data.hlsBandwidth;
         }
     }
 }

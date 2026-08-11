@@ -96,7 +96,8 @@ export default class Player {
 
         return {
             ...health,
-            streamDiagnostics: this.adapter.getStreamDiagnostics()
+            streamDiagnostics: this.adapter.getStreamDiagnostics(),
+            proDiagnostics: this.adapter.getProDiagnostics()
         };
 
     }

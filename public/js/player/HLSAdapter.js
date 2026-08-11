@@ -18,6 +18,9 @@ export default class HLSAdapter {
         this.destroyed=false;
         this.usesNativeHls=false;
         this.streamDiagnostics={type:"UNKNOWN",source:"NONE"};
+        this.proMode="NONE";
+        this.livePlaylist=false;
+        this.hasLoadedMediaFragment=false;
     }
 
     async connect(video,url){
@@ -27,6 +30,7 @@ export default class HLSAdapter {
         this.destroyed=false;
         this.usesNativeHls=false;
         this.resetStreamDiagnostics();
+        this.resetProDiagnostics();
         this.clearRetry();
 
         this.state=PlayerState.CONNECTING;
@@ -37,6 +41,7 @@ export default class HLSAdapter {
             if(video.canPlayType("application/vnd.apple.mpegurl")){
                 this.usesNativeHls=true;
                 this.resetStreamDiagnostics("NATIVE_UNKNOWN");
+                this.proMode="NATIVE_HLS";
                 video.src=url;
                 try{ await video.play(); }catch(e){}
 
@@ -59,6 +64,7 @@ export default class HLSAdapter {
             lowLatencyMode:true,
             backBufferLength:90
         });
+        this.proMode="HLS_JS";
 
         this.hls.loadSource(url);
         this.hls.attachMedia(video);
@@ -79,6 +85,12 @@ export default class HLSAdapter {
 
         this.hls.on(Hls.Events.LEVEL_UPDATED, (event,data) => {
             this.updateStreamDiagnostics(data?.details);
+        });
+
+        this.hls.on(Hls.Events.FRAG_LOADED, (event,data) => {
+            if(data?.frag?.type==="main"){
+                this.hasLoadedMediaFragment=true;
+            }
         });
 
         this.hls.on(Hls.Events.ERROR,(event,data)=>{
@@ -148,6 +160,7 @@ export default class HLSAdapter {
         this.destroyed=true;
         this.usesNativeHls=false;
         this.resetStreamDiagnostics();
+        this.resetProDiagnostics();
         this.clearRetry();
 
         if(this.hls){
@@ -182,6 +195,8 @@ export default class HLSAdapter {
     updateStreamDiagnostics(details){
         let type="UNKNOWN";
 
+        this.livePlaylist=details?.live===true;
+
         if(details?.type==="EVENT"){
             type="EVENT";
         }
@@ -193,6 +208,125 @@ export default class HLSAdapter {
         }
 
         this.streamDiagnostics={type,source:"HLS_LEVEL_DETAILS"};
+    }
+
+    getProDiagnostics(){
+        return {
+            mode:this.getProMode(),
+            liveEdge:this.getLiveEdgeDiagnostics(),
+            videoFrames:this.getVideoFrameDiagnostics(),
+            hlsBandwidth:this.getHlsBandwidthDiagnostics()
+        };
+    }
+
+    getProMode(){
+        if(this.proMode==="HLS_JS" && this.hls){
+            return "HLS_JS";
+        }
+
+        if(this.proMode==="NATIVE_HLS" && this.usesNativeHls){
+            return "NATIVE_HLS";
+        }
+
+        return "NONE";
+    }
+
+    resetProDiagnostics(){
+        this.proMode="NONE";
+        this.livePlaylist=false;
+        this.hasLoadedMediaFragment=false;
+    }
+
+    getLiveEdgeDiagnostics(){
+        const unavailable={
+            available:false,
+            distanceSeconds:null,
+            source:"UNAVAILABLE"
+        };
+
+        if(!this.isActivelyLive() || !this.video){
+            return unavailable;
+        }
+
+        const seekable=this.video.seekable;
+
+        if(!seekable || seekable.length===0){
+            return unavailable;
+        }
+
+        let seekableEnd;
+
+        try{
+            seekableEnd=seekable.end(seekable.length-1);
+        }catch(e){
+            return unavailable;
+        }
+
+        const currentTime=this.video.currentTime;
+
+        if(!Number.isFinite(seekableEnd) || !Number.isFinite(currentTime)){
+            return unavailable;
+        }
+
+        return {
+            available:true,
+            distanceSeconds:Math.max(0,seekableEnd-currentTime),
+            source:"MEDIA_SEEKABLE"
+        };
+    }
+
+    getVideoFrameDiagnostics(){
+        const unavailable={
+            available:false,
+            droppedVideoFrames:null,
+            totalVideoFrames:null,
+            source:"UNAVAILABLE"
+        };
+
+        if(!this.video || typeof this.video.getVideoPlaybackQuality!=="function"){
+            return unavailable;
+        }
+
+        const quality=this.video.getVideoPlaybackQuality();
+        const droppedVideoFrames=quality?.droppedVideoFrames;
+        const totalVideoFrames=quality?.totalVideoFrames;
+
+        if(!Number.isFinite(droppedVideoFrames) || droppedVideoFrames<0 ||
+            !Number.isFinite(totalVideoFrames) || totalVideoFrames<0){
+            return unavailable;
+        }
+
+        return {
+            available:true,
+            droppedVideoFrames,
+            totalVideoFrames,
+            source:"VIDEO_PLAYBACK_QUALITY"
+        };
+    }
+
+    getHlsBandwidthDiagnostics(){
+        const bitsPerSecond=this.hls?.bandwidthEstimate;
+
+        if(this.getProMode()!=="HLS_JS" || !this.hasLoadedMediaFragment ||
+            !Number.isFinite(bitsPerSecond) || bitsPerSecond<=0){
+            return {
+                available:false,
+                bitsPerSecond:null,
+                source:"UNAVAILABLE"
+            };
+        }
+
+        return {
+            available:true,
+            bitsPerSecond,
+            source:"HLS_BANDWIDTH_ESTIMATE"
+        };
+    }
+
+    isActivelyLive(){
+        return this.getProMode()==="HLS_JS"
+            ? this.livePlaylist
+            : this.getProMode()==="NATIVE_HLS" && this.video?.duration===Infinity;
     }
 
 
