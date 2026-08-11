@@ -64,11 +64,21 @@ APP
 
         var(--header-height)
 
-        1fr
+        minmax(0,1fr)
 
         var(--status-height)
 
         var(--ticker-height);
+
+}
+
+@supports (height:100dvh){
+
+    #app{
+
+        height:100dvh;
+
+    }
 
 }
 
@@ -101,6 +111,8 @@ MAIN
 .main{
 
     display:flex;
+
+    min-height:0;
 
     justify-content:center;
 
