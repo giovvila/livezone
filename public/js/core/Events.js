@@ -23,6 +23,7 @@ const Events = Object.freeze({
     STUDIO_SCENE_REGISTERED: "studio:scene-registered",
     STUDIO_SCENE_UNREGISTERED: "studio:scene-unregistered",
     STUDIO_PREVIEW_CHANGED: "studio:preview-changed",
+    STUDIO_PROGRAM_CHANGED: "studio:program-changed",
 
     // UI
     UI_READY: "ui:ready"

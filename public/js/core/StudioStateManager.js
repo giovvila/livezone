@@ -125,6 +125,30 @@ class StudioStateManager {
         return record;
     }
 
+    take({ source = null, reason = null } = {}) {
+        if (
+            !this.previewSceneId ||
+            !this.scenes.has(this.previewSceneId) ||
+            this.previewSceneId === this.programSceneId
+        ) {
+            return null;
+        }
+
+        const record = Object.freeze({
+            previousSceneId: this.programSceneId,
+            currentSceneId: this.previewSceneId,
+            source,
+            reason,
+            timestamp: new Date().toISOString()
+        });
+
+        this.programSceneId = this.previewSceneId;
+
+        EventBus.emit(Events.STUDIO_PROGRAM_CHANGED, record);
+
+        return record;
+    }
+
     createCanonicalScene(scene) {
         if (!scene || typeof scene !== "object") {
             return null;
