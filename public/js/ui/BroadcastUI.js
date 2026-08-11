@@ -84,7 +84,7 @@ export default class BroadcastUI {
 
         this.liveBadge.classList.remove(...classes);
         this.liveBadge.classList.add(`broadcast-${state.toLowerCase()}`);
-        this.broadcastStateLabel.textContent=state;
+        this.broadcastStateLabel.textContent=`BROADCAST · ${state}`;
 
         this.broadcastControls.forEach((control) => {
             const isActive = control.dataset.broadcastState === state;
