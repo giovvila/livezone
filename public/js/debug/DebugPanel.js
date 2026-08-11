@@ -205,7 +205,7 @@ export default class DebugPanel {
                 health.videoWidth,
                 health.videoHeight
             ),
-            stream: this.formatBoolean(health.isLive, "LIVE", "VOD"),
+            stream: this.formatStreamType(health.streamDiagnostics?.type),
             ready: this.formatMediaState(
                 health.readyState,
                 DebugPanel.READY_STATES
@@ -252,6 +252,12 @@ export default class DebugPanel {
         return typeof volume === "number" && Number.isFinite(volume)
             ? `${Math.round(volume * 100)}%`
             : "--";
+    }
+
+    formatStreamType(type) {
+        return ["LIVE", "VOD", "EVENT", "UNKNOWN"].includes(type)
+            ? type
+            : "UNKNOWN";
     }
 
     formatMediaState(value, states) {

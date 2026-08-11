@@ -16,6 +16,8 @@ export default class HLSAdapter {
         this.retryDelay=5000;
         this.retryTimer=null;
         this.destroyed=false;
+        this.usesNativeHls=false;
+        this.streamDiagnostics={type:"UNKNOWN",source:"NONE"};
     }
 
     async connect(video,url){
@@ -23,6 +25,8 @@ export default class HLSAdapter {
         this.video=video;
         this.url=url;
         this.destroyed=false;
+        this.usesNativeHls=false;
+        this.resetStreamDiagnostics();
         this.clearRetry();
 
         this.state=PlayerState.CONNECTING;
@@ -31,6 +35,8 @@ export default class HLSAdapter {
         if(!window.Hls || !Hls.isSupported()){
 
             if(video.canPlayType("application/vnd.apple.mpegurl")){
+                this.usesNativeHls=true;
+                this.resetStreamDiagnostics("NATIVE_UNKNOWN");
                 video.src=url;
                 try{ await video.play(); }catch(e){}
 
@@ -66,6 +72,14 @@ export default class HLSAdapter {
     this.state = PlayerState.CONNECTED;
 
 });
+
+        this.hls.on(Hls.Events.LEVEL_LOADED, (event,data) => {
+            this.updateStreamDiagnostics(data?.details);
+        });
+
+        this.hls.on(Hls.Events.LEVEL_UPDATED, (event,data) => {
+            this.updateStreamDiagnostics(data?.details);
+        });
 
         this.hls.on(Hls.Events.ERROR,(event,data)=>{
 
@@ -132,6 +146,8 @@ export default class HLSAdapter {
     destroy(){
 
         this.destroyed=true;
+        this.usesNativeHls=false;
+        this.resetStreamDiagnostics();
         this.clearRetry();
 
         if(this.hls){
@@ -149,6 +165,34 @@ export default class HLSAdapter {
 
     getState(){
         return this.state;
+    }
+
+    getStreamDiagnostics(){
+        if(this.usesNativeHls && this.video?.duration===Infinity){
+            return {type:"LIVE",source:"MEDIA_DURATION"};
+        }
+
+        return {...this.streamDiagnostics};
+    }
+
+    resetStreamDiagnostics(source="NONE"){
+        this.streamDiagnostics={type:"UNKNOWN",source};
+    }
+
+    updateStreamDiagnostics(details){
+        let type="UNKNOWN";
+
+        if(details?.type==="EVENT"){
+            type="EVENT";
+        }
+        else if(details?.type==="VOD" && details.live===false){
+            type="VOD";
+        }
+        else if(details?.live===true){
+            type="LIVE";
+        }
+
+        this.streamDiagnostics={type,source:"HLS_LEVEL_DETAILS"};
     }
 
 

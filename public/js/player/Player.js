@@ -88,7 +88,16 @@ export default class Player {
 
     getHealth() {
 
-        return this.monitor.getStatus();
+        const health = this.monitor.getStatus();
+
+        if (!health) {
+            return health;
+        }
+
+        return {
+            ...health,
+            streamDiagnostics: this.adapter.getStreamDiagnostics()
+        };
 
     }
 
