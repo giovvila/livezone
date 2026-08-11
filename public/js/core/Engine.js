@@ -21,6 +21,7 @@ import OverlayController from "../ui/OverlayController.js";
 import EventBus from "./EventBus.js";
 import Events from "./Events.js";
 import BroadcastStateManager from "./BroadcastStateManager.js";
+import StudioStateManager from "./StudioStateManager.js";
 
 export default class Engine {
 
@@ -45,6 +46,7 @@ export default class Engine {
 
             LifecycleManager.init();
             BroadcastStateManager.initialize();
+            StudioStateManager.initialize();
             EventBus.emit(Events.ENGINE_START);
 
             // -------------------------------------------------

@@ -19,6 +19,11 @@ const Events = Object.freeze({
     // Editorial broadcast state
     BROADCAST_STATE_CHANGED: "broadcast:state-changed",
 
+    // Studio scene state
+    STUDIO_SCENE_REGISTERED: "studio:scene-registered",
+    STUDIO_SCENE_UNREGISTERED: "studio:scene-unregistered",
+    STUDIO_PREVIEW_CHANGED: "studio:preview-changed",
+
     // UI
     UI_READY: "ui:ready"
 
