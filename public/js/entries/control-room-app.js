@@ -7,6 +7,7 @@ import StudioUI from "../ui/StudioUI.js";
 import OverlayController from "../ui/OverlayController.js";
 import NotificationCenter from "../ui/NotificationCenter.js";
 import DebugPanel from "../debug/DebugPanel.js";
+import StudioBootstrap from "../studio/StudioBootstrap.js";
 
 const adaptivePlayer = new AdaptivePlayer(
     document.querySelector(".player-wrapper"),
@@ -19,13 +20,22 @@ BroadcastStateManager.initialize();
 StudioStateManager.initialize();
 
 const runtime = new PlaybackRuntime();
+const studioBootstrap = new StudioBootstrap({
+    studioStateManager: StudioStateManager
+});
 let broadcastUI = null;
 let studioUI = null;
 
 runtime.start({
-    beforePlayerStart(config) {
+    async beforePlayerStart(config) {
         broadcastUI = new BroadcastUI();
         broadcastUI.start(config);
+
+        const bootstrapReport = await studioBootstrap.initialize();
+
+        if (bootstrapReport.status !== "ready") {
+            console.warn("[StudioBootstrap]", bootstrapReport);
+        }
 
         studioUI = new StudioUI(document.getElementById("studio-panel"));
         studioUI.start();

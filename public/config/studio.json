@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "scenes": [
+    {
+      "id": "main-live",
+      "name": "MAIN LIVE",
+      "type": "LIVE",
+      "renderer": {
+        "kind": "hls",
+        "source": {
+          "configRef": "stream.primary"
+        }
+      }
+    },
+    {
+      "id": "break",
+      "name": "BREAK",
+      "type": "SLATE",
+      "renderer": {
+        "kind": "slate",
+        "title": "LIVEZONE",
+        "message": "We’ll be right back",
+        "logo": "../assets/logo/logo-lz.svg"
+      }
+    }
+  ]
+}
