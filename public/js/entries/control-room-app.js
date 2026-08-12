@@ -19,11 +19,12 @@ BroadcastStateManager.initialize();
 StudioStateManager.initialize();
 
 const runtime = new PlaybackRuntime();
+let broadcastUI = null;
 let studioUI = null;
 
 runtime.start({
     beforePlayerStart(config) {
-        const broadcastUI = new BroadcastUI();
+        broadcastUI = new BroadcastUI();
         broadcastUI.start(config);
 
         studioUI = new StudioUI(document.getElementById("studio-panel"));
