@@ -16,6 +16,7 @@
 <link rel="stylesheet" href="css/components.css">
 <link rel="stylesheet" href="css/overlay.css">
 <link rel="stylesheet" href="css/notification.css">
+<link rel="stylesheet" href="css/public-viewer.css">
 </head><body>
     <div id='app'>
         <header class="header">
@@ -50,6 +51,13 @@ background:#ff0000;
 
 </header>
 <main class='main'><div class='player-wrapper'><video id='video' autoplay muted controls playsinline></video>
+    <button
+        id="viewer-fullscreen-toggle"
+        class="viewer-fullscreen-toggle"
+        type="button"
+        aria-label="Enter fullscreen"
+        aria-pressed="false"
+        title="Enter fullscreen">FULLSCREEN</button>
     <div class="video-overlay">
 
     <div class="lz-brand">
@@ -101,6 +109,7 @@ background:#ff0000;
     <div id='status'>● CONNECTING...</div>
 <div>HLS</div>
 <div>FULL HD</div>
+<a class="public-control-link" href="./control/" aria-label="Open LIVEZONE Control Room">CONTROL</a>
 </section>
 <section class='ticker'>
     <div class='ticker-text'>► Benvenuti su LIVEZONE • Broadcast Engine •</div>
