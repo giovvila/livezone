@@ -9,6 +9,7 @@ import NotificationCenter from "../ui/NotificationCenter.js";
 import DebugPanel from "../debug/DebugPanel.js";
 import StudioBootstrap from "../studio/StudioBootstrap.js";
 import StudioRenderer from "../studio/StudioRenderer.js";
+import StudioSourceManager from "../studio/StudioSourceManager.js";
 
 const adaptivePlayer = new AdaptivePlayer(
     document.querySelector(".player-wrapper"),
@@ -22,7 +23,8 @@ StudioStateManager.initialize();
 
 const runtime = new PlaybackRuntime();
 const studioBootstrap = new StudioBootstrap({
-    studioStateManager: StudioStateManager
+    studioStateManager: StudioStateManager,
+    studioSourceManager: StudioSourceManager
 });
 let broadcastUI = null;
 let studioUI = null;
@@ -32,6 +34,8 @@ runtime.start({
     async beforePlayerStart(config) {
         broadcastUI = new BroadcastUI();
         broadcastUI.start(config);
+
+        StudioSourceManager.initialize(config);
 
         const bootstrapReport = await studioBootstrap.initialize();
 
@@ -47,7 +51,7 @@ runtime.start({
             programRoot: document.getElementById("studio-program-renderer"),
             studioStateManager: StudioStateManager,
             definitionRegistry: studioBootstrap,
-            technicalConfig: config
+            studioSourceManager: StudioSourceManager
         });
         studioRenderer.start();
 

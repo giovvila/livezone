@@ -2,6 +2,7 @@ export default class StudioBootstrap {
 
     constructor({
         studioStateManager,
+        studioSourceManager,
         configUrl = new URL("../../config/studio.json", import.meta.url)
     } = {}) {
         if (!studioStateManager ||
@@ -11,7 +12,15 @@ export default class StudioBootstrap {
             );
         }
 
+        if (!studioSourceManager ||
+            typeof studioSourceManager.registerSource !== "function") {
+            throw new TypeError(
+                "StudioBootstrap requires a StudioSourceManager dependency."
+            );
+        }
+
         this.studioStateManager = studioStateManager;
+        this.studioSourceManager = studioSourceManager;
         this.configUrl = configUrl;
         this.definitions = new Map();
         this.initializationPromise = null;
@@ -60,6 +69,12 @@ export default class StudioBootstrap {
             ]);
         }
 
+        if (!("sources" in document) || !Array.isArray(document.sources)) {
+            return this.finish("unavailable", 0, 0, [
+                this.createIssue("invalid-sources")
+            ], 0, 0);
+        }
+
         if (!("scenes" in document)) {
             return this.finish("empty", 0, 0, [
                 this.createIssue("missing-scenes")
@@ -77,12 +92,41 @@ export default class StudioBootstrap {
         }
 
         const issues = [];
+        const acceptedSourceIds = new Set();
         const acceptedIds = new Set();
         const definitionBaseUrl = response.url || String(this.configUrl);
+        let registeredSourceCount = 0;
         let registeredCount = 0;
 
+        document.sources.forEach((candidate, index) => {
+            const source = this.createSourceDefinition(candidate);
+
+            if (!source) {
+                issues.push(this.createIssue("invalid-source", index, candidate?.id));
+                return;
+            }
+
+            if (acceptedSourceIds.has(source.id) ||
+                this.studioSourceManager.getSource(source.id)) {
+                issues.push(this.createIssue("duplicate-source-id", index, source.id));
+                return;
+            }
+
+            if (!this.studioSourceManager.registerSource(source)) {
+                issues.push(this.createIssue("source-registration-rejected", index, source.id));
+                return;
+            }
+
+            acceptedSourceIds.add(source.id);
+            registeredSourceCount += 1;
+        });
+
         document.scenes.forEach((candidate, index) => {
-            const result = this.createDefinition(candidate, definitionBaseUrl);
+            const result = this.createDefinition(
+                candidate,
+                definitionBaseUrl,
+                acceptedSourceIds
+            );
 
             if (!result.definition) {
                 issues.push(this.createIssue(result.reason, index, result.id));
@@ -117,14 +161,22 @@ export default class StudioBootstrap {
             registeredCount += 1;
         });
 
+        const skippedSourceCount = document.sources.length - registeredSourceCount;
         const skippedCount = document.scenes.length - registeredCount;
         const status = registeredCount === 0
             ? "degraded"
-            : skippedCount > 0
+            : skippedCount > 0 || skippedSourceCount > 0
                 ? "degraded"
                 : "ready";
 
-        return this.finish(status, registeredCount, skippedCount, issues);
+        return this.finish(
+            status,
+            registeredCount,
+            skippedCount,
+            issues,
+            registeredSourceCount,
+            skippedSourceCount
+        );
     }
 
     getDefinition(sceneId) {
@@ -140,7 +192,7 @@ export default class StudioBootstrap {
         return this.report;
     }
 
-    createDefinition(candidate, baseUrl) {
+    createDefinition(candidate, baseUrl, acceptedSourceIds) {
         if (!candidate || typeof candidate !== "object" ||
             Array.isArray(candidate)) {
             return { definition: null, reason: "invalid-scene", id: null };
@@ -154,7 +206,11 @@ export default class StudioBootstrap {
             return { definition: null, reason: "invalid-metadata", id };
         }
 
-        const renderer = this.createRenderer(candidate.renderer, baseUrl);
+        const renderer = this.createRenderer(
+            candidate.renderer,
+            baseUrl,
+            acceptedSourceIds
+        );
 
         if (!renderer) {
             return { definition: null, reason: "invalid-renderer", id };
@@ -167,19 +223,19 @@ export default class StudioBootstrap {
         };
     }
 
-    createRenderer(renderer, baseUrl) {
+    createRenderer(renderer, baseUrl, acceptedSourceIds) {
         if (!renderer || typeof renderer !== "object" ||
             Array.isArray(renderer)) {
             return null;
         }
 
-        if (renderer.kind === "hls") {
-            const configRef = this.normalizeString(renderer.source?.configRef);
+        if (renderer.kind === "source") {
+            const sourceId = this.normalizeString(renderer.sourceId);
 
-            return configRef
+            return sourceId && acceptedSourceIds.has(sourceId)
                 ? Object.freeze({
-                    kind: "hls",
-                    source: Object.freeze({ configRef })
+                    kind: "source",
+                    sourceId
                 })
                 : null;
         }
@@ -213,11 +269,37 @@ export default class StudioBootstrap {
         return null;
     }
 
-    finish(status, registeredCount, skippedCount, issues) {
+    createSourceDefinition(candidate) {
+        if (!candidate || typeof candidate !== "object" ||
+            Array.isArray(candidate)) {
+            return null;
+        }
+
+        const id = this.normalizeString(candidate.id);
+        const kind = this.normalizeString(candidate.kind);
+        const configRef = this.normalizeString(candidate.configRef);
+
+        if (!id || kind !== "hls" || !configRef) {
+            return null;
+        }
+
+        return Object.freeze({ id, kind, configRef });
+    }
+
+    finish(
+        status,
+        registeredCount,
+        skippedCount,
+        issues,
+        registeredSourceCount = 0,
+        skippedSourceCount = 0
+    ) {
         this.report = Object.freeze({
             status,
             registeredCount,
             skippedCount,
+            registeredSourceCount,
+            skippedSourceCount,
             issues: Object.freeze(issues.map((issue) => Object.freeze(issue)))
         });
 

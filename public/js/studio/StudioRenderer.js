@@ -1,6 +1,5 @@
 import EventBus from "../core/EventBus.js";
 import Events from "../core/Events.js";
-import StudioHlsSurface from "./renderers/StudioHlsSurface.js";
 import StudioSlateSurface from "./renderers/StudioSlateSurface.js";
 
 export default class StudioRenderer {
@@ -10,14 +9,22 @@ export default class StudioRenderer {
         programRoot,
         studioStateManager,
         definitionRegistry,
-        technicalConfig
+        studioSourceManager
     }) {
         this.studioStateManager = studioStateManager;
         this.definitionRegistry = definitionRegistry;
-        this.technicalConfig = technicalConfig;
+        this.studioSourceManager = studioSourceManager;
         this.started = false;
-        this.preview = this.createSlot(previewRoot, "No Preview selected");
-        this.program = this.createSlot(programRoot, "No Program selected");
+        this.preview = this.createSlot(
+            previewRoot,
+            "No Preview selected",
+            "preview"
+        );
+        this.program = this.createSlot(
+            programRoot,
+            "No Program selected",
+            "program"
+        );
         this.renderPreviewFromState = this.renderPreviewFromState.bind(this);
         this.renderProgramFromState = this.renderProgramFromState.bind(this);
     }
@@ -67,7 +74,7 @@ export default class StudioRenderer {
     async renderSlot(slot, sceneId) {
         const generation = ++slot.generation;
 
-        slot.renderer?.destroy();
+        this.releaseRenderer(slot.renderer);
         slot.renderer = null;
         slot.root.replaceChildren();
 
@@ -88,7 +95,7 @@ export default class StudioRenderer {
         slot.root.replaceChildren(content);
 
         try {
-            const renderer = this.createRenderer(definition, content, slot, generation);
+            const renderer = this.createRenderer(definition, slot);
 
             if (!renderer) {
                 this.showState(slot.root, "Renderer unsupported", "error");
@@ -99,7 +106,7 @@ export default class StudioRenderer {
             await renderer.start(content);
 
             if (slot.generation !== generation) {
-                renderer.destroy();
+                this.releaseRenderer(renderer);
             }
         }
         catch (error) {
@@ -107,7 +114,7 @@ export default class StudioRenderer {
                 return;
             }
 
-            slot.renderer?.destroy();
+            this.releaseRenderer(slot.renderer);
             slot.renderer = null;
             this.showState(
                 slot.root,
@@ -119,57 +126,24 @@ export default class StudioRenderer {
         }
     }
 
-    createRenderer(definition, content, slot, generation) {
+    createRenderer(definition, slot) {
         if (definition.renderer.kind === "slate") {
             return new StudioSlateSurface(definition);
         }
 
-        if (definition.renderer.kind === "hls") {
-            const sourceUrl = this.resolveConfigRef(
-                definition.renderer.source.configRef
+        if (definition.renderer.kind === "source") {
+            return this.studioSourceManager.createInstance(
+                definition.renderer.sourceId,
+                { consumer: slot.consumer }
             );
-
-            if (!sourceUrl) {
-                throw new Error("Live source unavailable");
-            }
-
-            return new StudioHlsSurface({
-                sourceUrl,
-                onError: () => {
-                    if (slot.generation === generation) {
-                        content.classList.add("studio-render-content--error");
-                    }
-                }
-            });
         }
 
         return null;
     }
 
-    resolveConfigRef(reference) {
-        if (typeof reference !== "string" || !reference.trim()) {
-            return null;
-        }
-
-        let value = this.technicalConfig;
-
-        for (const key of reference.split(".")) {
-            if (!key || !value || typeof value !== "object" ||
-                !Object.prototype.hasOwnProperty.call(value, key)) {
-                return null;
-            }
-
-            value = value[key];
-        }
-
-        return typeof value === "string" && value.trim()
-            ? value.trim()
-            : null;
-    }
-
     clearSlot(slot) {
         slot.generation += 1;
-        slot.renderer?.destroy();
+        this.releaseRenderer(slot.renderer);
         slot.renderer = null;
         slot.root?.replaceChildren();
     }
@@ -181,10 +155,21 @@ export default class StudioRenderer {
         root.replaceChildren(state);
     }
 
-    createSlot(root, emptyMessage) {
+    releaseRenderer(renderer) {
+        if (!renderer) {
+            return;
+        }
+
+        if (!this.studioSourceManager.destroyInstance(renderer)) {
+            renderer.destroy();
+        }
+    }
+
+    createSlot(root, emptyMessage, consumer) {
         return {
             root,
             emptyMessage,
+            consumer,
             generation: 0,
             renderer: null
         };
