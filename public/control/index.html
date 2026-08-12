@@ -18,6 +18,7 @@
 <link rel="stylesheet" href="../css/overlay.css">
 <link rel="stylesheet" href="../css/notification.css">
 <link rel="stylesheet" href="../css/studio.css">
+<link rel="stylesheet" href="../css/studio-renderer.css">
 </head><body>
     <div id='app'>
         <header class="header">
@@ -79,6 +80,7 @@
 
                 <section class="studio-state studio-state--preview" aria-labelledby="studio-preview-title">
                     <h3 id="studio-preview-title">PREVIEW</h3>
+                    <div id="studio-preview-renderer" class="studio-render-surface" aria-label="Studio Preview monitor"></div>
                     <p id="studio-preview-scene" class="studio-state__scene">—</p>
                 </section>
 
@@ -86,6 +88,7 @@
 
                 <section class="studio-state studio-state--program" aria-labelledby="studio-program-title">
                     <h3 id="studio-program-title">PROGRAM</h3>
+                    <div id="studio-program-renderer" class="studio-render-surface" aria-label="Studio Program monitor"></div>
                     <p id="studio-program-scene" class="studio-state__scene">—</p>
                     <p class="studio-state__note">Control-plane scene state; rendering output is not connected yet.</p>
                 </section>
