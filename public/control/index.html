@@ -50,7 +50,10 @@
                 <section class="control-room-monitor control-room-program" aria-labelledby="control-room-program-title">
                     <header class="control-room-monitor__header">
                         <h2 id="control-room-program-title">PROGRAM</h2>
-                        <span>Studio composition</span>
+                        <div class="control-room-program__tools">
+                            <span>Studio composition</span>
+                            <button id="program-fullscreen-toggle" class="program-fullscreen-toggle" type="button" aria-label="Enter Program fullscreen" aria-pressed="false" title="Enter Program fullscreen">FULLSCREEN</button>
+                        </div>
                     </header>
                     <div id="studio-program-renderer" class="studio-render-surface studio-render-surface--program" aria-label="Studio Program monitor"></div>
                 </section>

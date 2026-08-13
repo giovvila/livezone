@@ -5,6 +5,7 @@ import StudioStateManager from "../core/StudioStateManager.js";
 import BroadcastUI from "../ui/BroadcastUI.js";
 import StudioUI from "../ui/StudioUI.js";
 import StudioGraphicsUI from "../ui/StudioGraphicsUI.js";
+import ProgramFullscreenUI from "../ui/ProgramFullscreenUI.js";
 import OverlayController from "../ui/OverlayController.js";
 import NotificationCenter from "../ui/NotificationCenter.js";
 import DebugPanel from "../debug/DebugPanel.js";
@@ -35,6 +36,7 @@ let studioUI = null;
 let studioGraphicsUI = null;
 let studioRenderer = null;
 let studioTransitionCoordinator = null;
+let programFullscreenUI = null;
 
 runtime.start({
     async beforePlayerStart(config) {
@@ -77,6 +79,12 @@ runtime.start({
             StudioGraphicsManager
         );
         studioGraphicsUI.start();
+
+        programFullscreenUI = new ProgramFullscreenUI({
+            target: document.querySelector(".control-room-program"),
+            button: document.getElementById("program-fullscreen-toggle")
+        });
+        programFullscreenUI.start();
 
         new OverlayController();
         new NotificationCenter();
