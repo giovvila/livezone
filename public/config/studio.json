@@ -19,6 +19,12 @@
       "asset": "../assets/logo/logo-lz.svg",
       "position": "top-right",
       "defaultVisible": true
+    },
+    {
+      "id": "lower-third-basic",
+      "kind": "lower-third",
+      "position": "bottom-left",
+      "defaultVisible": false
     }
   ],
   "scenes": [

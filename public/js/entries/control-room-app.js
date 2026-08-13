@@ -4,6 +4,7 @@ import BroadcastStateManager from "../core/BroadcastStateManager.js";
 import StudioStateManager from "../core/StudioStateManager.js";
 import BroadcastUI from "../ui/BroadcastUI.js";
 import StudioUI from "../ui/StudioUI.js";
+import StudioGraphicsUI from "../ui/StudioGraphicsUI.js";
 import OverlayController from "../ui/OverlayController.js";
 import NotificationCenter from "../ui/NotificationCenter.js";
 import DebugPanel from "../debug/DebugPanel.js";
@@ -30,6 +31,7 @@ const studioBootstrap = new StudioBootstrap({
 });
 let broadcastUI = null;
 let studioUI = null;
+let studioGraphicsUI = null;
 let studioRenderer = null;
 
 runtime.start({
@@ -48,6 +50,12 @@ runtime.start({
 
         studioUI = new StudioUI(document.getElementById("studio-panel"));
         studioUI.start();
+
+        studioGraphicsUI = new StudioGraphicsUI(
+            document.getElementById("studio-panel"),
+            StudioGraphicsManager
+        );
+        studioGraphicsUI.start();
 
         studioRenderer = new StudioRenderer({
             previewRoot: document.getElementById("studio-preview-renderer"),

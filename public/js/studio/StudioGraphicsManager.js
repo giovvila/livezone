@@ -62,36 +62,89 @@ class StudioGraphicsManager {
     }
 
     show(graphicId, { consumer, payload = null } = {}) {
-        const id = this.normalizeString(graphicId);
-
-        if (!this.isConsumer(consumer) || !id || !this.graphics.has(id) ||
-            this.visible[consumer].includes(id)) {
-            return null;
-        }
-
-        this.visible[consumer].push(id);
-        this.payloads[consumer].set(id, this.createPayloadSnapshot(payload));
-        this.notify(consumer);
-        return this.getVisibleGraphics(consumer);
+        return this.setGraphicState(graphicId, {
+            consumer,
+            visible: true,
+            payload
+        });
     }
 
     hide(graphicId, { consumer } = {}) {
+        return this.setGraphicState(graphicId, {
+            consumer,
+            visible: false,
+            payload: null
+        });
+    }
+
+    setGraphicState(
+        graphicId,
+        { consumer, visible, payload = null } = {}
+    ) {
         const id = this.normalizeString(graphicId);
 
-        if (!this.isConsumer(consumer) || !id) {
+        if (!this.isConsumer(consumer) || !id ||
+            typeof visible !== "boolean") {
+            return null;
+        }
+
+        const graphic = this.graphics.get(id);
+
+        if (!graphic) {
             return null;
         }
 
         const index = this.visible[consumer].indexOf(id);
+        const isVisible = index !== -1;
 
-        if (index === -1) {
+        if (!visible) {
+            if (!isVisible) {
+                return null;
+            }
+
+            this.visible[consumer].splice(index, 1);
+            this.payloads[consumer].delete(id);
+            this.notify(consumer);
+            return this.getVisibleGraphics(consumer);
+        }
+
+        const canonicalPayload = this.createCanonicalPayload(graphic, payload);
+
+        if (canonicalPayload === undefined) {
             return null;
         }
 
-        this.visible[consumer].splice(index, 1);
-        this.payloads[consumer].delete(id);
+        if (isVisible && this.valuesEqual(
+            this.payloads[consumer].get(id) || null,
+            canonicalPayload
+        )) {
+            return null;
+        }
+
+        if (!isVisible) {
+            this.visible[consumer].push(id);
+        }
+
+        this.payloads[consumer].set(id, canonicalPayload);
         this.notify(consumer);
         return this.getVisibleGraphics(consumer);
+    }
+
+    copyGraphicState(graphicId, { from, to } = {}) {
+        const id = this.normalizeString(graphicId);
+
+        if (!id || !this.graphics.has(id) || !this.isConsumer(from) ||
+            !this.isConsumer(to) || from === to) {
+            return null;
+        }
+
+        const visible = this.visible[from].includes(id);
+
+        return this.setGraphicState(id, {
+            consumer: to,
+            visible,
+            payload: visible ? this.payloads[from].get(id) || null : null
+        });
     }
 
     subscribe(consumer, listener) {
@@ -130,44 +183,113 @@ class StudioGraphicsManager {
 
         const id = this.normalizeString(definition.id);
         const kind = this.normalizeString(definition.kind);
-        const asset = this.normalizeString(definition.asset);
         const position = this.normalizeString(definition.position);
 
-        if (!id || kind !== "image" || !asset || position !== "top-right" ||
-            typeof definition.defaultVisible !== "boolean") {
+        if (!id || typeof definition.defaultVisible !== "boolean") {
             return null;
         }
 
-        try {
+        if (kind === "image" && position === "top-right") {
+            const asset = this.normalizeString(definition.asset);
+
+            if (!asset) {
+                return null;
+            }
+
+            try {
+                return Object.freeze({
+                    id,
+                    kind,
+                    asset: new URL(asset).href,
+                    position,
+                    defaultVisible: definition.defaultVisible
+                });
+            }
+            catch {
+                return null;
+            }
+        }
+
+        if (kind === "lower-third" && position === "bottom-left") {
             return Object.freeze({
                 id,
                 kind,
-                asset: new URL(asset).href,
                 position,
                 defaultVisible: definition.defaultVisible
             });
         }
-        catch {
-            return null;
-        }
+
+        return null;
     }
 
     createGraphicSnapshot(graphic) {
-        return Object.freeze({
+        const snapshot = {
             id: graphic.id,
             kind: graphic.kind,
-            asset: graphic.asset,
             position: graphic.position,
             defaultVisible: graphic.defaultVisible
-        });
+        };
+
+        if (graphic.kind === "image") {
+            snapshot.asset = graphic.asset;
+        }
+
+        return Object.freeze(snapshot);
     }
 
-    createPayloadSnapshot(payload) {
-        if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    createCanonicalPayload(graphic, payload) {
+        if (graphic.kind === "lower-third") {
+            return this.createLowerThirdPayload(payload);
+        }
+
+        if (payload === null || payload === undefined) {
+            return null;
+        }
+
+        if (typeof payload !== "object" || Array.isArray(payload)) {
             return null;
         }
 
         return this.cloneAndFreeze(payload);
+    }
+
+    createLowerThirdPayload(payload) {
+        if (!payload || typeof payload !== "object" ||
+            Array.isArray(payload) || typeof payload.title !== "string" ||
+            (payload.subtitle !== undefined &&
+                typeof payload.subtitle !== "string")) {
+            return undefined;
+        }
+
+        const title = payload.title.trim();
+        const subtitle = (payload.subtitle || "").trim();
+
+        if (!title || Array.from(title).length > 80 ||
+            Array.from(subtitle).length > 120) {
+            return undefined;
+        }
+
+        return Object.freeze({ title, subtitle });
+    }
+
+    valuesEqual(left, right) {
+        if (left === right) {
+            return true;
+        }
+
+        if (!left || !right || typeof left !== "object" ||
+            typeof right !== "object" || Array.isArray(left) !== Array.isArray(right)) {
+            return false;
+        }
+
+        const leftKeys = Object.keys(left);
+        const rightKeys = Object.keys(right);
+
+        return leftKeys.length === rightKeys.length &&
+            leftKeys.every((key) =>
+                Object.prototype.hasOwnProperty.call(right, key) &&
+                this.valuesEqual(left[key], right[key])
+            );
     }
 
     cloneAndFreeze(value) {

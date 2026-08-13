@@ -65,6 +65,46 @@
     max-height: 28%;
 }
 
+.studio-graphic--bottom-left {
+    bottom: clamp(7px, 7%, 18px);
+    left: clamp(7px, 5%, 16px);
+}
+
+.studio-lower-third {
+    width: min(72%, 260px);
+    overflow: hidden;
+    border-left: clamp(3px, 1.2vw, 6px) solid var(--lz-primary);
+    border-radius: 3px 7px 7px 3px;
+    padding: clamp(5px, 2.5%, 10px) clamp(7px, 3.5%, 14px);
+    background: linear-gradient(
+        100deg,
+        rgba(8, 8, 10, .94),
+        rgba(18, 18, 22, .82)
+    );
+    box-shadow: 0 3px 12px rgba(0, 0, 0, .4);
+    color: var(--lz-text);
+}
+
+.studio-lower-third__title,
+.studio-lower-third__subtitle {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.studio-lower-third__title {
+    font-size: clamp(8px, 3.2vw, 15px);
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.studio-lower-third__subtitle {
+    margin-top: clamp(1px, .8%, 4px);
+    color: var(--lz-text-soft);
+    font-size: clamp(6px, 2.3vw, 11px);
+    line-height: 1.2;
+}
+
 .studio-render-video {
     display: block;
     object-fit: contain;

@@ -376,26 +376,49 @@ export default class StudioBootstrap {
 
         const id = this.normalizeString(candidate.id);
         const kind = this.normalizeString(candidate.kind);
-        const asset = this.normalizeString(candidate.asset);
         const position = this.normalizeString(candidate.position);
 
-        if (!id || kind !== "image" || !asset || position !== "top-right" ||
-            typeof candidate.defaultVisible !== "boolean") {
+        if (!id || typeof candidate.defaultVisible !== "boolean") {
             return null;
         }
 
-        try {
+        if (kind === "image" && position === "top-right") {
+            const asset = this.normalizeString(candidate.asset);
+
+            if (!asset) {
+                return null;
+            }
+
+            try {
+                return Object.freeze({
+                    id,
+                    kind,
+                    asset: new URL(asset, baseUrl).href,
+                    position,
+                    defaultVisible: candidate.defaultVisible
+                });
+            }
+            catch {
+                return null;
+            }
+        }
+
+        if (kind === "lower-third" && position === "bottom-left") {
+            if (["asset", "payload", "title", "subtitle"].some((key) =>
+                Object.prototype.hasOwnProperty.call(candidate, key)
+            )) {
+                return null;
+            }
+
             return Object.freeze({
                 id,
                 kind,
-                asset: new URL(asset, baseUrl).href,
                 position,
                 defaultVisible: candidate.defaultVisible
             });
         }
-        catch {
-            return null;
-        }
+
+        return null;
     }
 
     finish(

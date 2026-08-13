@@ -78,6 +78,31 @@
                     <p id="studio-empty-state" class="studio-empty-state">No scenes configured</p>
                 </section>
 
+                <fieldset class="studio-graphics-controls">
+                    <legend>LOWER THIRD</legend>
+
+                    <div class="studio-graphics-controls__fields">
+                        <label for="studio-lower-third-title">Title</label>
+                        <input id="studio-lower-third-title" type="text" maxlength="80" autocomplete="off">
+
+                        <label for="studio-lower-third-subtitle">Subtitle</label>
+                        <input id="studio-lower-third-subtitle" type="text" maxlength="120" autocomplete="off">
+                    </div>
+
+                    <div class="studio-graphics-controls__actions">
+                        <button id="studio-lower-third-apply-preview" type="button">APPLY TO PREVIEW</button>
+                        <button id="studio-lower-third-hide-preview" type="button">HIDE PREVIEW</button>
+                        <button id="studio-lower-third-take" class="studio-graphics-controls__take" type="button">TAKE GRAPHIC</button>
+                        <button id="studio-lower-third-hide-program" type="button">HIDE PROGRAM</button>
+                    </div>
+
+                    <div class="studio-graphics-controls__status" aria-live="polite">
+                        <span>Preview Graphic: <strong id="studio-lower-third-preview-status">Hidden</strong></span>
+                        <span>Program Graphic: <strong id="studio-lower-third-program-status">Hidden</strong></span>
+                    </div>
+                    <p id="studio-lower-third-feedback" class="studio-graphics-controls__feedback"></p>
+                </fieldset>
+
                 <section class="studio-state studio-state--preview" aria-labelledby="studio-preview-title">
                     <h3 id="studio-preview-title">PREVIEW</h3>
                     <div id="studio-preview-renderer" class="studio-render-surface" aria-label="Studio Preview monitor"></div>

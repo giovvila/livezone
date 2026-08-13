@@ -1,3 +1,5 @@
+import StudioLowerThirdGraphic from "./StudioLowerThirdGraphic.js";
+
 export default class StudioGraphicsLayer {
 
     constructor({ root, consumer, graphicsManager }) {
@@ -35,26 +37,33 @@ export default class StudioGraphicsLayer {
     render() {
         const elements = this.graphicsManager
             .getVisibleGraphics(this.consumer)
-            .map(({ graphic }) => this.createGraphicElement(graphic))
+            .map(({ graphic, payload }) =>
+                this.createGraphicElement(graphic, payload)
+            )
             .filter(Boolean);
 
         this.root.replaceChildren(...elements);
     }
 
-    createGraphicElement(graphic) {
-        if (graphic.kind !== "image") {
-            return null;
+    createGraphicElement(graphic, payload) {
+        if (graphic.kind === "lower-third") {
+            return StudioLowerThirdGraphic.create(graphic, payload);
         }
 
-        const image = document.createElement("img");
-        image.className = [
-            "studio-graphic",
-            "studio-graphic--image",
-            `studio-graphic--${graphic.position}`
-        ].join(" ");
-        image.src = graphic.asset;
-        image.alt = "";
-        image.dataset.studioGraphicId = graphic.id;
-        return image;
+        if (graphic.kind === "image") {
+            const image = document.createElement("img");
+
+            image.className = [
+                "studio-graphic",
+                "studio-graphic--image",
+                `studio-graphic--${graphic.position}`
+            ].join(" ");
+            image.src = graphic.asset;
+            image.alt = "";
+            image.dataset.studioGraphicId = graphic.id;
+            return image;
+        }
+
+        return null;
     }
 }
