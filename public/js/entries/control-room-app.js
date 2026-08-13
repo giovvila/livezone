@@ -12,6 +12,7 @@ import StudioBootstrap from "../studio/StudioBootstrap.js";
 import StudioRenderer from "../studio/StudioRenderer.js";
 import StudioSourceManager from "../studio/StudioSourceManager.js";
 import StudioGraphicsManager from "../studio/StudioGraphicsManager.js";
+import StudioTransitionCoordinator from "../studio/StudioTransitionCoordinator.js";
 
 const adaptivePlayer = new AdaptivePlayer(
     document.querySelector(".player-wrapper"),
@@ -33,6 +34,7 @@ let broadcastUI = null;
 let studioUI = null;
 let studioGraphicsUI = null;
 let studioRenderer = null;
+let studioTransitionCoordinator = null;
 
 runtime.start({
     async beforePlayerStart(config) {
@@ -48,15 +50,6 @@ runtime.start({
             console.warn("[StudioBootstrap]", bootstrapReport);
         }
 
-        studioUI = new StudioUI(document.getElementById("studio-panel"));
-        studioUI.start();
-
-        studioGraphicsUI = new StudioGraphicsUI(
-            document.getElementById("studio-panel"),
-            StudioGraphicsManager
-        );
-        studioGraphicsUI.start();
-
         studioRenderer = new StudioRenderer({
             previewRoot: document.getElementById("studio-preview-renderer"),
             programRoot: document.getElementById("studio-program-renderer"),
@@ -66,6 +59,24 @@ runtime.start({
             studioGraphicsManager: StudioGraphicsManager
         });
         studioRenderer.start();
+
+        studioTransitionCoordinator = new StudioTransitionCoordinator({
+            studioStateManager: StudioStateManager,
+            studioRenderer
+        });
+        studioTransitionCoordinator.start();
+
+        studioUI = new StudioUI(
+            document.getElementById("studio-panel"),
+            studioTransitionCoordinator
+        );
+        studioUI.start();
+
+        studioGraphicsUI = new StudioGraphicsUI(
+            document.getElementById("studio-panel"),
+            StudioGraphicsManager
+        );
+        studioGraphicsUI.start();
 
         new OverlayController();
         new NotificationCenter();

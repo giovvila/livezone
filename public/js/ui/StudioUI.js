@@ -4,8 +4,9 @@ import StudioStateManager from "../core/StudioStateManager.js";
 
 export default class StudioUI {
 
-    constructor(root) {
+    constructor(root, transitionCoordinator) {
         this.root = root;
+        this.transitionCoordinator = transitionCoordinator;
         this.started = false;
 
         this.handleToggleClick = this.handleToggleClick.bind(this);
@@ -36,7 +37,8 @@ export default class StudioUI {
         if (
             !this.main || !this.toggle || !this.closeButton ||
             !this.sceneList || !this.emptyState || !this.previewScene ||
-            !this.programScene || !this.takeButton
+            !this.programScene || !this.takeButton ||
+            !this.transitionCoordinator
         ) {
             return;
         }
@@ -56,6 +58,9 @@ export default class StudioUI {
         this.studioEvents.forEach((event) => {
             EventBus.on(event, this.renderFromState);
         });
+        this.unsubscribeTransition = this.transitionCoordinator.subscribe(
+            this.renderFromState
+        );
 
         this.setOpen(false);
         this.renderFromState();
@@ -75,10 +80,12 @@ export default class StudioUI {
         this.studioEvents.forEach((event) => {
             EventBus.off(event, this.renderFromState);
         });
+        this.unsubscribeTransition?.();
 
         this.setOpen(false);
         this.started = false;
         this.studioEvents = null;
+        this.unsubscribeTransition = null;
         this.main = null;
         this.toggle = null;
         this.closeButton = null;
@@ -115,7 +122,7 @@ export default class StudioUI {
     }
 
     handleTakeClick() {
-        StudioStateManager.take({
+        this.transitionCoordinator.cut({
             source: "operator",
             reason: "manual-take"
         });
@@ -149,7 +156,9 @@ export default class StudioUI {
         this.renderSceneSummary(this.previewScene, preview);
         this.renderSceneSummary(this.programScene, program);
 
-        this.takeButton.disabled = !preview || previewSceneId === programSceneId;
+        this.takeButton.disabled = !preview ||
+            previewSceneId === programSceneId ||
+            this.transitionCoordinator.isBusy();
     }
 
     createSceneButton(scene, previewSceneId, programSceneId) {
