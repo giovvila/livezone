@@ -1,4 +1,5 @@
 import StudioHlsSurface from "./renderers/StudioHlsSurface.js";
+import StudioMediaSurface from "./renderers/StudioMediaSurface.js";
 
 class StudioSourceManager {
 
@@ -8,6 +9,10 @@ class StudioSourceManager {
         this.technicalConfig = null;
         this.initialized = false;
         this.nextInstanceId = 1;
+        this.sourceFactories = new Map([
+            ["hls", (options) => new StudioHlsSurface(options)],
+            ["media", (options) => new StudioMediaSurface(options)]
+        ]);
     }
 
     initialize(technicalConfig) {
@@ -57,14 +62,22 @@ class StudioSourceManager {
             return null;
         }
 
-        const sourceUrl = this.resolveConfigRef(definition.configRef);
+        const sourceUrl = definition.kind === "hls"
+            ? this.resolveConfigRef(definition.configRef)
+            : definition.url;
 
         if (!sourceUrl) {
             throw new Error("Studio source unavailable");
         }
 
         const instanceId = `studio-source-${this.nextInstanceId++}`;
-        const instance = new StudioHlsSurface({
+        const factory = this.sourceFactories.get(definition.kind);
+
+        if (!factory) {
+            return null;
+        }
+
+        const instance = factory({
             sourceId: definition.id,
             sourceUrl,
             instanceId,
@@ -133,21 +146,52 @@ class StudioSourceManager {
 
         const id = this.normalizeString(definition.id);
         const kind = this.normalizeString(definition.kind);
-        const configRef = this.normalizeString(definition.configRef);
 
-        if (!id || kind !== "hls" || !configRef) {
+        if (!id || !kind) {
             return null;
         }
 
-        return Object.freeze({ id, kind, configRef });
+        if (kind === "hls") {
+            const configRef = this.normalizeString(definition.configRef);
+            return configRef ? Object.freeze({ id, kind, configRef }) : null;
+        }
+
+        if (kind === "media") {
+            const url = this.normalizeString(definition.url);
+
+            if (!url) {
+                return null;
+            }
+
+            try {
+                return Object.freeze({
+                    id,
+                    kind,
+                    url: new URL(url).href
+                });
+            }
+            catch {
+                return null;
+            }
+        }
+
+        return null;
     }
 
     createSourceSnapshot(source) {
-        return Object.freeze({
-            id: source.id,
-            kind: source.kind,
-            configRef: source.configRef
-        });
+        return Object.freeze(
+            source.kind === "hls"
+                ? {
+                    id: source.id,
+                    kind: source.kind,
+                    configRef: source.configRef
+                }
+                : {
+                    id: source.id,
+                    kind: source.kind,
+                    url: source.url
+                }
+        );
     }
 
     normalizeString(value) {

@@ -99,7 +99,10 @@ export default class StudioBootstrap {
         let registeredCount = 0;
 
         document.sources.forEach((candidate, index) => {
-            const source = this.createSourceDefinition(candidate);
+            const source = this.createSourceDefinition(
+                candidate,
+                definitionBaseUrl
+            );
 
             if (!source) {
                 issues.push(this.createIssue("invalid-source", index, candidate?.id));
@@ -269,7 +272,7 @@ export default class StudioBootstrap {
         return null;
     }
 
-    createSourceDefinition(candidate) {
+    createSourceDefinition(candidate, baseUrl) {
         if (!candidate || typeof candidate !== "object" ||
             Array.isArray(candidate)) {
             return null;
@@ -277,13 +280,39 @@ export default class StudioBootstrap {
 
         const id = this.normalizeString(candidate.id);
         const kind = this.normalizeString(candidate.kind);
-        const configRef = this.normalizeString(candidate.configRef);
 
-        if (!id || kind !== "hls" || !configRef) {
+        if (!id || !kind) {
             return null;
         }
 
-        return Object.freeze({ id, kind, configRef });
+        if (kind === "hls") {
+            const configRef = this.normalizeString(candidate.configRef);
+
+            return configRef
+                ? Object.freeze({ id, kind, configRef })
+                : null;
+        }
+
+        if (kind === "media") {
+            const url = this.normalizeString(candidate.url);
+
+            if (!url) {
+                return null;
+            }
+
+            try {
+                return Object.freeze({
+                    id,
+                    kind,
+                    url: new URL(url, baseUrl).href
+                });
+            }
+            catch {
+                return null;
+            }
+        }
+
+        return null;
     }
 
     finish(

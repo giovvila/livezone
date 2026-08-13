@@ -5,6 +5,11 @@
       "id": "primary-live",
       "kind": "hls",
       "configRef": "stream.primary"
+    },
+    {
+      "id": "media-demo",
+      "kind": "media",
+      "url": "../media/demo.mp4"
     }
   ],
   "scenes": [
@@ -15,6 +20,15 @@
       "renderer": {
         "kind": "source",
         "sourceId": "primary-live"
+      }
+    },
+    {
+      "id": "media-demo-scene",
+      "name": "MEDIA",
+      "type": "MEDIA",
+      "renderer": {
+        "kind": "source",
+        "sourceId": "media-demo"
       }
     },
     {
