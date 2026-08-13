@@ -3,6 +3,7 @@ export default class StudioBootstrap {
     constructor({
         studioStateManager,
         studioSourceManager,
+        studioGraphicsManager,
         configUrl = new URL("../../config/studio.json", import.meta.url)
     } = {}) {
         if (!studioStateManager ||
@@ -19,8 +20,16 @@ export default class StudioBootstrap {
             );
         }
 
+        if (!studioGraphicsManager ||
+            typeof studioGraphicsManager.registerGraphic !== "function") {
+            throw new TypeError(
+                "StudioBootstrap requires a StudioGraphicsManager dependency."
+            );
+        }
+
         this.studioStateManager = studioStateManager;
         this.studioSourceManager = studioSourceManager;
+        this.studioGraphicsManager = studioGraphicsManager;
         this.configUrl = configUrl;
         this.definitions = new Map();
         this.initializationPromise = null;
@@ -75,6 +84,14 @@ export default class StudioBootstrap {
             ], 0, 0);
         }
 
+        if ("graphics" in document && !Array.isArray(document.graphics)) {
+            return this.finish("unavailable", 0, 0, [
+                this.createIssue("invalid-graphics")
+            ], 0, 0, 0, 0);
+        }
+
+        const graphics = document.graphics || [];
+
         if (!("scenes" in document)) {
             return this.finish("empty", 0, 0, [
                 this.createIssue("missing-scenes")
@@ -93,9 +110,11 @@ export default class StudioBootstrap {
 
         const issues = [];
         const acceptedSourceIds = new Set();
+        const acceptedGraphicIds = new Set();
         const acceptedIds = new Set();
         const definitionBaseUrl = response.url || String(this.configUrl);
         let registeredSourceCount = 0;
+        let registeredGraphicCount = 0;
         let registeredCount = 0;
 
         document.sources.forEach((candidate, index) => {
@@ -122,6 +141,36 @@ export default class StudioBootstrap {
 
             acceptedSourceIds.add(source.id);
             registeredSourceCount += 1;
+        });
+
+        graphics.forEach((candidate, index) => {
+            const graphic = this.createGraphicDefinition(
+                candidate,
+                definitionBaseUrl
+            );
+
+            if (!graphic) {
+                issues.push(this.createIssue("invalid-graphic", index, candidate?.id));
+                return;
+            }
+
+            if (acceptedGraphicIds.has(graphic.id) ||
+                this.studioGraphicsManager.getGraphic(graphic.id)) {
+                issues.push(this.createIssue("duplicate-graphic-id", index, graphic.id));
+                return;
+            }
+
+            if (!this.studioGraphicsManager.registerGraphic(graphic)) {
+                issues.push(this.createIssue(
+                    "graphic-registration-rejected",
+                    index,
+                    graphic.id
+                ));
+                return;
+            }
+
+            acceptedGraphicIds.add(graphic.id);
+            registeredGraphicCount += 1;
         });
 
         document.scenes.forEach((candidate, index) => {
@@ -165,10 +214,12 @@ export default class StudioBootstrap {
         });
 
         const skippedSourceCount = document.sources.length - registeredSourceCount;
+        const skippedGraphicCount = graphics.length - registeredGraphicCount;
         const skippedCount = document.scenes.length - registeredCount;
         const status = registeredCount === 0
             ? "degraded"
-            : skippedCount > 0 || skippedSourceCount > 0
+            : skippedCount > 0 || skippedSourceCount > 0 ||
+                skippedGraphicCount > 0
                 ? "degraded"
                 : "ready";
 
@@ -178,7 +229,9 @@ export default class StudioBootstrap {
             skippedCount,
             issues,
             registeredSourceCount,
-            skippedSourceCount
+            skippedSourceCount,
+            registeredGraphicCount,
+            skippedGraphicCount
         );
     }
 
@@ -315,13 +368,45 @@ export default class StudioBootstrap {
         return null;
     }
 
+    createGraphicDefinition(candidate, baseUrl) {
+        if (!candidate || typeof candidate !== "object" ||
+            Array.isArray(candidate)) {
+            return null;
+        }
+
+        const id = this.normalizeString(candidate.id);
+        const kind = this.normalizeString(candidate.kind);
+        const asset = this.normalizeString(candidate.asset);
+        const position = this.normalizeString(candidate.position);
+
+        if (!id || kind !== "image" || !asset || position !== "top-right" ||
+            typeof candidate.defaultVisible !== "boolean") {
+            return null;
+        }
+
+        try {
+            return Object.freeze({
+                id,
+                kind,
+                asset: new URL(asset, baseUrl).href,
+                position,
+                defaultVisible: candidate.defaultVisible
+            });
+        }
+        catch {
+            return null;
+        }
+    }
+
     finish(
         status,
         registeredCount,
         skippedCount,
         issues,
         registeredSourceCount = 0,
-        skippedSourceCount = 0
+        skippedSourceCount = 0,
+        registeredGraphicCount = 0,
+        skippedGraphicCount = 0
     ) {
         this.report = Object.freeze({
             status,
@@ -329,6 +414,8 @@ export default class StudioBootstrap {
             skippedCount,
             registeredSourceCount,
             skippedSourceCount,
+            registeredGraphicCount,
+            skippedGraphicCount,
             issues: Object.freeze(issues.map((issue) => Object.freeze(issue)))
         });
 

@@ -10,6 +10,7 @@ import DebugPanel from "../debug/DebugPanel.js";
 import StudioBootstrap from "../studio/StudioBootstrap.js";
 import StudioRenderer from "../studio/StudioRenderer.js";
 import StudioSourceManager from "../studio/StudioSourceManager.js";
+import StudioGraphicsManager from "../studio/StudioGraphicsManager.js";
 
 const adaptivePlayer = new AdaptivePlayer(
     document.querySelector(".player-wrapper"),
@@ -24,7 +25,8 @@ StudioStateManager.initialize();
 const runtime = new PlaybackRuntime();
 const studioBootstrap = new StudioBootstrap({
     studioStateManager: StudioStateManager,
-    studioSourceManager: StudioSourceManager
+    studioSourceManager: StudioSourceManager,
+    studioGraphicsManager: StudioGraphicsManager
 });
 let broadcastUI = null;
 let studioUI = null;
@@ -36,6 +38,7 @@ runtime.start({
         broadcastUI.start(config);
 
         StudioSourceManager.initialize(config);
+        StudioGraphicsManager.initialize();
 
         const bootstrapReport = await studioBootstrap.initialize();
 
@@ -51,7 +54,8 @@ runtime.start({
             programRoot: document.getElementById("studio-program-renderer"),
             studioStateManager: StudioStateManager,
             definitionRegistry: studioBootstrap,
-            studioSourceManager: StudioSourceManager
+            studioSourceManager: StudioSourceManager,
+            studioGraphicsManager: StudioGraphicsManager
         });
         studioRenderer.start();
 

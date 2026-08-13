@@ -12,6 +12,15 @@
       "url": "../media/demo.mp4"
     }
   ],
+  "graphics": [
+    {
+      "id": "channel-logo",
+      "kind": "image",
+      "asset": "../assets/logo/logo-lz.svg",
+      "position": "top-right",
+      "defaultVisible": true
+    }
+  ],
   "scenes": [
     {
       "id": "main-live",

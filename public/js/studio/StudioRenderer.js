@@ -1,6 +1,7 @@
 import EventBus from "../core/EventBus.js";
 import Events from "../core/Events.js";
 import StudioSlateSurface from "./renderers/StudioSlateSurface.js";
+import StudioGraphicsLayer from "./renderers/StudioGraphicsLayer.js";
 
 export default class StudioRenderer {
 
@@ -9,11 +10,13 @@ export default class StudioRenderer {
         programRoot,
         studioStateManager,
         definitionRegistry,
-        studioSourceManager
+        studioSourceManager,
+        studioGraphicsManager
     }) {
         this.studioStateManager = studioStateManager;
         this.definitionRegistry = definitionRegistry;
         this.studioSourceManager = studioSourceManager;
+        this.studioGraphicsManager = studioGraphicsManager;
         this.started = false;
         this.preview = this.createSlot(
             previewRoot,
@@ -40,6 +43,8 @@ export default class StudioRenderer {
 
         EventBus.on(Events.STUDIO_PREVIEW_CHANGED, this.renderPreviewFromState);
         EventBus.on(Events.STUDIO_PROGRAM_CHANGED, this.renderProgramFromState);
+        this.startGraphicsLayer(this.preview);
+        this.startGraphicsLayer(this.program);
         this.started = true;
         this.renderPreviewFromState();
         this.renderProgramFromState();
@@ -54,6 +59,12 @@ export default class StudioRenderer {
         EventBus.off(Events.STUDIO_PROGRAM_CHANGED, this.renderProgramFromState);
         this.clearSlot(this.preview);
         this.clearSlot(this.program);
+        this.preview.graphicsLayer?.destroy();
+        this.program.graphicsLayer?.destroy();
+        this.preview.graphicsLayer = null;
+        this.program.graphicsLayer = null;
+        this.preview.root.replaceChildren();
+        this.program.root.replaceChildren();
         this.started = false;
     }
 
@@ -76,29 +87,29 @@ export default class StudioRenderer {
 
         this.releaseRenderer(slot.renderer);
         slot.renderer = null;
-        slot.root.replaceChildren();
+        slot.baseRoot.replaceChildren();
 
         if (!sceneId) {
-            this.showState(slot.root, slot.emptyMessage, "empty");
+            this.showState(slot.baseRoot, slot.emptyMessage, "empty");
             return;
         }
 
         const definition = this.definitionRegistry.getDefinition(sceneId);
 
         if (!definition) {
-            this.showState(slot.root, "Scene definition unavailable", "error");
+            this.showState(slot.baseRoot, "Scene definition unavailable", "error");
             return;
         }
 
         const content = document.createElement("div");
         content.className = "studio-render-content";
-        slot.root.replaceChildren(content);
+        slot.baseRoot.replaceChildren(content);
 
         try {
             const renderer = this.createRenderer(definition, slot);
 
             if (!renderer) {
-                this.showState(slot.root, "Renderer unsupported", "error");
+                this.showState(slot.baseRoot, "Renderer unsupported", "error");
                 return;
             }
 
@@ -117,7 +128,7 @@ export default class StudioRenderer {
             this.releaseRenderer(slot.renderer);
             slot.renderer = null;
             this.showState(
-                slot.root,
+                slot.baseRoot,
                 error?.message === "Renderer unsupported"
                     ? "Renderer unsupported"
                     : "Live source unavailable",
@@ -145,7 +156,7 @@ export default class StudioRenderer {
         slot.generation += 1;
         this.releaseRenderer(slot.renderer);
         slot.renderer = null;
-        slot.root?.replaceChildren();
+        slot.baseRoot?.replaceChildren();
     }
 
     showState(root, message, variant) {
@@ -171,7 +182,30 @@ export default class StudioRenderer {
             emptyMessage,
             consumer,
             generation: 0,
-            renderer: null
+            renderer: null,
+            baseRoot: null,
+            graphicsRoot: null,
+            graphicsLayer: null
         };
+    }
+
+    startGraphicsLayer(slot) {
+        const composition = document.createElement("div");
+        const baseRoot = document.createElement("div");
+        const graphicsRoot = document.createElement("div");
+
+        composition.className = "studio-composition";
+        baseRoot.className = "studio-composition__base";
+        graphicsRoot.className = "studio-composition__graphics";
+        composition.append(baseRoot, graphicsRoot);
+        slot.root.replaceChildren(composition);
+        slot.baseRoot = baseRoot;
+        slot.graphicsRoot = graphicsRoot;
+        slot.graphicsLayer = new StudioGraphicsLayer({
+            root: graphicsRoot,
+            consumer: slot.consumer,
+            graphicsManager: this.studioGraphicsManager
+        });
+        slot.graphicsLayer.start();
     }
 }
