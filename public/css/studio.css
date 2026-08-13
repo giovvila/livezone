@@ -6,6 +6,97 @@
 
 .main {
     position: relative;
+    align-items: stretch;
+    justify-content: stretch;
+    overflow: hidden;
+}
+
+.control-room-workspace {
+    display: grid;
+    grid-template-rows: minmax(0, 2fr) minmax(120px, 1fr);
+    gap: 12px;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+}
+
+.control-room-monitor {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 7px;
+    min-width: 0;
+    min-height: 0;
+    border: 1px solid var(--lz-border);
+    border-radius: 11px;
+    padding: 9px;
+    background: rgba(8, 8, 9, .7);
+}
+
+.control-room-program {
+    border-color: rgba(229, 9, 20, .58);
+}
+
+.control-room-preview {
+    border-color: rgba(35, 185, 90, .48);
+}
+
+.control-room-monitor__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-width: 0;
+}
+
+.control-room-monitor__header h2 {
+    margin: 0;
+    color: var(--lz-text);
+    font-size: 11px;
+    letter-spacing: .12em;
+}
+
+.control-room-program .control-room-monitor__header h2 {
+    color: var(--studio-program);
+}
+
+.control-room-preview .control-room-monitor__header h2 {
+    color: var(--studio-preview);
+}
+
+.control-room-monitor__header span {
+    overflow: hidden;
+    color: var(--lz-text-muted);
+    font-size: 9px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.control-room-secondary {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    min-width: 0;
+    min-height: 0;
+}
+
+.control-room-technical__viewport {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.control-room-technical .player-wrapper {
+    flex: 0 0 auto;
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: 7px;
 }
 
 .operator-utilities {
@@ -344,6 +435,28 @@
     .studio-take,
     .studio-graphics-controls {
         flex: 0 0 auto;
+    }
+
+    .control-room-workspace {
+        grid-template-rows: none;
+        grid-auto-rows: auto;
+        gap: 10px;
+        padding-bottom: 2px;
+    }
+
+    .control-room-secondary {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+
+    .control-room-monitor {
+        grid-template-rows: auto auto;
+        padding: 8px;
+    }
+
+    .control-room-technical__viewport {
+        aspect-ratio: 16 / 9;
+        height: auto;
     }
 }
 

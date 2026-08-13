@@ -23,6 +23,20 @@
     color: var(--lz-text-muted);
 }
 
+.control-room-workspace .studio-render-surface {
+    margin-top: 0;
+}
+
+.studio-render-surface--program,
+.studio-render-surface--secondary {
+    align-self: center;
+    justify-self: center;
+    width: auto;
+    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
+}
+
 .studio-render-content,
 .studio-render-video,
 .studio-render-slate {
@@ -171,5 +185,12 @@
 
     .studio-render-surface {
         min-height: 92px;
+    }
+
+    .studio-render-surface--program,
+    .studio-render-surface--secondary {
+        width: 100%;
+        height: auto;
+        min-height: 0;
     }
 }

@@ -46,23 +46,51 @@
         </header>
 
         <main class='main'>
-            <div class='player-wrapper'>
-                <video id='video' autoplay muted controls playsinline></video>
-                <div class="video-overlay">
-                    <div class="lz-brand">
-                        <img class="lz-watermark" src="../assets/logo/logo-lz.svg" alt="LIVEZONE">
-                        <div class="lz-channel">LIVEZONE</div>
-                    </div>
-                </div>
+            <div class="control-room-workspace">
+                <section class="control-room-monitor control-room-program" aria-labelledby="control-room-program-title">
+                    <header class="control-room-monitor__header">
+                        <h2 id="control-room-program-title">PROGRAM</h2>
+                        <span>Studio composition</span>
+                    </header>
+                    <div id="studio-program-renderer" class="studio-render-surface studio-render-surface--program" aria-label="Studio Program monitor"></div>
+                </section>
 
-                <div id="overlay" class="overlay">
-                    <div class="overlay__panel">
-                        <div class="overlay__logo">LZ</div>
-                        <div id="overlay-message" class="overlay__title">Segnale assente</div>
-                        <div class="overlay__subtitle">Riconnessione automatica</div>
-                        <div id="overlay-countdown" class="overlay__countdown">00:05</div>
-                        <div class="overlay__footer">LIVEZONE Broadcast Engine</div>
-                    </div>
+                <div class="control-room-secondary">
+                    <section class="control-room-monitor control-room-preview" aria-labelledby="control-room-preview-title">
+                        <header class="control-room-monitor__header">
+                            <h2 id="control-room-preview-title">PREVIEW</h2>
+                            <span>Preparation</span>
+                        </header>
+                        <div id="studio-preview-renderer" class="studio-render-surface studio-render-surface--secondary" aria-label="Studio Preview monitor"></div>
+                    </section>
+
+                    <section class="control-room-monitor control-room-technical" aria-labelledby="control-room-technical-title">
+                        <header class="control-room-monitor__header">
+                            <h2 id="control-room-technical-title">TECHNICAL SOURCE</h2>
+                            <span>Raw primary stream</span>
+                        </header>
+                        <div class="control-room-technical__viewport">
+                            <div class='player-wrapper'>
+                                <video id='video' autoplay muted controls playsinline></video>
+                                <div class="video-overlay">
+                                    <div class="lz-brand">
+                                        <img class="lz-watermark" src="../assets/logo/logo-lz.svg" alt="LIVEZONE">
+                                        <div class="lz-channel">LIVEZONE</div>
+                                    </div>
+                                </div>
+
+                                <div id="overlay" class="overlay">
+                                    <div class="overlay__panel">
+                                        <div class="overlay__logo">LZ</div>
+                                        <div id="overlay-message" class="overlay__title">Segnale assente</div>
+                                        <div class="overlay__subtitle">Riconnessione automatica</div>
+                                        <div id="overlay-countdown" class="overlay__countdown">00:05</div>
+                                        <div class="overlay__footer">LIVEZONE Broadcast Engine</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
                 </div>
             </div>
 
@@ -105,7 +133,6 @@
 
                 <section class="studio-state studio-state--preview" aria-labelledby="studio-preview-title">
                     <h3 id="studio-preview-title">PREVIEW</h3>
-                    <div id="studio-preview-renderer" class="studio-render-surface" aria-label="Studio Preview monitor"></div>
                     <p id="studio-preview-scene" class="studio-state__scene">—</p>
                 </section>
 
@@ -113,7 +140,6 @@
 
                 <section class="studio-state studio-state--program" aria-labelledby="studio-program-title">
                     <h3 id="studio-program-title">PROGRAM</h3>
-                    <div id="studio-program-renderer" class="studio-render-surface" aria-label="Studio Program monitor"></div>
                     <p id="studio-program-scene" class="studio-state__scene">—</p>
                     <p class="studio-state__note">Control-plane scene state; rendering output is not connected yet.</p>
                 </section>
