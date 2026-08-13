@@ -69,33 +69,30 @@
 }
 
 .studio-graphic--image {
+    width: 5%;
+    height: auto;
+    max-height: 28%;
     object-fit: contain;
 }
 
 .studio-graphic--top-right {
-    top: clamp(6px, 4%, 14px);
-    right: clamp(6px, 4%, 14px);
-    width: clamp(28px, 16%, 64px);
-    max-height: 28%;
+    top: 1.5%;
+    right: 1.5%;
 }
 
 .studio-graphic--top-left {
-    top: clamp(6px, 4%, 14px);
-    left: clamp(6px, 4%, 14px);
-    width: clamp(28px, 16%, 64px);
-    max-height: 28%;
+    top: 1.5%;
+    left: 1.5%;
 }
 
 .studio-graphic--bottom-right {
-    right: clamp(6px, 4%, 14px);
-    bottom: clamp(7px, 7%, 18px);
-    width: clamp(28px, 16%, 64px);
-    max-height: 28%;
+    right: 1.5%;
+    bottom: 1.5%;
 }
 
 .studio-graphic--image.studio-graphic--bottom-left {
-    width: clamp(28px, 16%, 64px);
-    max-height: 28%;
+    bottom: 1.5%;
+    left: 1.5%;
 }
 
 .studio-graphic--bottom-left {
