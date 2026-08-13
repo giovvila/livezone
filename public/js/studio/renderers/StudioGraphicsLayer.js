@@ -52,13 +52,15 @@ export default class StudioGraphicsLayer {
 
         if (graphic.kind === "image") {
             const image = document.createElement("img");
+            const asset = payload?.asset || graphic.asset;
+            const position = payload?.position || graphic.position;
 
             image.className = [
                 "studio-graphic",
                 "studio-graphic--image",
-                `studio-graphic--${graphic.position}`
+                `studio-graphic--${position}`
             ].join(" ");
-            image.src = graphic.asset;
+            image.src = asset;
             image.alt = "";
             image.dataset.studioGraphicId = graphic.id;
             return image;

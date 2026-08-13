@@ -382,7 +382,7 @@ export default class StudioBootstrap {
             return null;
         }
 
-        if (kind === "image" && position === "top-right") {
+        if (kind === "image" && this.isImagePosition(position)) {
             const asset = this.normalizeString(candidate.asset);
 
             if (!asset) {
@@ -419,6 +419,15 @@ export default class StudioBootstrap {
         }
 
         return null;
+    }
+
+    isImagePosition(position) {
+        return [
+            "top-left",
+            "top-right",
+            "bottom-left",
+            "bottom-right"
+        ].includes(position);
     }
 
     finish(

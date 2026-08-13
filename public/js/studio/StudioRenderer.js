@@ -3,6 +3,8 @@ import Events from "../core/Events.js";
 import StudioSlateSurface from "./renderers/StudioSlateSurface.js";
 import StudioGraphicsLayer from "./renderers/StudioGraphicsLayer.js";
 
+const PROGRAM_READINESS_TIMEOUT_MS = 12000;
+
 export default class StudioRenderer {
 
     constructor({
@@ -127,6 +129,9 @@ export default class StudioRenderer {
 
         try {
             await renderer.start(root);
+            await renderer.waitUntilReady({
+                timeoutMs: PROGRAM_READINESS_TIMEOUT_MS
+            });
         }
         catch (error) {
             if (this.program.prepared === prepared) {

@@ -189,7 +189,7 @@ class StudioGraphicsManager {
             return null;
         }
 
-        if (kind === "image" && position === "top-right") {
+        if (kind === "image" && this.isImagePosition(position)) {
             const asset = this.normalizeString(definition.asset);
 
             if (!asset) {
@@ -242,15 +242,38 @@ class StudioGraphicsManager {
             return this.createLowerThirdPayload(payload);
         }
 
+        return this.createImagePayload(graphic, payload);
+    }
+
+    createImagePayload(graphic, payload) {
         if (payload === null || payload === undefined) {
             return null;
         }
 
-        if (typeof payload !== "object" || Array.isArray(payload)) {
-            return null;
+        if (!payload || typeof payload !== "object" ||
+            Array.isArray(payload)) {
+            return undefined;
         }
 
-        return this.cloneAndFreeze(payload);
+        const asset = this.normalizeString(payload.asset);
+        const position = this.normalizeString(payload.position);
+
+        if (!asset || !this.isImagePosition(position)) {
+            return undefined;
+        }
+
+        try {
+            const url = new URL(asset, graphic.asset);
+
+            if (url.protocol !== "http:" && url.protocol !== "https:") {
+                return undefined;
+            }
+
+            return Object.freeze({ asset: url.href, position });
+        }
+        catch {
+            return undefined;
+        }
     }
 
     createLowerThirdPayload(payload) {
@@ -320,6 +343,15 @@ class StudioGraphicsManager {
 
     isConsumer(consumer) {
         return consumer === "preview" || consumer === "program";
+    }
+
+    isImagePosition(position) {
+        return [
+            "top-left",
+            "top-right",
+            "bottom-left",
+            "bottom-right"
+        ].includes(position);
     }
 
     normalizeString(value) {

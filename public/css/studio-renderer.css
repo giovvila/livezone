@@ -79,6 +79,25 @@
     max-height: 28%;
 }
 
+.studio-graphic--top-left {
+    top: clamp(6px, 4%, 14px);
+    left: clamp(6px, 4%, 14px);
+    width: clamp(28px, 16%, 64px);
+    max-height: 28%;
+}
+
+.studio-graphic--bottom-right {
+    right: clamp(6px, 4%, 14px);
+    bottom: clamp(7px, 7%, 18px);
+    width: clamp(28px, 16%, 64px);
+    max-height: 28%;
+}
+
+.studio-graphic--image.studio-graphic--bottom-left {
+    width: clamp(28px, 16%, 64px);
+    max-height: 28%;
+}
+
 .studio-graphic--bottom-left {
     bottom: clamp(7px, 7%, 18px);
     left: clamp(7px, 5%, 16px);

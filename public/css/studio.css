@@ -395,7 +395,8 @@
     font-size: 11px;
 }
 
-.studio-graphics-controls input {
+.studio-graphics-controls input,
+.studio-graphics-controls select {
     min-width: 0;
     width: 100%;
     box-sizing: border-box;
@@ -408,7 +409,8 @@
     font-size: 12px;
 }
 
-.studio-graphics-controls input:focus-visible {
+.studio-graphics-controls input:focus-visible,
+.studio-graphics-controls select:focus-visible {
     border-color: var(--lz-primary);
     outline: 2px solid rgba(229, 9, 20, .2);
     outline-offset: 1px;

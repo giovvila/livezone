@@ -4,8 +4,10 @@ export default class StudioGraphicsUI {
         this.root = root;
         this.graphicsManager = graphicsManager;
         this.graphicId = graphicId;
+        this.logoGraphicId = "channel-logo";
         this.started = false;
         this.feedbackMessage = "";
+        this.logoFeedbackMessage = "";
 
         this.handleInput = this.handleInput.bind(this);
         this.handleApplyPreview = this.handleApplyPreview.bind(this);
@@ -13,6 +15,12 @@ export default class StudioGraphicsUI {
         this.handleTakeGraphic = this.handleTakeGraphic.bind(this);
         this.handleHideProgram = this.handleHideProgram.bind(this);
         this.renderFromState = this.renderFromState.bind(this);
+        this.handleLogoInput = this.handleLogoInput.bind(this);
+        this.handleLogoApplyPreview = this.handleLogoApplyPreview.bind(this);
+        this.handleLogoHidePreview = this.handleLogoHidePreview.bind(this);
+        this.handleLogoTake = this.handleLogoTake.bind(this);
+        this.handleLogoHideProgram = this.handleLogoHideProgram.bind(this);
+        this.handleLogoResetDefault = this.handleLogoResetDefault.bind(this);
     }
 
     start() {
@@ -45,12 +53,48 @@ export default class StudioGraphicsUI {
         this.feedback = this.root.querySelector(
             "#studio-lower-third-feedback"
         );
+        this.logoAssetInput = this.root.querySelector("#studio-logo-asset");
+        this.logoPositionInput = this.root.querySelector(
+            "#studio-logo-position"
+        );
+        this.logoApplyButton = this.root.querySelector(
+            "#studio-logo-apply-preview"
+        );
+        this.logoHidePreviewButton = this.root.querySelector(
+            "#studio-logo-hide-preview"
+        );
+        this.logoTakeButton = this.root.querySelector("#studio-logo-take");
+        this.logoHideProgramButton = this.root.querySelector(
+            "#studio-logo-hide-program"
+        );
+        this.logoResetButton = this.root.querySelector(
+            "#studio-logo-reset-default"
+        );
+        this.logoPreviewStatus = this.root.querySelector(
+            "#studio-logo-preview-status"
+        );
+        this.logoProgramStatus = this.root.querySelector(
+            "#studio-logo-program-status"
+        );
+        this.logoFeedback = this.root.querySelector("#studio-logo-feedback");
 
         if (!this.titleInput || !this.subtitleInput || !this.applyButton ||
             !this.hidePreviewButton || !this.takeButton ||
             !this.hideProgramButton || !this.previewStatus ||
-            !this.programStatus || !this.feedback) {
+            !this.programStatus || !this.feedback || !this.logoAssetInput ||
+            !this.logoPositionInput || !this.logoApplyButton ||
+            !this.logoHidePreviewButton || !this.logoTakeButton ||
+            !this.logoHideProgramButton || !this.logoResetButton ||
+            !this.logoPreviewStatus || !this.logoProgramStatus ||
+            !this.logoFeedback) {
             return;
+        }
+
+        const logo = this.graphicsManager.getGraphic(this.logoGraphicId);
+
+        if (logo) {
+            this.logoAssetInput.value = logo.asset;
+            this.logoPositionInput.value = logo.position;
         }
 
         this.titleInput.addEventListener("input", this.handleInput);
@@ -64,6 +108,25 @@ export default class StudioGraphicsUI {
         this.hideProgramButton.addEventListener(
             "click",
             this.handleHideProgram
+        );
+        this.logoAssetInput.addEventListener("input", this.handleLogoInput);
+        this.logoPositionInput.addEventListener("change", this.handleLogoInput);
+        this.logoApplyButton.addEventListener(
+            "click",
+            this.handleLogoApplyPreview
+        );
+        this.logoHidePreviewButton.addEventListener(
+            "click",
+            this.handleLogoHidePreview
+        );
+        this.logoTakeButton.addEventListener("click", this.handleLogoTake);
+        this.logoHideProgramButton.addEventListener(
+            "click",
+            this.handleLogoHideProgram
+        );
+        this.logoResetButton.addEventListener(
+            "click",
+            this.handleLogoResetDefault
         );
 
         this.unsubscribePreview = this.graphicsManager.subscribe(
@@ -94,6 +157,28 @@ export default class StudioGraphicsUI {
         this.hideProgramButton.removeEventListener(
             "click",
             this.handleHideProgram
+        );
+        this.logoAssetInput.removeEventListener("input", this.handleLogoInput);
+        this.logoPositionInput.removeEventListener(
+            "change",
+            this.handleLogoInput
+        );
+        this.logoApplyButton.removeEventListener(
+            "click",
+            this.handleLogoApplyPreview
+        );
+        this.logoHidePreviewButton.removeEventListener(
+            "click",
+            this.handleLogoHidePreview
+        );
+        this.logoTakeButton.removeEventListener("click", this.handleLogoTake);
+        this.logoHideProgramButton.removeEventListener(
+            "click",
+            this.handleLogoHideProgram
+        );
+        this.logoResetButton.removeEventListener(
+            "click",
+            this.handleLogoResetDefault
         );
         this.unsubscribePreview?.();
         this.unsubscribeProgram?.();
@@ -154,6 +239,66 @@ export default class StudioGraphicsUI {
         this.renderFromState();
     }
 
+    handleLogoInput() {
+        this.logoFeedbackMessage = this.getLogoDraftPayload()
+            ? ""
+            : "Enter a valid HTTP(S) logo URL or relative path.";
+        this.renderFromState();
+    }
+
+    handleLogoApplyPreview() {
+        const payload = this.getLogoDraftPayload();
+
+        if (!payload) {
+            this.logoFeedbackMessage =
+                "Enter a valid HTTP(S) logo URL or relative path.";
+            this.renderFromState();
+            return;
+        }
+
+        this.graphicsManager.setGraphicState(this.logoGraphicId, {
+            consumer: "preview",
+            visible: true,
+            payload
+        });
+        this.logoFeedbackMessage = "Preview logo applied.";
+        this.renderFromState();
+    }
+
+    handleLogoHidePreview() {
+        this.graphicsManager.hide(this.logoGraphicId, { consumer: "preview" });
+        this.logoFeedbackMessage = "Preview logo hidden.";
+        this.renderFromState();
+    }
+
+    handleLogoTake() {
+        this.graphicsManager.copyGraphicState(this.logoGraphicId, {
+            from: "preview",
+            to: "program"
+        });
+        this.logoFeedbackMessage = "Preview logo copied to Program.";
+        this.renderFromState();
+    }
+
+    handleLogoHideProgram() {
+        this.graphicsManager.hide(this.logoGraphicId, { consumer: "program" });
+        this.logoFeedbackMessage = "Program logo hidden.";
+        this.renderFromState();
+    }
+
+    handleLogoResetDefault() {
+        const logo = this.graphicsManager.getGraphic(this.logoGraphicId);
+
+        if (!logo) {
+            return;
+        }
+
+        this.logoAssetInput.value = logo.asset;
+        this.logoPositionInput.value = logo.position;
+        this.logoFeedbackMessage = "Default logo loaded into draft.";
+        this.renderFromState();
+    }
+
     renderFromState() {
         if (!this.started) {
             return;
@@ -175,6 +320,37 @@ export default class StudioGraphicsUI {
         this.feedback.textContent = available
             ? this.feedbackMessage
             : "Lower-third graphic unavailable.";
+
+        const logoAvailable = Boolean(
+            this.graphicsManager.getGraphic(this.logoGraphicId)
+        );
+        const logoPreview = this.getGraphicState(
+            "preview",
+            this.logoGraphicId
+        );
+        const logoProgram = this.getGraphicState(
+            "program",
+            this.logoGraphicId
+        );
+
+        this.logoApplyButton.disabled = !logoAvailable ||
+            !this.getLogoDraftPayload();
+        this.logoHidePreviewButton.disabled = !logoAvailable ||
+            !logoPreview.visible;
+        this.logoTakeButton.disabled = !logoAvailable ||
+            this.statesEqual(logoPreview, logoProgram);
+        this.logoHideProgramButton.disabled = !logoAvailable ||
+            !logoProgram.visible;
+        this.logoResetButton.disabled = !logoAvailable;
+        this.logoPreviewStatus.textContent = logoPreview.visible
+            ? "Visible"
+            : "Hidden";
+        this.logoProgramStatus.textContent = logoProgram.visible
+            ? "Visible"
+            : "Hidden";
+        this.logoFeedback.textContent = logoAvailable
+            ? this.logoFeedbackMessage
+            : "Channel logo unavailable.";
     }
 
     getDraftPayload() {
@@ -190,9 +366,13 @@ export default class StudioGraphicsUI {
     }
 
     getConsumerState(consumer) {
+        return this.getGraphicState(consumer, this.graphicId);
+    }
+
+    getGraphicState(consumer, graphicId) {
         const entry = this.graphicsManager
             .getVisibleGraphics(consumer)
-            .find(({ graphic }) => graphic.id === this.graphicId);
+            .find(({ graphic }) => graphic.id === graphicId);
 
         return entry
             ? { visible: true, payload: entry.payload }
@@ -208,7 +388,34 @@ export default class StudioGraphicsUI {
             return true;
         }
 
-        return left.payload?.title === right.payload?.title &&
-            left.payload?.subtitle === right.payload?.subtitle;
+        return JSON.stringify(left.payload) === JSON.stringify(right.payload);
+    }
+
+    getLogoDraftPayload() {
+        const graphic = this.graphicsManager.getGraphic(this.logoGraphicId);
+        const asset = this.logoAssetInput.value.trim();
+        const position = this.logoPositionInput.value;
+
+        if (!graphic || !asset || ![
+            "top-left",
+            "top-right",
+            "bottom-left",
+            "bottom-right"
+        ].includes(position)) {
+            return null;
+        }
+
+        try {
+            const url = new URL(asset, graphic.asset);
+
+            if (url.protocol !== "http:" && url.protocol !== "https:") {
+                return null;
+            }
+
+            return { asset, position };
+        }
+        catch {
+            return null;
+        }
     }
 }

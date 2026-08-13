@@ -25,6 +25,10 @@ export default class StudioSlateSurface {
         this.element = slate;
     }
 
+    waitUntilReady() {
+        return Promise.resolve();
+    }
+
     destroy() {
         this.element?.remove();
         this.element = null;

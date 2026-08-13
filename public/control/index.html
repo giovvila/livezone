@@ -134,6 +134,37 @@
                     <p id="studio-lower-third-feedback" class="studio-graphics-controls__feedback"></p>
                 </fieldset>
 
+                <fieldset class="studio-graphics-controls">
+                    <legend>CHANNEL LOGO</legend>
+
+                    <div class="studio-graphics-controls__fields">
+                        <label for="studio-logo-asset">URL / path</label>
+                        <input id="studio-logo-asset" type="text" autocomplete="off" spellcheck="false">
+
+                        <label for="studio-logo-position">Position</label>
+                        <select id="studio-logo-position">
+                            <option value="top-left">Top left</option>
+                            <option value="top-right">Top right</option>
+                            <option value="bottom-left">Bottom left</option>
+                            <option value="bottom-right">Bottom right</option>
+                        </select>
+                    </div>
+
+                    <div class="studio-graphics-controls__actions">
+                        <button id="studio-logo-apply-preview" type="button">APPLY PREVIEW</button>
+                        <button id="studio-logo-hide-preview" type="button">HIDE PREVIEW</button>
+                        <button id="studio-logo-take" class="studio-graphics-controls__take" type="button">TAKE LOGO</button>
+                        <button id="studio-logo-hide-program" type="button">HIDE PROGRAM</button>
+                        <button id="studio-logo-reset-default" type="button">RESET DEFAULT</button>
+                    </div>
+
+                    <div class="studio-graphics-controls__status" aria-live="polite">
+                        <span>Preview Logo: <strong id="studio-logo-preview-status">Visible</strong></span>
+                        <span>Program Logo: <strong id="studio-logo-program-status">Visible</strong></span>
+                    </div>
+                    <p id="studio-logo-feedback" class="studio-graphics-controls__feedback"></p>
+                </fieldset>
+
                 <section class="studio-state studio-state--preview" aria-labelledby="studio-preview-title">
                     <h3 id="studio-preview-title">PREVIEW</h3>
                     <p id="studio-preview-scene" class="studio-state__scene">—</p>

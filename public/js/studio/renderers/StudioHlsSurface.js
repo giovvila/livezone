@@ -11,7 +11,11 @@ export default class StudioHlsSurface {
         this.destroyed = false;
         this.healthListeners = new Set();
         this.health = this.createHealth("idle", null);
+        this.readinessState = "pending";
+        this.readinessError = null;
+        this.readinessWaiters = new Set();
         this.handleLoadedData = this.handleLoadedData.bind(this);
+        this.handleCanPlay = this.handleCanPlay.bind(this);
         this.handleWaiting = this.handleWaiting.bind(this);
         this.handleEnded = this.handleEnded.bind(this);
         this.handleNativeError = this.handleNativeError.bind(this);
@@ -29,6 +33,7 @@ export default class StudioHlsSurface {
         this.video.setAttribute("muted", "");
         this.video.setAttribute("playsinline", "");
         this.video.addEventListener("loadeddata", this.handleLoadedData);
+        this.video.addEventListener("canplay", this.handleCanPlay);
         this.video.addEventListener("waiting", this.handleWaiting);
         this.video.addEventListener("ended", this.handleEnded);
         this.video.addEventListener("error", this.handleNativeError);
@@ -64,6 +69,7 @@ export default class StudioHlsSurface {
             if (!this.destroyed && data?.fatal) {
                 this.showStatus("Live source unavailable", "error");
                 this.setHealth("error", this.classifyHlsError(data));
+                this.failReadiness("fatal-hls-error");
             }
         });
         this.hls.loadSource(this.sourceUrl);
@@ -84,6 +90,11 @@ export default class StudioHlsSurface {
         this.status?.remove();
         this.status = null;
         this.setHealth("ready", null);
+        this.markReadyIfFrameAvailable();
+    }
+
+    handleCanPlay() {
+        this.markReadyIfFrameAvailable();
     }
 
     handleWaiting() {
@@ -97,6 +108,64 @@ export default class StudioHlsSurface {
     handleNativeError() {
         this.showStatus("Live source unavailable", "error");
         this.setHealth("error", "media");
+        this.failReadiness("fatal-media-error");
+    }
+
+    waitUntilReady({ timeoutMs } = {}) {
+        if (this.readinessState === "ready") {
+            return Promise.resolve();
+        }
+
+        if (this.readinessState === "failed") {
+            return Promise.reject(this.readinessError);
+        }
+
+        return new Promise((resolve, reject) => {
+            const waiter = { resolve, reject, timer: null };
+
+            if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+                waiter.timer = setTimeout(() => {
+                    this.readinessWaiters.delete(waiter);
+                    reject(this.createReadinessError("readiness-timeout"));
+                }, timeoutMs);
+            }
+
+            this.readinessWaiters.add(waiter);
+            this.markReadyIfFrameAvailable();
+        });
+    }
+
+    markReadyIfFrameAvailable() {
+        if (!this.video || this.video.readyState < 2) {
+            return;
+        }
+
+        this.readinessState = "ready";
+        this.settleReadinessWaiters("resolve");
+    }
+
+    failReadiness(reason) {
+        if (this.readinessState !== "pending") {
+            return;
+        }
+
+        this.readinessState = "failed";
+        this.readinessError = this.createReadinessError(reason);
+        this.settleReadinessWaiters("reject", this.readinessError);
+    }
+
+    settleReadinessWaiters(action, value) {
+        this.readinessWaiters.forEach((waiter) => {
+            clearTimeout(waiter.timer);
+            waiter[action](value);
+        });
+        this.readinessWaiters.clear();
+    }
+
+    createReadinessError(reason) {
+        const error = new Error(`Studio surface not ready: ${reason}`);
+        error.code = reason;
+        return error;
     }
 
     showStatus(message, variant) {
@@ -115,11 +184,13 @@ export default class StudioHlsSurface {
         }
 
         this.destroyed = true;
+        this.failReadiness("destroyed-before-ready");
         this.hls?.destroy();
         this.hls = null;
 
         if (this.video) {
             this.video.removeEventListener("loadeddata", this.handleLoadedData);
+            this.video.removeEventListener("canplay", this.handleCanPlay);
             this.video.removeEventListener("waiting", this.handleWaiting);
             this.video.removeEventListener("ended", this.handleEnded);
             this.video.removeEventListener("error", this.handleNativeError);
