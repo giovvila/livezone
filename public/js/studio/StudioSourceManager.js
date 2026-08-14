@@ -62,8 +62,8 @@ class StudioSourceManager {
             return null;
         }
 
-        const sourceUrl = definition.kind === "hls"
-            ? this.resolveConfigRef(definition.configRef)
+        const sourceUrl = definition.kind === "hls" && definition.configRef
+            ? definition.resolvedUrl
             : definition.url;
 
         if (!sourceUrl) {
@@ -152,8 +152,44 @@ class StudioSourceManager {
         }
 
         if (kind === "hls") {
+            const hasConfigRef = Object.prototype.hasOwnProperty.call(
+                definition,
+                "configRef"
+            );
+            const hasUrl = Object.prototype.hasOwnProperty.call(
+                definition,
+                "url"
+            );
             const configRef = this.normalizeString(definition.configRef);
-            return configRef ? Object.freeze({ id, kind, configRef }) : null;
+            const url = this.normalizeString(definition.url);
+
+            if (hasConfigRef === hasUrl) {
+                return null;
+            }
+
+            if (hasConfigRef) {
+                if (!configRef) {
+                    return null;
+                }
+
+                const resolvedUrl = this.createHttpUrl(
+                    this.resolveConfigRef(configRef)
+                );
+
+                return resolvedUrl
+                    ? Object.freeze({ id, kind, configRef, resolvedUrl })
+                    : null;
+            }
+
+            if (!url) {
+                return null;
+            }
+
+            const canonicalUrl = this.createHttpUrl(url);
+
+            return canonicalUrl
+                ? Object.freeze({ id, kind, url: canonicalUrl })
+                : null;
         }
 
         if (kind === "media") {
@@ -163,16 +199,11 @@ class StudioSourceManager {
                 return null;
             }
 
-            try {
-                return Object.freeze({
-                    id,
-                    kind,
-                    url: new URL(url).href
-                });
-            }
-            catch {
-                return null;
-            }
+            const canonicalUrl = this.createHttpUrl(url);
+
+            return canonicalUrl
+                ? Object.freeze({ id, kind, url: canonicalUrl })
+                : null;
         }
 
         return null;
@@ -180,7 +211,7 @@ class StudioSourceManager {
 
     createSourceSnapshot(source) {
         return Object.freeze(
-            source.kind === "hls"
+            source.kind === "hls" && source.configRef
                 ? {
                     id: source.id,
                     kind: source.kind,
@@ -192,6 +223,24 @@ class StudioSourceManager {
                     url: source.url
                 }
         );
+    }
+
+    createHttpUrl(value) {
+        const url = this.normalizeString(value);
+
+        if (!url) {
+            return null;
+        }
+
+        try {
+            const parsed = new URL(url);
+            return parsed.protocol === "http:" || parsed.protocol === "https:"
+                ? parsed.href
+                : null;
+        }
+        catch {
+            return null;
+        }
     }
 
     normalizeString(value) {

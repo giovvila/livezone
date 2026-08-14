@@ -339,10 +339,37 @@ export default class StudioBootstrap {
         }
 
         if (kind === "hls") {
+            const hasConfigRef = Object.prototype.hasOwnProperty.call(
+                candidate,
+                "configRef"
+            );
+            const hasUrl = Object.prototype.hasOwnProperty.call(
+                candidate,
+                "url"
+            );
             const configRef = this.normalizeString(candidate.configRef);
+            const url = this.normalizeString(candidate.url);
 
-            return configRef
-                ? Object.freeze({ id, kind, configRef })
+            if (hasConfigRef === hasUrl) {
+                return null;
+            }
+
+            if (hasConfigRef) {
+                if (!configRef) {
+                    return null;
+                }
+
+                return Object.freeze({ id, kind, configRef });
+            }
+
+            if (!url) {
+                return null;
+            }
+
+            const canonicalUrl = this.createHttpUrl(url, baseUrl);
+
+            return canonicalUrl
+                ? Object.freeze({ id, kind, url: canonicalUrl })
                 : null;
         }
 
@@ -353,19 +380,32 @@ export default class StudioBootstrap {
                 return null;
             }
 
-            try {
-                return Object.freeze({
-                    id,
-                    kind,
-                    url: new URL(url, baseUrl).href
-                });
-            }
-            catch {
-                return null;
-            }
+            const canonicalUrl = this.createHttpUrl(url, baseUrl);
+
+            return canonicalUrl
+                ? Object.freeze({ id, kind, url: canonicalUrl })
+                : null;
         }
 
         return null;
+    }
+
+    createHttpUrl(value, baseUrl) {
+        const url = this.normalizeString(value);
+
+        if (!url) {
+            return null;
+        }
+
+        try {
+            const parsed = new URL(url, baseUrl);
+            return parsed.protocol === "http:" || parsed.protocol === "https:"
+                ? parsed.href
+                : null;
+        }
+        catch {
+            return null;
+        }
     }
 
     createGraphicDefinition(candidate, baseUrl) {
