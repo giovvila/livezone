@@ -60,6 +60,7 @@ export default class StudioRenderer {
         EventBus.off(Events.STUDIO_PREVIEW_CHANGED, this.renderPreviewFromState);
         EventBus.off(Events.STUDIO_PROGRAM_CHANGED, this.renderProgramFromState);
         this.discardPreparedProgram();
+        this.cancelProgramTransition();
         this.clearSlot(this.preview);
         this.clearSlot(this.program);
         this.preview.graphicsLayer?.destroy();
@@ -81,19 +82,26 @@ export default class StudioRenderer {
     renderProgramFromState(record = null) {
         const sceneId = this.studioStateManager.getProgramSceneId();
 
-        if (this.program.prepared?.sceneId === sceneId) {
+        if (this.program.prepared?.sceneId === sceneId &&
+            this.program.prepared.ready) {
             this.activatePreparedProgram({
                 sceneId,
-                generation: this.program.prepared.generation
+                generation: this.program.prepared.generation,
+                type: this.program.prepared.type,
+                durationMs: this.program.prepared.durationMs
             });
             return;
         }
 
         this.discardPreparedProgram();
+        this.cancelProgramTransition();
         this.renderSlot(this.program, sceneId);
     }
 
-    async prepareProgramScene(sceneId, { generation } = {}) {
+    async prepareProgramScene(
+        sceneId,
+        { generation, type = "cut", durationMs = 0 } = {}
+    ) {
         if (!this.started || !sceneId || generation === undefined ||
             !this.program.baseRoot) {
             return null;
@@ -120,6 +128,9 @@ export default class StudioRenderer {
         const prepared = {
             sceneId,
             generation,
+            type,
+            durationMs,
+            ready: false,
             root,
             renderer
         };
@@ -149,10 +160,17 @@ export default class StudioRenderer {
             return null;
         }
 
+        prepared.ready = true;
+
         return Object.freeze({ sceneId, generation });
     }
 
-    activatePreparedProgram({ sceneId, generation } = {}) {
+    activatePreparedProgram({
+        sceneId,
+        generation,
+        type = "cut",
+        durationMs = 0
+    } = {}) {
         const prepared = this.program.prepared;
 
         if (!prepared || prepared.sceneId !== sceneId ||
@@ -160,15 +178,171 @@ export default class StudioRenderer {
             return false;
         }
 
-        const outgoing = this.program.renderer;
+        const outgoingRenderer = this.program.renderer;
+        const outgoingRoot = this.program.contentRoot ||
+            this.program.baseRoot.firstElementChild;
 
         this.program.generation += 1;
         this.program.prepared = null;
         this.program.renderer = prepared.renderer;
+        this.program.contentRoot = prepared.root;
         prepared.root.hidden = false;
-        this.program.baseRoot.replaceChildren(prepared.root);
-        this.releaseRenderer(outgoing);
+
+        if (type !== "dissolve" || !outgoingRoot || durationMs <= 0) {
+            this.program.baseRoot.replaceChildren(prepared.root);
+            this.releaseRenderer(outgoingRenderer);
+            this.program.activation = {
+                sceneId,
+                generation,
+                promise: Promise.resolve(true)
+            };
+            return true;
+        }
+
+        const transition = this.createProgramTransition({
+            sceneId,
+            generation,
+            durationMs,
+            outgoingRenderer,
+            outgoingRoot,
+            incomingRenderer: prepared.renderer,
+            incomingRoot: prepared.root
+        });
+
+        this.program.transition = transition;
+        this.program.activation = {
+            sceneId,
+            generation,
+            promise: transition.promise
+        };
+        this.startProgramDissolve(transition);
         return true;
+    }
+
+    async waitForProgramTransition({ toSceneId, generation } = {}) {
+        const activation = this.program.activation;
+
+        if (!activation || activation.sceneId !== toSceneId ||
+            activation.generation !== generation) {
+            return false;
+        }
+
+        const result = await activation.promise;
+
+        if (this.program.activation === activation) {
+            this.program.activation = null;
+        }
+
+        return result;
+    }
+
+    cancelProgramTransition({ generation } = {}) {
+        const transition = this.program.transition;
+
+        if (!transition || (generation !== undefined &&
+            transition.generation !== generation)) {
+            return false;
+        }
+
+        this.finishProgramTransition(transition);
+        return true;
+    }
+
+    createProgramTransition({
+        sceneId,
+        generation,
+        durationMs,
+        outgoingRenderer,
+        outgoingRoot,
+        incomingRenderer,
+        incomingRoot
+    }) {
+        let resolve;
+        const promise = new Promise((settle) => {
+            resolve = settle;
+        });
+
+        return {
+            sceneId,
+            generation,
+            durationMs,
+            outgoingRenderer,
+            outgoingRoot,
+            incomingRenderer,
+            incomingRoot,
+            animations: [],
+            settled: false,
+            resolve,
+            promise
+        };
+    }
+
+    startProgramDissolve(transition) {
+        const {
+            outgoingRoot,
+            incomingRoot,
+            durationMs
+        } = transition;
+
+        outgoingRoot.classList.add("studio-program-base-layer");
+        incomingRoot.classList.add("studio-program-base-layer");
+        outgoingRoot.style.opacity = "1";
+        incomingRoot.style.opacity = "0";
+
+        if (typeof outgoingRoot.animate !== "function" ||
+            typeof incomingRoot.animate !== "function") {
+            this.finishProgramTransition(transition);
+            return;
+        }
+
+        try {
+            transition.animations.push(outgoingRoot.animate(
+                [{ opacity: 1 }, { opacity: 0 }],
+                { duration: durationMs, easing: "linear", fill: "forwards" }
+            ));
+            transition.animations.push(incomingRoot.animate(
+                [{ opacity: 0 }, { opacity: 1 }],
+                { duration: durationMs, easing: "linear", fill: "forwards" }
+            ));
+
+            Promise.all(transition.animations.map((animation) =>
+                animation.finished
+            )).then(
+                () => this.finishProgramTransition(transition),
+                () => this.finishProgramTransition(transition)
+            );
+        }
+        catch {
+            this.finishProgramTransition(transition);
+        }
+    }
+
+    finishProgramTransition(transition) {
+        if (!transition || transition.settled) {
+            return;
+        }
+
+        transition.settled = true;
+        transition.animations.forEach((animation) => {
+            try {
+                animation.cancel();
+            }
+            catch {
+                // Promotion remains the deterministic fallback.
+            }
+        });
+        transition.incomingRoot.style.opacity = "";
+        transition.incomingRoot.classList.remove("studio-program-base-layer");
+        transition.outgoingRoot.style.opacity = "";
+        transition.outgoingRoot.classList.remove("studio-program-base-layer");
+        this.program.baseRoot.replaceChildren(transition.incomingRoot);
+        this.releaseRenderer(transition.outgoingRenderer);
+
+        if (this.program.transition === transition) {
+            this.program.transition = null;
+        }
+
+        transition.resolve(true);
     }
 
     discardPreparedProgram({ generation } = {}) {
@@ -190,6 +364,7 @@ export default class StudioRenderer {
 
         this.releaseRenderer(slot.renderer);
         slot.renderer = null;
+        slot.contentRoot = null;
         slot.baseRoot.replaceChildren();
 
         if (!sceneId) {
@@ -206,6 +381,7 @@ export default class StudioRenderer {
 
         const content = document.createElement("div");
         content.className = "studio-render-content";
+        slot.contentRoot = content;
         slot.baseRoot.replaceChildren(content);
 
         try {
@@ -230,6 +406,7 @@ export default class StudioRenderer {
 
             this.releaseRenderer(slot.renderer);
             slot.renderer = null;
+            slot.contentRoot = null;
             this.showState(
                 slot.baseRoot,
                 error?.message === "Renderer unsupported"
@@ -257,8 +434,12 @@ export default class StudioRenderer {
 
     clearSlot(slot) {
         slot.generation += 1;
+        if (slot === this.program) {
+            this.cancelProgramTransition();
+        }
         this.releaseRenderer(slot.renderer);
         slot.renderer = null;
+        slot.contentRoot = null;
         slot.baseRoot?.replaceChildren();
     }
 
@@ -286,10 +467,13 @@ export default class StudioRenderer {
             consumer,
             generation: 0,
             renderer: null,
+            contentRoot: null,
             baseRoot: null,
             graphicsRoot: null,
             graphicsLayer: null,
-            prepared: null
+            prepared: null,
+            transition: null,
+            activation: null
         };
     }
 

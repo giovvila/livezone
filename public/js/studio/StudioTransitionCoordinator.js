@@ -35,6 +35,7 @@ export default class StudioTransitionCoordinator {
         this.busy = false;
         this.generation += 1;
         this.studioRenderer.discardPreparedProgram({ generation });
+        this.studioRenderer.cancelProgramTransition({ generation });
         this.snapshot = this.createIdleSnapshot();
         this.listeners.clear();
     }
@@ -47,13 +48,30 @@ export default class StudioTransitionCoordinator {
         });
     }
 
+    dissolve(options = {}) {
+        return this.transition({
+            ...options,
+            type: "dissolve",
+            durationMs: options.durationMs ?? 400
+        });
+    }
+
     async transition({
         type = "cut",
-        durationMs = 0,
+        durationMs,
         source = null,
         reason = null
     } = {}) {
-        if (!this.started || this.busy || type !== "cut" || durationMs !== 0) {
+        const normalizedDuration = type === "cut"
+            ? 0
+            : durationMs ?? 400;
+        const supported = type === "cut"
+            ? durationMs === undefined || durationMs === 0
+            : type === "dissolve" &&
+                Number.isFinite(normalizedDuration) &&
+                normalizedDuration >= 200 && normalizedDuration <= 1500;
+
+        if (!this.started || this.busy || !supported) {
             return null;
         }
 
@@ -70,17 +88,21 @@ export default class StudioTransitionCoordinator {
         this.busy = true;
         this.setSnapshot(Object.freeze({
             state: "running",
-            type: "cut",
+            type,
             fromSceneId,
             toSceneId,
             startedAt: new Date().toISOString(),
-            durationMs: 0
+            durationMs: normalizedDuration
         }));
 
         try {
             const prepared = await this.studioRenderer.prepareProgramScene(
                 toSceneId,
-                { generation }
+                {
+                    generation,
+                    type,
+                    durationMs: normalizedDuration
+                }
             );
 
             if (!this.isCurrent(generation) || !prepared) {
@@ -100,8 +122,15 @@ export default class StudioTransitionCoordinator {
                 return null;
             }
 
+            const completed = await this.studioRenderer
+                .waitForProgramTransition({ toSceneId, generation });
+
+            if (!completed || !this.isCurrent(generation)) {
+                return null;
+            }
+
             return Object.freeze({
-                type: "cut",
+                type,
                 fromSceneId,
                 toSceneId,
                 timestamp: record.timestamp
@@ -109,6 +138,7 @@ export default class StudioTransitionCoordinator {
         }
         catch {
             this.studioRenderer.discardPreparedProgram({ generation });
+            this.studioRenderer.cancelProgramTransition({ generation });
             return null;
         }
         finally {

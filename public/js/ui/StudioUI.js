@@ -13,6 +13,7 @@ export default class StudioUI {
         this.handleCloseClick = this.handleCloseClick.bind(this);
         this.handleSceneListClick = this.handleSceneListClick.bind(this);
         this.handleTakeClick = this.handleTakeClick.bind(this);
+        this.handleTransitionChange = this.handleTransitionChange.bind(this);
         this.renderFromState = this.renderFromState.bind(this);
     }
 
@@ -33,11 +34,14 @@ export default class StudioUI {
         this.previewScene = this.root.querySelector("#studio-preview-scene");
         this.programScene = this.root.querySelector("#studio-program-scene");
         this.takeButton = this.root.querySelector("#studio-take");
+        this.transitionSelect = this.root.querySelector(
+            "#studio-transition-type"
+        );
 
         if (
             !this.main || !this.toggle || !this.closeButton ||
             !this.sceneList || !this.emptyState || !this.previewScene ||
-            !this.programScene || !this.takeButton ||
+            !this.programScene || !this.takeButton || !this.transitionSelect ||
             !this.transitionCoordinator
         ) {
             return;
@@ -47,6 +51,12 @@ export default class StudioUI {
         this.closeButton.addEventListener("click", this.handleCloseClick);
         this.sceneList.addEventListener("click", this.handleSceneListClick);
         this.takeButton.addEventListener("click", this.handleTakeClick);
+        this.transitionSelect.addEventListener(
+            "change",
+            this.handleTransitionChange
+        );
+        this.transitionSelect.value = "cut";
+        this.selectedTransition = "cut";
 
         this.studioEvents = [
             Events.STUDIO_SCENE_REGISTERED,
@@ -76,6 +86,10 @@ export default class StudioUI {
         this.closeButton.removeEventListener("click", this.handleCloseClick);
         this.sceneList.removeEventListener("click", this.handleSceneListClick);
         this.takeButton.removeEventListener("click", this.handleTakeClick);
+        this.transitionSelect.removeEventListener(
+            "change",
+            this.handleTransitionChange
+        );
 
         this.studioEvents.forEach((event) => {
             EventBus.off(event, this.renderFromState);
@@ -94,6 +108,8 @@ export default class StudioUI {
         this.previewScene = null;
         this.programScene = null;
         this.takeButton = null;
+        this.transitionSelect = null;
+        this.selectedTransition = null;
     }
 
     handleToggleClick() {
@@ -122,10 +138,22 @@ export default class StudioUI {
     }
 
     handleTakeClick() {
-        this.transitionCoordinator.cut({
+        const type = this.selectedTransition === "dissolve"
+            ? "dissolve"
+            : "cut";
+
+        this.transitionCoordinator.transition({
+            type,
+            durationMs: type === "dissolve" ? 400 : 0,
             source: "operator",
             reason: "manual-take"
         });
+    }
+
+    handleTransitionChange() {
+        this.selectedTransition = this.transitionSelect.value === "dissolve"
+            ? "dissolve"
+            : "cut";
     }
 
     setOpen(isOpen) {

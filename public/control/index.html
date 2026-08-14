@@ -170,7 +170,16 @@
                     <p id="studio-preview-scene" class="studio-state__scene">—</p>
                 </section>
 
-                <button id="studio-take" class="studio-take" type="button" disabled>TAKE</button>
+                <div class="studio-take-controls">
+                    <label class="studio-transition-select" for="studio-transition-type">
+                        <span>Transition</span>
+                        <select id="studio-transition-type">
+                            <option value="cut" selected>CUT</option>
+                            <option value="dissolve">DISSOLVE</option>
+                        </select>
+                    </label>
+                    <button id="studio-take" class="studio-take" type="button" disabled>TAKE</button>
+                </div>
 
                 <section class="studio-state studio-state--program" aria-labelledby="studio-program-title">
                     <h3 id="studio-program-title">PROGRAM</h3>

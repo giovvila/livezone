@@ -357,6 +357,43 @@
     cursor: pointer;
 }
 
+.studio-take-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+    flex: 0 0 auto;
+    gap: 8px;
+    min-width: 0;
+}
+
+.studio-transition-select {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+    color: var(--lz-text-soft);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+
+.studio-transition-select select {
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--lz-border);
+    border-radius: 7px;
+    padding: 8px;
+    background: rgba(0, 0, 0, .24);
+    color: var(--lz-text);
+    font: inherit;
+}
+
+.studio-transition-select select:focus-visible {
+    border-color: var(--lz-primary);
+    outline: 2px solid rgba(229, 9, 20, .2);
+    outline-offset: 1px;
+}
+
 .studio-take:disabled {
     border-color: var(--lz-border);
     background: rgba(255, 255, 255, .05);
