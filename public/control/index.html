@@ -170,6 +170,19 @@
                     <p id="studio-preview-scene" class="studio-state__scene">—</p>
                 </section>
 
+                <section id="studio-media-transport" class="studio-media-transport" aria-labelledby="studio-media-title" hidden>
+                    <h3 id="studio-media-title">MEDIA PREVIEW</h3>
+                    <div class="studio-media-transport__actions">
+                        <button id="studio-media-restart" type="button">RESTART</button>
+                        <button id="studio-media-play" type="button">PLAY</button>
+                        <button id="studio-media-pause" type="button">PAUSE</button>
+                    </div>
+                    <div class="studio-media-transport__readout" aria-live="polite">
+                        <strong id="studio-media-time">00:00 / --:--</strong>
+                        <span id="studio-media-state">UNAVAILABLE</span>
+                    </div>
+                </section>
+
                 <div class="studio-take-controls">
                     <label class="studio-transition-select" for="studio-transition-type">
                         <span>Transition</span>

@@ -20,6 +20,8 @@ export default class StudioRenderer {
         this.studioSourceManager = studioSourceManager;
         this.studioGraphicsManager = studioGraphicsManager;
         this.started = false;
+        this.previewTransportListeners = new Set();
+        this.previewTransportSnapshot = null;
         this.preview = this.createSlot(
             previewRoot,
             "No Preview selected",
@@ -69,6 +71,8 @@ export default class StudioRenderer {
         this.program.graphicsLayer = null;
         this.preview.root.replaceChildren();
         this.program.root.replaceChildren();
+        this.previewTransportListeners.clear();
+        this.previewTransportSnapshot = null;
         this.started = false;
     }
 
@@ -361,9 +365,10 @@ export default class StudioRenderer {
 
     async renderSlot(slot, sceneId) {
         const generation = ++slot.generation;
+        const outgoing = slot.renderer;
 
-        this.releaseRenderer(slot.renderer);
-        slot.renderer = null;
+        this.setSlotRenderer(slot, null);
+        this.releaseRenderer(outgoing);
         slot.contentRoot = null;
         slot.baseRoot.replaceChildren();
 
@@ -392,10 +397,14 @@ export default class StudioRenderer {
                 return;
             }
 
-            slot.renderer = renderer;
+            this.setSlotRenderer(slot, renderer);
             await renderer.start(content);
 
             if (slot.generation !== generation) {
+                if (slot.renderer === renderer) {
+                    this.setSlotRenderer(slot, null);
+                }
+
                 this.releaseRenderer(renderer);
             }
         }
@@ -404,8 +413,9 @@ export default class StudioRenderer {
                 return;
             }
 
-            this.releaseRenderer(slot.renderer);
-            slot.renderer = null;
+            const failedRenderer = slot.renderer;
+            this.setSlotRenderer(slot, null);
+            this.releaseRenderer(failedRenderer);
             slot.contentRoot = null;
             this.showState(
                 slot.baseRoot,
@@ -437,8 +447,9 @@ export default class StudioRenderer {
         if (slot === this.program) {
             this.cancelProgramTransition();
         }
-        this.releaseRenderer(slot.renderer);
-        slot.renderer = null;
+        const renderer = slot.renderer;
+        this.setSlotRenderer(slot, null);
+        this.releaseRenderer(renderer);
         slot.contentRoot = null;
         slot.baseRoot?.replaceChildren();
     }
@@ -460,6 +471,81 @@ export default class StudioRenderer {
         }
     }
 
+    subscribePreviewMediaTransport(listener) {
+        if (typeof listener !== "function") {
+            return () => {};
+        }
+
+        this.previewTransportListeners.add(listener);
+        listener(this.previewTransportSnapshot);
+
+        return () => {
+            this.previewTransportListeners.delete(listener);
+        };
+    }
+
+    playPreviewMedia() {
+        const renderer = this.getPreviewMediaRenderer();
+        return renderer ? renderer.play() : Promise.resolve(false);
+    }
+
+    pausePreviewMedia() {
+        const renderer = this.getPreviewMediaRenderer();
+        return renderer ? renderer.pause() : false;
+    }
+
+    restartPreviewMedia() {
+        const renderer = this.getPreviewMediaRenderer();
+        return renderer ? renderer.restart() : false;
+    }
+
+    getPreviewMediaRenderer() {
+        const renderer = this.preview.renderer;
+
+        return renderer && typeof renderer.getTransport === "function" &&
+            typeof renderer.subscribeTransport === "function" &&
+            typeof renderer.play === "function" &&
+            typeof renderer.pause === "function" &&
+            typeof renderer.restart === "function"
+            ? renderer
+            : null;
+    }
+
+    setSlotRenderer(slot, renderer) {
+        if (slot === this.preview) {
+            slot.transportUnsubscribe?.();
+            slot.transportUnsubscribe = null;
+        }
+
+        slot.renderer = renderer;
+
+        if (slot !== this.preview) {
+            return;
+        }
+
+        const mediaRenderer = this.getPreviewMediaRenderer();
+
+        if (!mediaRenderer) {
+            this.setPreviewTransportSnapshot(null);
+            return;
+        }
+
+        slot.transportUnsubscribe = mediaRenderer.subscribeTransport(
+            (snapshot) => {
+                if (this.preview.renderer === mediaRenderer) {
+                    this.setPreviewTransportSnapshot(snapshot);
+                }
+            }
+        );
+    }
+
+    setPreviewTransportSnapshot(snapshot) {
+        this.previewTransportSnapshot = snapshot;
+        this.previewTransportListeners.forEach((listener) => {
+            listener(snapshot);
+        });
+    }
+
     createSlot(root, emptyMessage, consumer) {
         return {
             root,
@@ -473,7 +559,8 @@ export default class StudioRenderer {
             graphicsLayer: null,
             prepared: null,
             transition: null,
-            activation: null
+            activation: null,
+            transportUnsubscribe: null
         };
     }
 

@@ -5,6 +5,7 @@ import StudioStateManager from "../core/StudioStateManager.js";
 import BroadcastUI from "../ui/BroadcastUI.js";
 import StudioUI from "../ui/StudioUI.js";
 import StudioGraphicsUI from "../ui/StudioGraphicsUI.js";
+import StudioMediaUI from "../ui/StudioMediaUI.js";
 import ProgramFullscreenUI from "../ui/ProgramFullscreenUI.js";
 import OverlayController from "../ui/OverlayController.js";
 import NotificationCenter from "../ui/NotificationCenter.js";
@@ -34,6 +35,7 @@ const studioBootstrap = new StudioBootstrap({
 let broadcastUI = null;
 let studioUI = null;
 let studioGraphicsUI = null;
+let studioMediaUI = null;
 let studioRenderer = null;
 let studioTransitionCoordinator = null;
 let programFullscreenUI = null;
@@ -73,6 +75,12 @@ runtime.start({
             studioTransitionCoordinator
         );
         studioUI.start();
+
+        studioMediaUI = new StudioMediaUI(
+            document.getElementById("studio-panel"),
+            studioRenderer
+        );
+        studioMediaUI.start();
 
         studioGraphicsUI = new StudioGraphicsUI(
             document.getElementById("studio-panel"),

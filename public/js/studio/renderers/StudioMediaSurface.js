@@ -14,12 +14,17 @@ export default class StudioMediaSurface {
         this.readinessState = "pending";
         this.readinessError = null;
         this.readinessWaiters = new Set();
+        this.transportListeners = new Set();
+        this.transportError = false;
+        this.transportEnded = false;
         this.handleLoadedData = this.handleLoadedData.bind(this);
         this.handleCanPlay = this.handleCanPlay.bind(this);
         this.handlePlaying = this.handlePlaying.bind(this);
         this.handleWaiting = this.handleWaiting.bind(this);
         this.handleEnded = this.handleEnded.bind(this);
         this.handleError = this.handleError.bind(this);
+        this.handlePause = this.handlePause.bind(this);
+        this.handleTransportUpdate = this.handleTransportUpdate.bind(this);
     }
 
     async start(root) {
@@ -39,10 +44,16 @@ export default class StudioMediaSurface {
         this.video.addEventListener("waiting", this.handleWaiting);
         this.video.addEventListener("ended", this.handleEnded);
         this.video.addEventListener("error", this.handleError);
+        this.video.addEventListener("pause", this.handlePause);
+        this.video.addEventListener("timeupdate", this.handleTransportUpdate);
+        this.video.addEventListener("durationchange", this.handleTransportUpdate);
+        this.video.addEventListener("loadedmetadata", this.handleTransportUpdate);
+        this.video.addEventListener("seeked", this.handleTransportUpdate);
         this.video.src = this.sourceUrl;
         root.replaceChildren(this.video);
         this.showStatus("Loading media…", "loading");
         this.setHealth("connecting", null);
+        this.notifyTransport();
 
         try {
             await this.video.play();
@@ -57,15 +68,19 @@ export default class StudioMediaSurface {
         this.status = null;
         this.setHealth("ready", null);
         this.markReadyIfFrameAvailable();
+        this.notifyTransport();
     }
 
     handlePlaying() {
+        this.transportEnded = false;
         this.setHealth("ready", null);
         this.markReadyIfFrameAvailable();
+        this.notifyTransport();
     }
 
     handleCanPlay() {
         this.markReadyIfFrameAvailable();
+        this.notifyTransport();
     }
 
     handleWaiting() {
@@ -73,13 +88,137 @@ export default class StudioMediaSurface {
     }
 
     handleEnded() {
+        this.transportEnded = true;
         this.setHealth("ended", null);
+        this.notifyTransport();
     }
 
     handleError() {
+        this.transportError = true;
         this.showStatus("Media unavailable", "error");
         this.setHealth("error", "media");
         this.failReadiness("fatal-media-error");
+        this.notifyTransport();
+    }
+
+    handlePause() {
+        this.notifyTransport();
+    }
+
+    handleTransportUpdate() {
+        this.notifyTransport();
+    }
+
+    async play() {
+        if (!this.isControllable()) {
+            return false;
+        }
+
+        try {
+            await this.video.play();
+        }
+        catch {
+            this.notifyTransport();
+            return false;
+        }
+
+        this.notifyTransport();
+        return !this.video.paused;
+    }
+
+    pause() {
+        if (!this.isControllable()) {
+            return false;
+        }
+
+        this.video.pause();
+        this.notifyTransport();
+        return true;
+    }
+
+    restart() {
+        if (!this.isControllable()) {
+            return false;
+        }
+
+        this.video.pause();
+        this.transportEnded = false;
+
+        try {
+            this.video.currentTime = 0;
+        }
+        catch {
+            this.notifyTransport();
+            return false;
+        }
+
+        this.notifyTransport();
+        return true;
+    }
+
+    getTransport() {
+        const video = this.video;
+        const currentTime = Number.isFinite(video?.currentTime)
+            ? Math.max(0, video.currentTime)
+            : 0;
+        const duration = Number.isFinite(video?.duration) && video.duration >= 0
+            ? video.duration
+            : null;
+
+        return Object.freeze({
+            sourceId: this.sourceId,
+            instanceId: this.instanceId,
+            consumer: this.consumer,
+            state: this.getTransportState(),
+            currentTime,
+            duration,
+            paused: video ? video.paused : true,
+            ended: this.transportEnded,
+            timestamp: new Date().toISOString()
+        });
+    }
+
+    subscribeTransport(listener) {
+        if (typeof listener !== "function") {
+            return () => {};
+        }
+
+        this.transportListeners.add(listener);
+        listener(this.getTransport());
+
+        return () => {
+            this.transportListeners.delete(listener);
+        };
+    }
+
+    notifyTransport() {
+        const snapshot = this.getTransport();
+        this.transportListeners.forEach((listener) => listener(snapshot));
+    }
+
+    getTransportState() {
+        if (this.destroyed) {
+            return "destroyed";
+        }
+
+        if (this.transportError) {
+            return "error";
+        }
+
+        if (!this.video) {
+            return "idle";
+        }
+
+        if (this.transportEnded) {
+            return "ended";
+        }
+
+        return this.video.paused ? "paused" : "playing";
+    }
+
+    isControllable() {
+        return this.consumer === "preview" && !this.destroyed &&
+            !this.transportError && Boolean(this.video);
     }
 
     waitUntilReady({ timeoutMs } = {}) {
@@ -156,6 +295,7 @@ export default class StudioMediaSurface {
 
         this.destroyed = true;
         this.failReadiness("destroyed-before-ready");
+        this.notifyTransport();
 
         if (this.video) {
             this.video.removeEventListener("loadeddata", this.handleLoadedData);
@@ -164,6 +304,17 @@ export default class StudioMediaSurface {
             this.video.removeEventListener("waiting", this.handleWaiting);
             this.video.removeEventListener("ended", this.handleEnded);
             this.video.removeEventListener("error", this.handleError);
+            this.video.removeEventListener("pause", this.handlePause);
+            this.video.removeEventListener("timeupdate", this.handleTransportUpdate);
+            this.video.removeEventListener(
+                "durationchange",
+                this.handleTransportUpdate
+            );
+            this.video.removeEventListener(
+                "loadedmetadata",
+                this.handleTransportUpdate
+            );
+            this.video.removeEventListener("seeked", this.handleTransportUpdate);
             this.video.pause();
             this.video.removeAttribute("src");
             this.video.load();
@@ -176,6 +327,7 @@ export default class StudioMediaSurface {
         this.root = null;
         this.setHealth("destroyed", null);
         this.healthListeners.clear();
+        this.transportListeners.clear();
         this.onDestroyed?.(this);
         this.onDestroyed = null;
     }
