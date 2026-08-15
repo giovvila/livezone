@@ -84,6 +84,9 @@ export default class StudioTransitionCoordinator {
         }
 
         const generation = ++this.generation;
+        const preparationContext =
+            this.studioRenderer.getPreviewPreparationContext?.(toSceneId) ??
+            null;
 
         this.busy = true;
         this.setSnapshot(Object.freeze({
@@ -101,7 +104,8 @@ export default class StudioTransitionCoordinator {
                 {
                     generation,
                     type,
-                    durationMs: normalizedDuration
+                    durationMs: normalizedDuration,
+                    preparationContext
                 }
             );
 

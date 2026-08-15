@@ -104,7 +104,12 @@ export default class StudioRenderer {
 
     async prepareProgramScene(
         sceneId,
-        { generation, type = "cut", durationMs = 0 } = {}
+        {
+            generation,
+            type = "cut",
+            durationMs = 0,
+            preparationContext = null
+        } = {}
     ) {
         if (!this.started || !sceneId || generation === undefined ||
             !this.program.baseRoot) {
@@ -120,7 +125,11 @@ export default class StudioRenderer {
         }
 
         const root = document.createElement("div");
-        const renderer = this.createRenderer(definition, this.program);
+        const renderer = this.createRenderer(
+            definition,
+            this.program,
+            preparationContext
+        );
 
         if (!renderer) {
             return null;
@@ -367,6 +376,7 @@ export default class StudioRenderer {
         const generation = ++slot.generation;
         const outgoing = slot.renderer;
 
+        slot.sceneId = sceneId;
         this.setSlotRenderer(slot, null);
         this.releaseRenderer(outgoing);
         slot.contentRoot = null;
@@ -427,7 +437,7 @@ export default class StudioRenderer {
         }
     }
 
-    createRenderer(definition, slot) {
+    createRenderer(definition, slot, preparationContext = null) {
         if (definition.renderer.kind === "slate") {
             return new StudioSlateSurface(definition);
         }
@@ -435,7 +445,10 @@ export default class StudioRenderer {
         if (definition.renderer.kind === "source") {
             return this.studioSourceManager.createInstance(
                 definition.renderer.sourceId,
-                { consumer: slot.consumer }
+                {
+                    consumer: slot.consumer,
+                    initialTime: preparationContext?.mediaCueTime
+                }
             );
         }
 
@@ -482,6 +495,28 @@ export default class StudioRenderer {
         return () => {
             this.previewTransportListeners.delete(listener);
         };
+    }
+
+    getPreviewPreparationContext(sceneId) {
+        if (!sceneId ||
+            this.studioStateManager.getPreviewSceneId() !== sceneId ||
+            this.preview.sceneId !== sceneId) {
+            return null;
+        }
+
+        const renderer = this.getPreviewMediaRenderer();
+        const snapshot = renderer?.getTransport();
+
+        if (!snapshot || snapshot.consumer !== "preview") {
+            return null;
+        }
+
+        const mediaCueTime = Number.isFinite(snapshot.currentTime) &&
+            snapshot.currentTime >= 0
+            ? snapshot.currentTime
+            : 0;
+
+        return Object.freeze({ mediaCueTime });
     }
 
     playPreviewMedia() {
@@ -551,6 +586,7 @@ export default class StudioRenderer {
             root,
             emptyMessage,
             consumer,
+            sceneId: null,
             generation: 0,
             renderer: null,
             contentRoot: null,

@@ -1,10 +1,23 @@
 export default class StudioMediaSurface {
 
-    constructor({ sourceId, sourceUrl, instanceId, consumer, onDestroyed }) {
+    constructor({
+        sourceId,
+        sourceUrl,
+        instanceId,
+        consumer,
+        initialTime = 0,
+        onDestroyed
+    }) {
         this.sourceId = sourceId;
         this.sourceUrl = sourceUrl;
         this.instanceId = instanceId;
         this.consumer = consumer;
+        this.initialTime = Number.isFinite(initialTime) && initialTime >= 0
+            ? initialTime
+            : 0;
+        this.initialCueState = consumer === "program" && this.initialTime > 0
+            ? "pending"
+            : "ready";
         this.onDestroyed = onDestroyed;
         this.video = null;
         this.root = null;
@@ -24,6 +37,8 @@ export default class StudioMediaSurface {
         this.handleEnded = this.handleEnded.bind(this);
         this.handleError = this.handleError.bind(this);
         this.handlePause = this.handlePause.bind(this);
+        this.handleLoadedMetadata = this.handleLoadedMetadata.bind(this);
+        this.handleSeeked = this.handleSeeked.bind(this);
         this.handleTransportUpdate = this.handleTransportUpdate.bind(this);
     }
 
@@ -47,19 +62,16 @@ export default class StudioMediaSurface {
         this.video.addEventListener("pause", this.handlePause);
         this.video.addEventListener("timeupdate", this.handleTransportUpdate);
         this.video.addEventListener("durationchange", this.handleTransportUpdate);
-        this.video.addEventListener("loadedmetadata", this.handleTransportUpdate);
-        this.video.addEventListener("seeked", this.handleTransportUpdate);
+        this.video.addEventListener("loadedmetadata", this.handleLoadedMetadata);
+        this.video.addEventListener("seeked", this.handleSeeked);
         this.video.src = this.sourceUrl;
         root.replaceChildren(this.video);
         this.showStatus("Loading media…", "loading");
         this.setHealth("connecting", null);
         this.notifyTransport();
 
-        try {
-            await this.video.play();
-        }
-        catch {
-            this.setHealth("connecting", "autoplay");
+        if (this.initialCueState === "ready") {
+            await this.startPlayback();
         }
     }
 
@@ -105,8 +117,81 @@ export default class StudioMediaSurface {
         this.notifyTransport();
     }
 
+    handleLoadedMetadata() {
+        this.notifyTransport();
+
+        if (this.initialCueState !== "pending" || !this.video) {
+            return;
+        }
+
+        const duration = Number.isFinite(this.video.duration) &&
+            this.video.duration >= 0
+            ? this.video.duration
+            : null;
+        const cueTime = duration === null
+            ? this.initialTime
+            : Math.min(this.initialTime, this.getPlayableEnd(duration));
+
+        try {
+            this.video.currentTime = cueTime;
+        }
+        catch {
+            this.fallbackInitialCue();
+        }
+    }
+
+    handleSeeked() {
+        if (this.initialCueState === "pending") {
+            this.initialCueState = "ready";
+            void this.startPlayback();
+        }
+
+        this.markReadyIfFrameAvailable();
+        this.notifyTransport();
+    }
+
     handleTransportUpdate() {
         this.notifyTransport();
+    }
+
+    async startPlayback() {
+        if (!this.video || this.destroyed) {
+            return false;
+        }
+
+        try {
+            await this.video.play();
+            return true;
+        }
+        catch {
+            this.setHealth("connecting", "autoplay");
+            return false;
+        }
+    }
+
+    fallbackInitialCue() {
+        if (!this.video || this.destroyed) {
+            return;
+        }
+
+        try {
+            this.video.currentTime = 0;
+            this.initialCueState = "ready";
+            void this.startPlayback();
+            this.markReadyIfFrameAvailable();
+        }
+        catch {
+            this.initialCueState = "failed";
+            this.failReadiness("initial-cue-failed");
+        }
+    }
+
+    getPlayableEnd(duration) {
+        if (duration <= 0) {
+            return 0;
+        }
+
+        return Math.max(0, duration - Math.min(0.05, duration));
     }
 
     async play() {
@@ -246,7 +331,8 @@ export default class StudioMediaSurface {
     }
 
     markReadyIfFrameAvailable() {
-        if (!this.video || this.video.readyState < 2) {
+        if (!this.video || this.video.readyState < 2 ||
+            this.initialCueState !== "ready") {
             return;
         }
 
@@ -312,9 +398,9 @@ export default class StudioMediaSurface {
             );
             this.video.removeEventListener(
                 "loadedmetadata",
-                this.handleTransportUpdate
+                this.handleLoadedMetadata
             );
-            this.video.removeEventListener("seeked", this.handleTransportUpdate);
+            this.video.removeEventListener("seeked", this.handleSeeked);
             this.video.pause();
             this.video.removeAttribute("src");
             this.video.load();
