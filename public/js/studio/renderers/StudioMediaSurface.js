@@ -6,6 +6,7 @@ export default class StudioMediaSurface {
         instanceId,
         consumer,
         initialTime = 0,
+        initialPlayback = "playing",
         onDestroyed
     }) {
         this.sourceId = sourceId;
@@ -15,7 +16,10 @@ export default class StudioMediaSurface {
         this.initialTime = Number.isFinite(initialTime) && initialTime >= 0
             ? initialTime
             : 0;
-        this.initialCueState = consumer === "program" && this.initialTime > 0
+        this.initialPlayback = initialPlayback === "paused"
+            ? "paused"
+            : "playing";
+        this.initialCueState = this.initialTime > 0
             ? "pending"
             : "ready";
         this.onDestroyed = onDestroyed;
@@ -47,12 +51,13 @@ export default class StudioMediaSurface {
         this.root = root;
         this.video = document.createElement("video");
         this.video.className = "studio-render-video";
-        this.video.autoplay = true;
+        this.video.autoplay = this.initialPlayback === "playing";
         this.video.muted = true;
         this.video.defaultMuted = true;
         this.video.playsInline = true;
         this.video.setAttribute("muted", "");
         this.video.setAttribute("playsinline", "");
+        this.video.hidden = this.initialCueState === "pending";
         this.video.addEventListener("loadeddata", this.handleLoadedData);
         this.video.addEventListener("canplay", this.handleCanPlay);
         this.video.addEventListener("playing", this.handlePlaying);
@@ -70,22 +75,19 @@ export default class StudioMediaSurface {
         this.setHealth("connecting", null);
         this.notifyTransport();
 
-        if (this.initialCueState === "ready") {
+        if (this.initialCueState === "ready" &&
+            this.initialPlayback === "playing") {
             await this.startPlayback();
         }
     }
 
     handleLoadedData() {
-        this.status?.remove();
-        this.status = null;
-        this.setHealth("ready", null);
         this.markReadyIfFrameAvailable();
         this.notifyTransport();
     }
 
     handlePlaying() {
         this.transportEnded = false;
-        this.setHealth("ready", null);
         this.markReadyIfFrameAvailable();
         this.notifyTransport();
     }
@@ -143,7 +145,13 @@ export default class StudioMediaSurface {
     handleSeeked() {
         if (this.initialCueState === "pending") {
             this.initialCueState = "ready";
-            void this.startPlayback();
+
+            if (this.initialPlayback === "playing") {
+                void this.startPlayback();
+            }
+            else {
+                this.video?.pause();
+            }
         }
 
         this.markReadyIfFrameAvailable();
@@ -177,7 +185,14 @@ export default class StudioMediaSurface {
         try {
             this.video.currentTime = 0;
             this.initialCueState = "ready";
-            void this.startPlayback();
+
+            if (this.initialPlayback === "playing") {
+                void this.startPlayback();
+            }
+            else {
+                this.video.pause();
+            }
+
             this.markReadyIfFrameAvailable();
         }
         catch {
@@ -243,7 +258,9 @@ export default class StudioMediaSurface {
 
     getTransport() {
         const video = this.video;
-        const currentTime = Number.isFinite(video?.currentTime)
+        const currentTime = this.initialCueState === "pending"
+            ? this.initialTime
+            : Number.isFinite(video?.currentTime)
             ? Math.max(0, video.currentTime)
             : 0;
         const duration = Number.isFinite(video?.duration) && video.duration >= 0
@@ -337,6 +354,10 @@ export default class StudioMediaSurface {
         }
 
         this.readinessState = "ready";
+        this.video.hidden = false;
+        this.status?.remove();
+        this.status = null;
+        this.setHealth("ready", null);
         this.settleReadinessWaiters("resolve");
     }
 

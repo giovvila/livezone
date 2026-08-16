@@ -49,7 +49,7 @@ class StudioSourceManager {
         );
     }
 
-    createInstance(sourceId, { consumer, initialTime } = {}) {
+    createInstance(sourceId, { consumer, initialTime, initialPlayback } = {}) {
         const id = this.normalizeString(sourceId);
 
         if (!id || !["preview", "program"].includes(consumer)) {
@@ -83,6 +83,7 @@ class StudioSourceManager {
             instanceId,
             consumer,
             initialTime,
+            initialPlayback,
             onDestroyed: () => {
                 this.instances.delete(instanceId);
             }

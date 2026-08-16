@@ -119,9 +119,15 @@ export default class StudioTransitionCoordinator {
                 return null;
             }
 
+            this.studioRenderer.captureProgramPreviewHandoff?.(
+                fromSceneId,
+                { generation }
+            );
+
             const record = this.studioStateManager.take({ source, reason });
 
             if (!record || this.studioStateManager.getProgramSceneId() !== toSceneId) {
+                this.studioRenderer.discardPreviewHandoff?.({ generation });
                 this.studioRenderer.discardPreparedProgram({ generation });
                 return null;
             }
@@ -141,6 +147,7 @@ export default class StudioTransitionCoordinator {
             });
         }
         catch {
+            this.studioRenderer.discardPreviewHandoff?.({ generation });
             this.studioRenderer.discardPreparedProgram({ generation });
             this.studioRenderer.cancelProgramTransition({ generation });
             return null;

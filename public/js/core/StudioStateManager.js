@@ -134,19 +134,31 @@ class StudioStateManager {
             return null;
         }
 
-        const record = Object.freeze({
-            previousSceneId: this.programSceneId,
-            currentSceneId: this.previewSceneId,
+        const incomingProgramSceneId = this.previewSceneId;
+        const outgoingProgramSceneId = this.programSceneId;
+        const timestamp = new Date().toISOString();
+        const programRecord = Object.freeze({
+            previousSceneId: outgoingProgramSceneId,
+            currentSceneId: incomingProgramSceneId,
             source,
             reason,
-            timestamp: new Date().toISOString()
+            timestamp
+        });
+        const previewRecord = Object.freeze({
+            previousSceneId: incomingProgramSceneId,
+            currentSceneId: outgoingProgramSceneId,
+            source,
+            reason,
+            timestamp
         });
 
-        this.programSceneId = this.previewSceneId;
+        this.programSceneId = incomingProgramSceneId;
+        this.previewSceneId = outgoingProgramSceneId;
 
-        EventBus.emit(Events.STUDIO_PROGRAM_CHANGED, record);
+        EventBus.emit(Events.STUDIO_PROGRAM_CHANGED, programRecord);
+        EventBus.emit(Events.STUDIO_PREVIEW_CHANGED, previewRecord);
 
-        return record;
+        return programRecord;
     }
 
     createCanonicalScene(scene) {

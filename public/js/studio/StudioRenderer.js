@@ -22,6 +22,7 @@ export default class StudioRenderer {
         this.started = false;
         this.previewTransportListeners = new Set();
         this.previewTransportSnapshot = null;
+        this.previewHandoff = null;
         this.preview = this.createSlot(
             previewRoot,
             "No Preview selected",
@@ -73,14 +74,15 @@ export default class StudioRenderer {
         this.program.root.replaceChildren();
         this.previewTransportListeners.clear();
         this.previewTransportSnapshot = null;
+        this.previewHandoff = null;
         this.started = false;
     }
 
     renderPreviewFromState() {
-        this.renderSlot(
-            this.preview,
-            this.studioStateManager.getPreviewSceneId()
-        );
+        const sceneId = this.studioStateManager.getPreviewSceneId();
+        const preparationContext = this.consumePreviewHandoff(sceneId);
+
+        this.renderSlot(this.preview, sceneId, preparationContext);
     }
 
     renderProgramFromState(record = null) {
@@ -197,6 +199,7 @@ export default class StudioRenderer {
 
         this.program.generation += 1;
         this.program.prepared = null;
+        this.program.sceneId = sceneId;
         this.program.renderer = prepared.renderer;
         this.program.contentRoot = prepared.root;
         prepared.root.hidden = false;
@@ -372,7 +375,7 @@ export default class StudioRenderer {
         return true;
     }
 
-    async renderSlot(slot, sceneId) {
+    async renderSlot(slot, sceneId, preparationContext = null) {
         const generation = ++slot.generation;
         const outgoing = slot.renderer;
 
@@ -400,7 +403,11 @@ export default class StudioRenderer {
         slot.baseRoot.replaceChildren(content);
 
         try {
-            const renderer = this.createRenderer(definition, slot);
+            const renderer = this.createRenderer(
+                definition,
+                slot,
+                preparationContext
+            );
 
             if (!renderer) {
                 this.showState(slot.baseRoot, "Renderer unsupported", "error");
@@ -447,7 +454,10 @@ export default class StudioRenderer {
                 definition.renderer.sourceId,
                 {
                     consumer: slot.consumer,
-                    initialTime: preparationContext?.mediaCueTime
+                    initialTime: preparationContext?.mediaCueTime ??
+                        preparationContext?.mediaInitialTime,
+                    initialPlayback:
+                        preparationContext?.mediaInitialPlayback
                 }
             );
         }
@@ -517,6 +527,62 @@ export default class StudioRenderer {
             : 0;
 
         return Object.freeze({ mediaCueTime });
+    }
+
+    captureProgramPreviewHandoff(sceneId, { generation } = {}) {
+        this.previewHandoff = null;
+
+        if (!sceneId || generation === undefined ||
+            this.studioStateManager.getProgramSceneId() !== sceneId ||
+            this.program.sceneId !== sceneId) {
+            return null;
+        }
+
+        const snapshot = this.program.renderer?.getTransport?.();
+
+        if (!snapshot || snapshot.consumer !== "program") {
+            return null;
+        }
+
+        const mediaInitialTime = Number.isFinite(snapshot.currentTime) &&
+            snapshot.currentTime >= 0
+            ? snapshot.currentTime
+            : 0;
+        const preparationContext = Object.freeze({
+            mediaInitialTime,
+            mediaInitialPlayback: "paused"
+        });
+
+        this.previewHandoff = Object.freeze({
+            sceneId,
+            generation,
+            preparationContext
+        });
+
+        return preparationContext;
+    }
+
+    consumePreviewHandoff(sceneId) {
+        const handoff = this.previewHandoff;
+        this.previewHandoff = null;
+
+        if (!handoff || handoff.sceneId !== sceneId) {
+            return null;
+        }
+
+        return handoff.preparationContext;
+    }
+
+    discardPreviewHandoff({ generation } = {}) {
+        const handoff = this.previewHandoff;
+
+        if (!handoff || (generation !== undefined &&
+            handoff.generation !== generation)) {
+            return false;
+        }
+
+        this.previewHandoff = null;
+        return true;
     }
 
     playPreviewMedia() {
