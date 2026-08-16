@@ -1,7 +1,6 @@
 :root {
     --studio-preview: var(--lz-success);
     --studio-program: var(--lz-primary);
-    --studio-width: clamp(280px, 25vw, 360px);
 }
 
 .main {
@@ -11,9 +10,9 @@
     overflow: hidden;
 }
 
-.control-room-workspace {
+.control-room-console {
     display: grid;
-    grid-template-rows: minmax(0, 2fr) minmax(120px, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
     gap: 12px;
     width: 100%;
     height: 100%;
@@ -22,9 +21,25 @@
     overflow: auto;
 }
 
+.control-room-monitor-wall {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 2fr)) minmax(0, 1fr);
+    align-items: start;
+    gap: 12px;
+    min-width: 0;
+    min-height: 0;
+}
+
+@media (min-width: 1101px) {
+    .control-room-monitor-wall {
+        justify-self: center;
+        width: 68%;
+    }
+}
+
 .control-room-monitor {
     display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: auto auto;
     gap: 7px;
     min-width: 0;
     min-height: 0;
@@ -104,9 +119,14 @@
 
 .control-room-program:fullscreen {
     display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    align-items: stretch;
     width: 100%;
     height: 100%;
+    min-width: 0;
+    min-height: 0;
     box-sizing: border-box;
+    overflow: hidden;
     border: 0;
     border-radius: 0;
     padding: clamp(8px, 1.5%, 18px);
@@ -119,18 +139,15 @@
 }
 
 .control-room-program:fullscreen .studio-render-surface--program {
+    align-self: center;
+    justify-self: center;
     width: auto;
     height: 100%;
-    max-width: 100%;
-    max-height: 100%;
-}
-
-.control-room-secondary {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
     min-width: 0;
     min-height: 0;
+    max-width: 100%;
+    max-height: 100%;
+    aspect-ratio: 16 / 9;
 }
 
 .control-room-technical__viewport {
@@ -138,16 +155,18 @@
     align-items: center;
     justify-content: center;
     width: 100%;
-    height: 100%;
+    height: auto;
+    aspect-ratio: 16 / 9;
     min-width: 0;
     min-height: 0;
     overflow: hidden;
 }
 
 .control-room-technical .player-wrapper {
-    flex: 0 0 auto;
-    max-width: 100%;
-    max-height: 100%;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
     border-radius: 7px;
 }
 
@@ -176,26 +195,23 @@
 }
 
 .main--studio-open {
-    padding-right: calc(var(--studio-width) + 32px);
+    padding-right: 16px;
 }
 
 .studio-panel {
-    position: absolute;
-    top: 16px;
-    right: 16px;
-    bottom: 16px;
-    width: var(--studio-width);
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+    gap: 12px;
+    width: 100%;
     min-height: 0;
-    overflow: hidden;
+    overflow: auto;
     border: 1px solid var(--lz-border);
     border-radius: 14px;
     background: var(--lz-panel);
     color: var(--lz-text);
     box-shadow: var(--shadow-md);
-    z-index: var(--z-overlay);
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
     padding: 16px;
 }
 
@@ -208,6 +224,94 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+}
+
+.control-desk__module {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+    border: 1px solid var(--lz-border);
+    border-radius: 10px;
+    padding: 10px;
+    background: rgba(0, 0, 0, .16);
+}
+
+.control-desk__row {
+    display: grid;
+    align-items: start;
+    gap: 12px;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.control-desk__row--primary {
+    grid-template-columns:
+        minmax(0, 11fr)
+        repeat(3, minmax(0, 3fr));
+    grid-template-areas: "scenes transition take broadcast";
+}
+
+.control-desk__row--secondary {
+    grid-template-columns:
+        repeat(2, minmax(0, 27fr))
+        minmax(0, 31fr)
+        minmax(0, 15fr);
+    grid-template-areas: "media lower logo mon";
+}
+
+.control-desk__module--scenes {
+    grid-area: scenes;
+}
+
+.control-desk__module--transition {
+    grid-area: transition;
+}
+
+.control-desk__module--take {
+    grid-area: take;
+}
+
+.studio-media-transport {
+    grid-area: media;
+    align-self: start;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+.control-desk__module--broadcast {
+    grid-area: broadcast;
+}
+
+.control-desk__module--broadcast .broadcast-controls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: 8px;
+}
+
+.control-desk__module--broadcast .broadcast-control {
+    min-width: 0;
+}
+
+.control-desk__module--lower-third {
+    grid-area: lower;
+}
+
+.control-desk__module--logo {
+    grid-area: logo;
+}
+
+.control-desk__module--mon {
+    display: grid;
+    grid-area: mon;
+    align-content: start;
+    gap: 8px;
+}
+
+.control-desk__module--mon #engine-monitor-toggle {
+    width: 100%;
+    min-height: 36px;
 }
 
 .studio-panel h2,
@@ -233,16 +337,15 @@
 .studio-section {
     display: flex;
     min-height: 0;
-    flex: 1 1 auto;
     flex-direction: column;
     gap: 8px;
 }
 
 .studio-scene-list {
     min-height: 0;
-    flex: 1 1 auto;
     overflow: auto;
     display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
     gap: 8px;
 }
 
@@ -302,42 +405,27 @@
     font-weight: 700;
 }
 
-.studio-marker--preview,
-.studio-state--preview h3 {
+.studio-marker--preview {
     color: var(--studio-preview);
 }
 
-.studio-marker--program,
-.studio-state--program h3 {
+.studio-marker--program {
     color: var(--studio-program);
 }
 
-.studio-state {
-    border-left: 3px solid currentColor;
-    padding-left: 10px;
+.studio-scene-card.is-preview {
+    border-color: var(--studio-preview);
+    box-shadow: inset 0 0 0 1px rgba(35, 185, 90, .48);
 }
 
-.studio-state--preview {
-    color: var(--studio-preview);
+.studio-scene-card.is-program {
+    border-color: var(--studio-program);
 }
 
-.studio-state--program {
-    color: var(--studio-program);
-}
-
-.studio-state__scene {
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
-    margin-top: 5px;
-    color: var(--lz-text);
-    font-size: 13px;
-}
-
-.studio-state__scene span,
-.studio-state__note {
-    color: var(--lz-text-muted);
-    font-size: 10px;
+.studio-scene-card.is-preview.is-program {
+    box-shadow:
+        inset 0 0 0 2px rgba(35, 185, 90, .72),
+        0 0 0 1px rgba(229, 9, 20, .45);
 }
 
 .studio-media-transport {
@@ -401,16 +489,12 @@
     font-variant-numeric: tabular-nums;
 }
 
-.studio-state__note {
-    margin-top: 6px;
-    line-height: 1.4;
-}
-
 .studio-take {
-    flex: 0 0 auto;
+    width: 100%;
+    min-height: 36px;
     border: 1px solid var(--lz-primary-hover);
     border-radius: 9px;
-    padding: 10px;
+    padding: 8px;
     background: var(--lz-primary);
     color: var(--lz-text);
     font: inherit;
@@ -418,12 +502,11 @@
     cursor: pointer;
 }
 
-.studio-take-controls {
+.control-desk__module--take,
+.control-desk__module--transition {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
-    flex: 0 0 auto;
+    align-content: start;
     gap: 8px;
-    min-width: 0;
 }
 
 .studio-transition-select {
@@ -467,6 +550,9 @@
     flex: 0 0 auto;
     gap: 9px;
     min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
     margin: 0;
     border: 1px solid var(--lz-border);
     border-radius: 9px;
@@ -497,6 +583,7 @@
 .studio-graphics-controls select {
     min-width: 0;
     width: 100%;
+    max-width: 100%;
     box-sizing: border-box;
     border: 1px solid var(--lz-border);
     border-radius: 6px;
@@ -521,6 +608,7 @@
 }
 
 .studio-graphics-controls__actions button {
+    max-width: 100%;
     min-height: 36px;
     border: 1px solid var(--lz-border);
     border-radius: 7px;
@@ -567,71 +655,110 @@
     font-size: 10px;
 }
 
+@media (max-width: 1100px) {
+    .control-room-monitor-wall {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .control-room-technical {
+        grid-column: 1 / -1;
+        justify-self: center;
+        width: calc(50% - 6px);
+    }
+
+    .control-desk__row--primary {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-areas:
+            "scenes scenes scenes"
+            "transition take broadcast";
+    }
+
+    .control-desk__row--secondary {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-areas:
+            "media lower"
+            "logo logo"
+            "mon mon";
+    }
+}
+
 @media (max-width: 760px) {
     .main--studio-open {
         padding-right: 10px;
     }
 
-    .studio-panel {
-        top: auto;
-        right: 10px;
-        bottom: 10px;
-        left: 10px;
-        width: auto;
-        max-height: 45%;
-        padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
-    }
-
-    .studio-panel__header,
-    .studio-state,
-    .studio-take,
-    .studio-graphics-controls {
-        flex: 0 0 auto;
-    }
-
-    .control-room-workspace {
+    .control-room-console {
         grid-template-rows: none;
         grid-auto-rows: auto;
         gap: 10px;
         padding-bottom: 2px;
     }
 
-    .control-room-secondary {
-        grid-template-columns: 1fr;
-        gap: 10px;
+    .control-room-monitor-wall {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .control-room-technical {
+        grid-column: 1;
+        grid-row: auto;
+        width: 100%;
+    }
+
+    .control-desk__row--primary {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas:
+            "scenes"
+            "transition"
+            "take"
+            "broadcast";
+    }
+
+    .control-desk__row--secondary {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas:
+            "media"
+            "lower"
+            "logo"
+            "mon";
     }
 
     .control-room-monitor {
-        grid-template-rows: auto auto;
         padding: 8px;
     }
 
-    .control-room-technical__viewport {
-        aspect-ratio: 16 / 9;
-        height: auto;
+    .studio-panel {
+        overflow: visible;
+        padding: 12px;
     }
 }
 
 @media (max-height: 500px) and (orientation: landscape) {
-    .main--studio-open {
-        padding-right: calc(min(42%, 320px) + 20px);
+    .control-room-monitor-wall {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .control-room-technical {
+        grid-column: 1 / -1;
+        width: calc(50% - 5px);
     }
 
     .studio-panel {
-        top: 10px;
-        right: 10px;
-        bottom: 10px;
-        left: auto;
-        width: min(42%, 320px);
-        max-height: none;
+        overflow: visible;
     }
 
-    .studio-graphics-controls {
-        gap: 6px;
-        padding: 8px;
+    .control-desk__row--primary {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-areas:
+            "scenes scenes"
+            "transition take"
+            "broadcast broadcast";
     }
 
-    .studio-graphics-controls__actions button {
-        min-height: 32px;
+    .control-desk__row--secondary {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-areas:
+            "media lower"
+            "logo logo"
+            "mon mon";
     }
 }

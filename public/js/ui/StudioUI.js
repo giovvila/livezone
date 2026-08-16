@@ -31,8 +31,6 @@ export default class StudioUI {
         this.closeButton = this.root.querySelector("#studio-close");
         this.sceneList = this.root.querySelector("#studio-scene-list");
         this.emptyState = this.root.querySelector("#studio-empty-state");
-        this.previewScene = this.root.querySelector("#studio-preview-scene");
-        this.programScene = this.root.querySelector("#studio-program-scene");
         this.takeButton = this.root.querySelector("#studio-take");
         this.transitionSelect = this.root.querySelector(
             "#studio-transition-type"
@@ -40,8 +38,8 @@ export default class StudioUI {
 
         if (
             !this.main || !this.toggle || !this.closeButton ||
-            !this.sceneList || !this.emptyState || !this.previewScene ||
-            !this.programScene || !this.takeButton || !this.transitionSelect ||
+            !this.sceneList || !this.emptyState || !this.takeButton ||
+            !this.transitionSelect ||
             !this.transitionCoordinator
         ) {
             return;
@@ -105,8 +103,6 @@ export default class StudioUI {
         this.closeButton = null;
         this.sceneList = null;
         this.emptyState = null;
-        this.previewScene = null;
-        this.programScene = null;
         this.takeButton = null;
         this.transitionSelect = null;
         this.selectedTransition = null;
@@ -166,8 +162,6 @@ export default class StudioUI {
         const scenes = StudioStateManager.getScenes();
         const previewSceneId = StudioStateManager.getPreviewSceneId();
         const programSceneId = StudioStateManager.getProgramSceneId();
-        const sceneById = new Map(scenes.map((scene) => [scene.id, scene]));
-
         this.sceneList.replaceChildren();
 
         scenes.forEach((scene) => {
@@ -178,11 +172,7 @@ export default class StudioUI {
 
         this.emptyState.hidden = scenes.length !== 0;
 
-        const preview = sceneById.get(previewSceneId) || null;
-        const program = sceneById.get(programSceneId) || null;
-
-        this.renderSceneSummary(this.previewScene, preview);
-        this.renderSceneSummary(this.programScene, program);
+        const preview = scenes.find((scene) => scene.id === previewSceneId);
 
         this.takeButton.disabled = !preview ||
             previewSceneId === programSceneId ||
@@ -196,11 +186,31 @@ export default class StudioUI {
         const markers = document.createElement("span");
         const isPreview = scene.id === previewSceneId;
         const isProgram = scene.id === programSceneId;
+        const states = [];
 
         button.type = "button";
-        button.className = "studio-scene-card";
+        button.className = [
+            "studio-scene-card",
+            isPreview ? "is-preview" : "",
+            isProgram ? "is-program" : ""
+        ].filter(Boolean).join(" ");
         button.dataset.studioSceneId = scene.id;
         button.setAttribute("aria-pressed", String(isPreview));
+
+        if (isPreview) {
+            states.push("Preview");
+        }
+
+        if (isProgram) {
+            states.push("Program");
+        }
+
+        button.setAttribute(
+            "aria-label",
+            [scene.name, scene.type, states.join(" and ")]
+                .filter(Boolean)
+                .join(", ")
+        );
 
         name.className = "studio-scene-card__name";
         name.textContent = scene.name;
@@ -211,11 +221,11 @@ export default class StudioUI {
         markers.className = "studio-scene-card__markers";
 
         if (isPreview) {
-            markers.appendChild(this.createMarker("PREVIEW", "preview"));
+            markers.appendChild(this.createMarker("PVW", "preview"));
         }
 
         if (isProgram) {
-            markers.appendChild(this.createMarker("PROGRAM", "program"));
+            markers.appendChild(this.createMarker("PGM", "program"));
         }
 
         button.append(name, type, markers);
@@ -230,19 +240,4 @@ export default class StudioUI {
         return marker;
     }
 
-    renderSceneSummary(element, scene) {
-        element.replaceChildren();
-
-        if (!scene) {
-            element.textContent = "—";
-            return;
-        }
-
-        const name = document.createElement("strong");
-        const type = document.createElement("span");
-
-        name.textContent = scene.name;
-        type.textContent = scene.type;
-        element.append(name, type);
-    }
 }

@@ -29,13 +29,6 @@
             </div>
 
             <div class="header-info">
-                <div class="broadcast-controls" role="group" aria-label="Broadcast control">
-                    <button class="broadcast-control" type="button" data-broadcast-state="LIVE" aria-pressed="false">LIVE</button>
-                    <button class="broadcast-control" type="button" data-broadcast-state="BREAK" aria-pressed="false">BREAK</button>
-                    <button class="broadcast-control" type="button" data-broadcast-state="OFFLINE" aria-pressed="true">OFFLINE</button>
-                    <button class="broadcast-control" type="button" data-broadcast-state="PROGRAM" aria-pressed="false">PROGRAM</button>
-                </div>
-
                 <div class="live-badge broadcast-offline">
                     <span class="live-dot"></span>
                     <span id="broadcast-state-label">BROADCAST · OFFLINE</span>
@@ -46,7 +39,8 @@
         </header>
 
         <main class='main'>
-            <div class="control-room-workspace">
+            <div class="control-room-console">
+                <section class="control-room-monitor-wall" aria-label="Monitor wall">
                 <section class="control-room-monitor control-room-program" aria-labelledby="control-room-program-title">
                     <header class="control-room-monitor__header">
                         <h2 id="control-room-program-title">PROGRAM</h2>
@@ -58,18 +52,17 @@
                     <div id="studio-program-renderer" class="studio-render-surface studio-render-surface--program" aria-label="Studio Program monitor"></div>
                 </section>
 
-                <div class="control-room-secondary">
-                    <section class="control-room-monitor control-room-preview" aria-labelledby="control-room-preview-title">
+                <section class="control-room-monitor control-room-preview" aria-labelledby="control-room-preview-title">
                         <header class="control-room-monitor__header">
                             <h2 id="control-room-preview-title">PREVIEW</h2>
                             <span>Preparation</span>
                         </header>
                         <div id="studio-preview-renderer" class="studio-render-surface studio-render-surface--secondary" aria-label="Studio Preview monitor"></div>
-                    </section>
+                </section>
 
-                    <section class="control-room-monitor control-room-technical" aria-labelledby="control-room-technical-title">
+                <section class="control-room-monitor control-room-technical" aria-labelledby="control-room-technical-title">
                         <header class="control-room-monitor__header">
-                            <h2 id="control-room-technical-title">TECHNICAL SOURCE</h2>
+                            <h2 id="control-room-technical-title">TECHNICAL</h2>
                             <span>Raw primary stream</span>
                         </header>
                         <div class="control-room-technical__viewport">
@@ -93,23 +86,63 @@
                                 </div>
                             </div>
                         </div>
-                    </section>
-                </div>
-            </div>
+                </section>
+                </section>
 
             <aside id="studio-panel" class="studio-panel" aria-labelledby="studio-title" hidden>
                 <div class="studio-panel__header">
-                    <h2 id="studio-title">LIVEZONE STUDIO</h2>
+                    <h2 id="studio-title">CONTROL DESK</h2>
                     <button id="studio-close" class="studio-panel__close" type="button" aria-label="Close Studio">×</button>
                 </div>
 
-                <section class="studio-section" aria-labelledby="studio-scenes-title">
+                <div class="control-desk__row control-desk__row--primary">
+                <section class="studio-section control-desk__module control-desk__module--scenes" aria-labelledby="studio-scenes-title">
                     <h3 id="studio-scenes-title">SCENES</h3>
                     <div id="studio-scene-list" class="studio-scene-list"></div>
                     <p id="studio-empty-state" class="studio-empty-state">No scenes configured</p>
                 </section>
 
-                <fieldset class="studio-graphics-controls">
+                <section class="control-desk__module control-desk__module--transition" aria-labelledby="studio-transition-title">
+                    <label class="studio-transition-select" for="studio-transition-type">
+                        <span id="studio-transition-title">TRANSITION</span>
+                        <select id="studio-transition-type">
+                            <option value="cut" selected>CUT</option>
+                            <option value="dissolve">DISSOLVE</option>
+                        </select>
+                    </label>
+                </section>
+
+                <section class="control-desk__module control-desk__module--take" aria-labelledby="studio-take-title">
+                    <h3 id="studio-take-title">TAKE</h3>
+                    <button id="studio-take" class="studio-take" type="button" disabled>TAKE</button>
+                </section>
+
+                <section class="control-desk__module control-desk__module--broadcast" aria-labelledby="control-desk-broadcast-title">
+                    <h3 id="control-desk-broadcast-title">BROADCAST</h3>
+                    <div class="broadcast-controls" role="group" aria-label="Broadcast control">
+                        <button class="broadcast-control" type="button" data-broadcast-state="LIVE" aria-pressed="false">LIVE</button>
+                        <button class="broadcast-control" type="button" data-broadcast-state="BREAK" aria-pressed="false">BREAK</button>
+                        <button class="broadcast-control" type="button" data-broadcast-state="OFFLINE" aria-pressed="true">OFFLINE</button>
+                        <button class="broadcast-control" type="button" data-broadcast-state="PROGRAM" aria-pressed="false">PROGRAM</button>
+                    </div>
+                </section>
+                </div>
+
+                <div class="control-desk__row control-desk__row--secondary">
+                <section id="studio-media-transport" class="studio-media-transport" aria-labelledby="studio-media-title" hidden>
+                    <h3 id="studio-media-title">MEDIA PREVIEW</h3>
+                    <div class="studio-media-transport__actions">
+                        <button id="studio-media-restart" type="button">RESTART</button>
+                        <button id="studio-media-play" type="button">PLAY</button>
+                        <button id="studio-media-pause" type="button">PAUSE</button>
+                    </div>
+                    <div class="studio-media-transport__readout" aria-live="polite">
+                        <strong id="studio-media-time">00:00 / --:--</strong>
+                        <span id="studio-media-state">UNAVAILABLE</span>
+                    </div>
+                </section>
+
+                <fieldset class="studio-graphics-controls control-desk__module control-desk__module--lower-third">
                     <legend>LOWER THIRD</legend>
 
                     <div class="studio-graphics-controls__fields">
@@ -134,7 +167,7 @@
                     <p id="studio-lower-third-feedback" class="studio-graphics-controls__feedback"></p>
                 </fieldset>
 
-                <fieldset class="studio-graphics-controls">
+                <fieldset class="studio-graphics-controls control-desk__module control-desk__module--logo">
                     <legend>CHANNEL LOGO</legend>
 
                     <div class="studio-graphics-controls__fields">
@@ -165,41 +198,14 @@
                     <p id="studio-logo-feedback" class="studio-graphics-controls__feedback"></p>
                 </fieldset>
 
-                <section class="studio-state studio-state--preview" aria-labelledby="studio-preview-title">
-                    <h3 id="studio-preview-title">PREVIEW</h3>
-                    <p id="studio-preview-scene" class="studio-state__scene">—</p>
+                <section class="control-desk__module control-desk__module--mon" aria-labelledby="control-desk-mon-title">
+                    <h3 id="control-desk-mon-title">MON</h3>
+                    <button id="engine-monitor-toggle" type="button">OPEN MON</button>
                 </section>
-
-                <section id="studio-media-transport" class="studio-media-transport" aria-labelledby="studio-media-title" hidden>
-                    <h3 id="studio-media-title">MEDIA PREVIEW</h3>
-                    <div class="studio-media-transport__actions">
-                        <button id="studio-media-restart" type="button">RESTART</button>
-                        <button id="studio-media-play" type="button">PLAY</button>
-                        <button id="studio-media-pause" type="button">PAUSE</button>
-                    </div>
-                    <div class="studio-media-transport__readout" aria-live="polite">
-                        <strong id="studio-media-time">00:00 / --:--</strong>
-                        <span id="studio-media-state">UNAVAILABLE</span>
-                    </div>
-                </section>
-
-                <div class="studio-take-controls">
-                    <label class="studio-transition-select" for="studio-transition-type">
-                        <span>Transition</span>
-                        <select id="studio-transition-type">
-                            <option value="cut" selected>CUT</option>
-                            <option value="dissolve">DISSOLVE</option>
-                        </select>
-                    </label>
-                    <button id="studio-take" class="studio-take" type="button" disabled>TAKE</button>
                 </div>
 
-                <section class="studio-state studio-state--program" aria-labelledby="studio-program-title">
-                    <h3 id="studio-program-title">PROGRAM</h3>
-                    <p id="studio-program-scene" class="studio-state__scene">—</p>
-                    <p class="studio-state__note">Control-plane scene state; rendering output is not connected yet.</p>
-                </section>
             </aside>
+            </div>
         </main>
 
         <section class='status-bar'>
@@ -208,7 +214,6 @@
             <div>FULL HD</div>
             <div class="operator-utilities" role="group" aria-label="Operator utilities">
                 <button id="studio-toggle" type="button" aria-controls="studio-panel" aria-expanded="false">STUDIO</button>
-                <button id="engine-monitor-toggle" type="button">MON</button>
             </div>
         </section>
 

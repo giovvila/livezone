@@ -23,7 +23,7 @@
     color: var(--lz-text-muted);
 }
 
-.control-room-workspace .studio-render-surface {
+.control-room-monitor-wall .studio-render-surface {
     margin-top: 0;
 }
 
@@ -31,8 +31,8 @@
 .studio-render-surface--secondary {
     align-self: center;
     justify-self: center;
-    width: auto;
-    height: 100%;
+    width: 100%;
+    height: auto;
     max-width: 100%;
     max-height: 100%;
 }
