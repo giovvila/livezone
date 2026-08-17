@@ -10,6 +10,11 @@
       "id": "media-demo",
       "kind": "media",
       "url": "../media/demo.mp4"
+    },
+    {
+      "id": "media-demo-2",
+      "kind": "media",
+      "url": "../media/demo2.mp4"
     }
   ],
   "graphics": [
@@ -39,11 +44,20 @@
     },
     {
       "id": "media-demo-scene",
-      "name": "MEDIA",
+      "name": "MEDIA A",
       "type": "MEDIA",
       "renderer": {
         "kind": "source",
         "sourceId": "media-demo"
+      }
+    },
+    {
+      "id": "media-demo-2-scene",
+      "name": "MEDIA B",
+      "type": "MEDIA",
+      "renderer": {
+        "kind": "source",
+        "sourceId": "media-demo-2"
       }
     },
     {

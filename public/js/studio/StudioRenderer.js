@@ -641,9 +641,31 @@ export default class StudioRenderer {
     }
 
     setPreviewTransportSnapshot(snapshot) {
-        this.previewTransportSnapshot = snapshot;
+        this.previewTransportSnapshot = this.createPreviewTransportSnapshot(
+            snapshot
+        );
         this.previewTransportListeners.forEach((listener) => {
-            listener(snapshot);
+            listener(this.previewTransportSnapshot);
+        });
+    }
+
+    createPreviewTransportSnapshot(snapshot) {
+        if (!snapshot) {
+            return null;
+        }
+
+        const sceneId = this.preview.sceneId;
+        const definition = this.definitionRegistry.getDefinition(sceneId);
+
+        if (!definition || definition.renderer.kind !== "source" ||
+            definition.renderer.sourceId !== snapshot.sourceId) {
+            return null;
+        }
+
+        return Object.freeze({
+            ...snapshot,
+            sceneId,
+            displayName: definition.name || snapshot.sourceId
         });
     }
 
