@@ -22,6 +22,11 @@
 }
 
 .control-room-monitor-wall {
+    --monitor-wall-width: 68%;
+    --monitor-program-share: 40%;
+    --monitor-preview-share: 40%;
+    --monitor-technical-share: 20%;
+    position: relative;
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 2fr)) minmax(0, 1fr);
     align-items: start;
@@ -33,7 +38,111 @@
 @media (min-width: 1101px) {
     .control-room-monitor-wall {
         justify-self: center;
-        width: 68%;
+        grid-template-columns:
+            minmax(0, var(--monitor-program-share))
+            0
+            minmax(0, var(--monitor-preview-share))
+            0
+            minmax(0, var(--monitor-technical-share));
+        gap: 0;
+        width: var(--monitor-wall-width);
+    }
+
+    .control-room-program {
+        grid-column: 1;
+    }
+
+    .monitor-wall-resize-handle--program-preview {
+        grid-column: 2;
+    }
+
+    .control-room-preview {
+        grid-column: 3;
+    }
+
+    .monitor-wall-resize-handle--preview-technical {
+        grid-column: 4;
+    }
+
+    .control-room-technical {
+        grid-column: 5;
+    }
+}
+
+.monitor-wall-layout-controls,
+.monitor-wall-resize-handle {
+    display: none;
+}
+
+@media (min-width: 1101px) {
+    .is-monitor-layout-editing .monitor-wall-layout-controls {
+        position: absolute;
+        z-index: 4;
+        top: 6px;
+        left: 50%;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        border: 1px solid var(--lz-border);
+        border-radius: 7px;
+        padding: 4px 6px;
+        background: rgba(8, 8, 9, .94);
+        color: var(--lz-text-soft);
+        font-size: 9px;
+        font-weight: 700;
+        transform: translateX(-50%);
+    }
+
+    .monitor-wall-layout-controls button {
+        width: 24px;
+        height: 24px;
+        border: 1px solid var(--lz-border);
+        border-radius: 5px;
+        padding: 0;
+        background: rgba(255, 255, 255, .06);
+        color: var(--lz-text);
+        font: inherit;
+        cursor: pointer;
+    }
+
+    .monitor-wall-layout-controls output {
+        min-width: 34px;
+        text-align: center;
+    }
+
+    .is-monitor-layout-editing .monitor-wall-resize-handle {
+        position: relative;
+        z-index: 3;
+        display: block;
+        align-self: stretch;
+        width: 14px;
+        min-width: 14px;
+        border: 0;
+        padding: 0;
+        background: transparent;
+        touch-action: none;
+        cursor: col-resize;
+        transform: translateX(-50%);
+    }
+
+    .is-monitor-layout-editing .monitor-wall-resize-handle::before {
+        position: absolute;
+        top: 8px;
+        bottom: 8px;
+        left: 6px;
+        width: 2px;
+        border-radius: 2px;
+        background: var(--studio-preview);
+        content: "";
+        opacity: .75;
+    }
+
+    .is-monitor-layout-editing .monitor-wall-resize-handle:focus-visible::before,
+    .is-monitor-layout-editing .monitor-wall-resize-handle.is-monitor-resize-active::before {
+        width: 3px;
+        background: var(--lz-text);
+        box-shadow: 0 0 0 3px rgba(35, 185, 90, .22);
+        opacity: 1;
     }
 }
 
@@ -156,17 +265,22 @@
     justify-content: center;
     width: 100%;
     height: auto;
+    max-width: 100%;
     aspect-ratio: 16 / 9;
     min-width: 0;
     min-height: 0;
+    box-sizing: border-box;
     overflow: hidden;
 }
 
 .control-room-technical .player-wrapper {
     width: 100%;
     height: 100%;
+    max-width: 100%;
+    max-height: 100%;
     min-width: 0;
     min-height: 0;
+    box-sizing: border-box;
     border-radius: 7px;
 }
 
@@ -226,67 +340,147 @@
     gap: 12px;
 }
 
-.control-desk__module {
+.studio-panel__header-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 7px;
+}
+
+.studio-panel__header-actions button:not(.studio-panel__close) {
+    min-height: 32px;
+    border: 1px solid var(--lz-border);
+    border-radius: 7px;
+    padding: 5px 9px;
+    background: rgba(255, 255, 255, .05);
+    color: var(--lz-text-soft);
+    font: inherit;
+    font-size: 9px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+#control-desk-edit[aria-pressed="true"] {
+    border-color: var(--studio-preview);
+    background: rgba(35, 185, 90, .12);
+    color: var(--studio-preview);
+}
+
+.control-desk__workspace {
+    --control-desk-columns: 12;
+    display: grid;
+    grid-template-columns: repeat(
+        var(--control-desk-columns),
+        minmax(0, 1fr)
+    );
+    grid-auto-rows: 36px;
+    align-items: stretch;
+    gap: 12px;
     min-width: 0;
     max-width: 100%;
+    overflow-x: hidden;
+    overflow-y: visible;
+}
+
+.control-desk__module {
+    position: relative;
+    container: control-desk-module / inline-size;
+    min-width: 0;
+    min-height: 0;
+    max-width: 100%;
     box-sizing: border-box;
-    overflow: hidden;
+    overflow: auto;
     border: 1px solid var(--lz-border);
     border-radius: 10px;
     padding: 10px;
     background: rgba(0, 0, 0, .16);
 }
 
-.control-desk__row {
-    display: grid;
-    align-items: start;
-    gap: 12px;
-    min-width: 0;
-    max-width: 100%;
+.control-desk__drag-handle,
+.control-desk__resize-handle {
+    position: absolute;
+    z-index: 2;
+    display: none;
+    width: 26px;
+    height: 26px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--lz-border);
+    border-radius: 6px;
+    padding: 0;
+    background: var(--lz-panel);
+    color: var(--lz-text-soft);
+    font: inherit;
+    font-size: 15px;
+    line-height: 1;
+    touch-action: none;
+    user-select: none;
+    cursor: grab;
 }
 
-.control-desk__row--primary {
-    grid-template-columns:
-        minmax(0, 11fr)
-        repeat(3, minmax(0, 3fr));
-    grid-template-areas: "scenes transition take broadcast";
+.control-desk__drag-handle {
+    top: 4px;
+    right: 34px;
 }
 
-.control-desk__row--secondary {
-    grid-template-columns:
-        repeat(2, minmax(0, 27fr))
-        minmax(0, 31fr)
-        minmax(0, 15fr);
-    grid-template-areas: "media lower logo mon";
+.control-desk__resize-handle {
+    right: 4px;
+    bottom: 4px;
+    cursor: nwse-resize;
 }
 
-.control-desk__module--scenes {
-    grid-area: scenes;
+.is-layout-editing .control-desk__module {
+    padding-top: 36px;
+    outline: 1px dashed rgba(255, 255, 255, .18);
+    outline-offset: -4px;
 }
 
-.control-desk__module--transition {
-    grid-area: transition;
+.is-layout-editing .control-desk__drag-handle,
+.is-layout-editing .control-desk__resize-handle {
+    display: flex;
 }
 
-.control-desk__module--take {
-    grid-area: take;
+.is-layout-editing .control-desk__module.is-layout-active {
+    border-color: var(--studio-preview);
+    box-shadow: 0 0 0 2px rgba(35, 185, 90, .2);
 }
 
-.studio-media-transport {
-    grid-area: media;
-    align-self: start;
-    max-width: 100%;
-    box-sizing: border-box;
-    overflow: hidden;
+.is-layout-editing .control-desk__module.is-layout-active .control-desk__drag-handle {
+    cursor: grabbing;
 }
 
-.control-desk__module--broadcast {
-    grid-area: broadcast;
+.control-desk__module[data-control-module="scenes"] {
+    grid-column: span 6;
+    grid-row: span 4;
+}
+
+.control-desk__module[data-control-module="transition"],
+.control-desk__module[data-control-module="take"],
+.control-desk__module[data-control-module="broadcast"],
+.control-desk__module[data-control-module="mon"] {
+    grid-column: span 2;
+    grid-row: span 3;
+}
+
+.control-desk__module[data-control-module="media-preview"] {
+    grid-column: span 3;
+    grid-row: span 4;
+}
+
+.control-desk__module[data-control-module="lower-third"] {
+    grid-column: span 3;
+    grid-row: span 7;
+}
+
+.control-desk__module[data-control-module="channel-logo"] {
+    grid-column: span 4;
+    grid-row: span 7;
 }
 
 .control-desk__module--broadcast .broadcast-controls {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
     margin-top: 8px;
 }
 
@@ -294,17 +488,8 @@
     min-width: 0;
 }
 
-.control-desk__module--lower-third {
-    grid-area: lower;
-}
-
-.control-desk__module--logo {
-    grid-area: logo;
-}
-
 .control-desk__module--mon {
     display: grid;
-    grid-area: mon;
     align-content: start;
     gap: 8px;
 }
@@ -451,7 +636,7 @@
 
 .studio-media-transport__actions {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(68px, 1fr));
     gap: 6px;
 }
 
@@ -603,8 +788,18 @@
 
 .studio-graphics-controls__actions {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
     gap: 7px;
+}
+
+@container control-desk-module (max-width: 300px) {
+    .studio-graphics-controls__fields {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .studio-graphics-controls__actions {
+        grid-template-columns: minmax(0, 1fr);
+    }
 }
 
 .studio-graphics-controls__actions button {
@@ -666,20 +861,6 @@
         width: calc(50% - 6px);
     }
 
-    .control-desk__row--primary {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        grid-template-areas:
-            "scenes scenes scenes"
-            "transition take broadcast";
-    }
-
-    .control-desk__row--secondary {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        grid-template-areas:
-            "media lower"
-            "logo logo"
-            "mon mon";
-    }
 }
 
 @media (max-width: 760px) {
@@ -702,24 +883,6 @@
         grid-column: 1;
         grid-row: auto;
         width: 100%;
-    }
-
-    .control-desk__row--primary {
-        grid-template-columns: minmax(0, 1fr);
-        grid-template-areas:
-            "scenes"
-            "transition"
-            "take"
-            "broadcast";
-    }
-
-    .control-desk__row--secondary {
-        grid-template-columns: minmax(0, 1fr);
-        grid-template-areas:
-            "media"
-            "lower"
-            "logo"
-            "mon";
     }
 
     .control-room-monitor {
@@ -746,19 +909,4 @@
         overflow: visible;
     }
 
-    .control-desk__row--primary {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        grid-template-areas:
-            "scenes scenes"
-            "transition take"
-            "broadcast broadcast";
-    }
-
-    .control-desk__row--secondary {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        grid-template-areas:
-            "media lower"
-            "logo logo"
-            "mon mon";
-    }
 }

@@ -6,6 +6,8 @@ import BroadcastUI from "../ui/BroadcastUI.js";
 import StudioUI from "../ui/StudioUI.js";
 import StudioGraphicsUI from "../ui/StudioGraphicsUI.js";
 import StudioMediaUI from "../ui/StudioMediaUI.js";
+import ControlDeskLayoutManager from "../ui/ControlDeskLayoutManager.js";
+import MonitorWallLayoutManager from "../ui/MonitorWallLayoutManager.js";
 import ProgramFullscreenUI from "../ui/ProgramFullscreenUI.js";
 import OverlayController from "../ui/OverlayController.js";
 import NotificationCenter from "../ui/NotificationCenter.js";
@@ -36,6 +38,8 @@ let broadcastUI = null;
 let studioUI = null;
 let studioGraphicsUI = null;
 let studioMediaUI = null;
+let controlDeskLayoutManager = null;
+let monitorWallLayoutManager = null;
 let studioRenderer = null;
 let studioTransitionCoordinator = null;
 let programFullscreenUI = null;
@@ -87,6 +91,19 @@ runtime.start({
             StudioGraphicsManager
         );
         studioGraphicsUI.start();
+
+        monitorWallLayoutManager = new MonitorWallLayoutManager({
+            root: document.querySelector(".control-room-monitor-wall")
+        });
+        monitorWallLayoutManager.start();
+
+        controlDeskLayoutManager = new ControlDeskLayoutManager({
+            root: document.getElementById("studio-panel"),
+            onEditModeChange: (enabled) =>
+                monitorWallLayoutManager?.setEditMode(enabled),
+            onReset: () => monitorWallLayoutManager?.reset()
+        });
+        controlDeskLayoutManager.start();
 
         programFullscreenUI = new ProgramFullscreenUI({
             target: document.querySelector(".control-room-program"),

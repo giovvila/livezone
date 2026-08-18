@@ -41,6 +41,12 @@
         <main class='main'>
             <div class="control-room-console">
                 <section class="control-room-monitor-wall" aria-label="Monitor wall">
+                <div class="monitor-wall-layout-controls" aria-label="Monitor Wall size controls">
+                    <span>MONITOR WALL</span>
+                    <button id="monitor-wall-width-decrease" type="button" aria-label="Decrease Monitor Wall width">−</button>
+                    <output id="monitor-wall-width-value" aria-live="polite">68%</output>
+                    <button id="monitor-wall-width-increase" type="button" aria-label="Increase Monitor Wall width">+</button>
+                </div>
                 <section class="control-room-monitor control-room-program" aria-labelledby="control-room-program-title">
                     <header class="control-room-monitor__header">
                         <h2 id="control-room-program-title">PROGRAM</h2>
@@ -52,6 +58,8 @@
                     <div id="studio-program-renderer" class="studio-render-surface studio-render-surface--program" aria-label="Studio Program monitor"></div>
                 </section>
 
+                <button class="monitor-wall-resize-handle monitor-wall-resize-handle--program-preview" type="button" data-monitor-separator="program-preview" aria-label="Resize Program and Preview monitors" tabindex="-1"></button>
+
                 <section class="control-room-monitor control-room-preview" aria-labelledby="control-room-preview-title">
                         <header class="control-room-monitor__header">
                             <h2 id="control-room-preview-title">PREVIEW</h2>
@@ -59,6 +67,8 @@
                         </header>
                         <div id="studio-preview-renderer" class="studio-render-surface studio-render-surface--secondary" aria-label="Studio Preview monitor"></div>
                 </section>
+
+                <button class="monitor-wall-resize-handle monitor-wall-resize-handle--preview-technical" type="button" data-monitor-separator="preview-technical" aria-label="Resize Preview and Technical monitors" tabindex="-1"></button>
 
                 <section class="control-room-monitor control-room-technical" aria-labelledby="control-room-technical-title">
                         <header class="control-room-monitor__header">
@@ -92,17 +102,21 @@
             <aside id="studio-panel" class="studio-panel" aria-labelledby="studio-title" hidden>
                 <div class="studio-panel__header">
                     <h2 id="studio-title">CONTROL DESK</h2>
-                    <button id="studio-close" class="studio-panel__close" type="button" aria-label="Close Studio">×</button>
+                    <div class="studio-panel__header-actions">
+                        <button id="control-desk-edit" type="button" aria-pressed="false">EDIT LAYOUT</button>
+                        <button id="control-desk-reset" type="button">RESET LAYOUT</button>
+                        <button id="studio-close" class="studio-panel__close" type="button" aria-label="Close Studio">×</button>
+                    </div>
                 </div>
 
-                <div class="control-desk__row control-desk__row--primary">
-                <section class="studio-section control-desk__module control-desk__module--scenes" aria-labelledby="studio-scenes-title">
+                <div id="control-desk-workspace" class="control-desk__workspace" aria-label="Customizable Control Desk modules">
+                <section class="studio-section control-desk__module control-desk__module--scenes" data-control-module="scenes" aria-labelledby="studio-scenes-title">
                     <h3 id="studio-scenes-title">SCENES</h3>
                     <div id="studio-scene-list" class="studio-scene-list"></div>
                     <p id="studio-empty-state" class="studio-empty-state">No scenes configured</p>
                 </section>
 
-                <section class="control-desk__module control-desk__module--transition" aria-labelledby="studio-transition-title">
+                <section class="control-desk__module control-desk__module--transition" data-control-module="transition" aria-labelledby="studio-transition-title">
                     <label class="studio-transition-select" for="studio-transition-type">
                         <span id="studio-transition-title">TRANSITION</span>
                         <select id="studio-transition-type">
@@ -112,12 +126,12 @@
                     </label>
                 </section>
 
-                <section class="control-desk__module control-desk__module--take" aria-labelledby="studio-take-title">
+                <section class="control-desk__module control-desk__module--take" data-control-module="take" aria-labelledby="studio-take-title">
                     <h3 id="studio-take-title">TAKE</h3>
                     <button id="studio-take" class="studio-take" type="button" disabled>TAKE</button>
                 </section>
 
-                <section class="control-desk__module control-desk__module--broadcast" aria-labelledby="control-desk-broadcast-title">
+                <section class="control-desk__module control-desk__module--broadcast" data-control-module="broadcast" aria-labelledby="control-desk-broadcast-title">
                     <h3 id="control-desk-broadcast-title">BROADCAST</h3>
                     <div class="broadcast-controls" role="group" aria-label="Broadcast control">
                         <button class="broadcast-control" type="button" data-broadcast-state="LIVE" aria-pressed="false">LIVE</button>
@@ -126,10 +140,7 @@
                         <button class="broadcast-control" type="button" data-broadcast-state="PROGRAM" aria-pressed="false">PROGRAM</button>
                     </div>
                 </section>
-                </div>
-
-                <div class="control-desk__row control-desk__row--secondary">
-                <section id="studio-media-transport" class="studio-media-transport" aria-labelledby="studio-media-title">
+                <section id="studio-media-transport" class="studio-media-transport control-desk__module" data-control-module="media-preview" aria-labelledby="studio-media-title">
                     <h3 id="studio-media-title">MEDIA PREVIEW <span id="studio-media-name">— No media in Preview</span></h3>
                     <div class="studio-media-transport__actions">
                         <button id="studio-media-restart" type="button" disabled>RESTART</button>
@@ -142,7 +153,7 @@
                     </div>
                 </section>
 
-                <fieldset class="studio-graphics-controls control-desk__module control-desk__module--lower-third">
+                <fieldset class="studio-graphics-controls control-desk__module control-desk__module--lower-third" data-control-module="lower-third">
                     <legend>LOWER THIRD</legend>
 
                     <div class="studio-graphics-controls__fields">
@@ -167,7 +178,7 @@
                     <p id="studio-lower-third-feedback" class="studio-graphics-controls__feedback"></p>
                 </fieldset>
 
-                <fieldset class="studio-graphics-controls control-desk__module control-desk__module--logo">
+                <fieldset class="studio-graphics-controls control-desk__module control-desk__module--logo" data-control-module="channel-logo">
                     <legend>CHANNEL LOGO</legend>
 
                     <div class="studio-graphics-controls__fields">
@@ -198,7 +209,7 @@
                     <p id="studio-logo-feedback" class="studio-graphics-controls__feedback"></p>
                 </fieldset>
 
-                <section class="control-desk__module control-desk__module--mon" aria-labelledby="control-desk-mon-title">
+                <section class="control-desk__module control-desk__module--mon" data-control-module="mon" aria-labelledby="control-desk-mon-title">
                     <h3 id="control-desk-mon-title">MON</h3>
                     <button id="engine-monitor-toggle" type="button">OPEN MON</button>
                 </section>
