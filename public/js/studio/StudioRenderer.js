@@ -612,6 +612,17 @@ export default class StudioRenderer {
             : null;
     }
 
+    isSceneInUse(sceneId) {
+        if (!sceneId) {
+            return false;
+        }
+
+        return this.preview.sceneId === sceneId ||
+            this.program.sceneId === sceneId ||
+            this.program.prepared?.sceneId === sceneId ||
+            this.program.activation?.sceneId === sceneId;
+    }
+
     setSlotRenderer(slot, renderer) {
         if (slot === this.preview) {
             slot.transportUnsubscribe?.();

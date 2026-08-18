@@ -6,6 +6,7 @@ import BroadcastUI from "../ui/BroadcastUI.js";
 import StudioUI from "../ui/StudioUI.js";
 import StudioGraphicsUI from "../ui/StudioGraphicsUI.js";
 import StudioMediaUI from "../ui/StudioMediaUI.js";
+import StudioSourcesUI from "../ui/StudioSourcesUI.js";
 import ControlDeskLayoutManager from "../ui/ControlDeskLayoutManager.js";
 import MonitorWallLayoutManager from "../ui/MonitorWallLayoutManager.js";
 import ProgramFullscreenUI from "../ui/ProgramFullscreenUI.js";
@@ -13,6 +14,7 @@ import OverlayController from "../ui/OverlayController.js";
 import NotificationCenter from "../ui/NotificationCenter.js";
 import DebugPanel from "../debug/DebugPanel.js";
 import StudioBootstrap from "../studio/StudioBootstrap.js";
+import StudioCatalogManager from "../studio/StudioCatalogManager.js";
 import StudioRenderer from "../studio/StudioRenderer.js";
 import StudioSourceManager from "../studio/StudioSourceManager.js";
 import StudioGraphicsManager from "../studio/StudioGraphicsManager.js";
@@ -29,15 +31,19 @@ BroadcastStateManager.initialize();
 StudioStateManager.initialize();
 
 const runtime = new PlaybackRuntime();
-const studioBootstrap = new StudioBootstrap({
+const studioCatalogManager = new StudioCatalogManager({
     studioStateManager: StudioStateManager,
-    studioSourceManager: StudioSourceManager,
+    studioSourceManager: StudioSourceManager
+});
+const studioBootstrap = new StudioBootstrap({
+    studioCatalogManager,
     studioGraphicsManager: StudioGraphicsManager
 });
 let broadcastUI = null;
 let studioUI = null;
 let studioGraphicsUI = null;
 let studioMediaUI = null;
+let studioSourcesUI = null;
 let controlDeskLayoutManager = null;
 let monitorWallLayoutManager = null;
 let studioRenderer = null;
@@ -62,7 +68,7 @@ runtime.start({
             previewRoot: document.getElementById("studio-preview-renderer"),
             programRoot: document.getElementById("studio-program-renderer"),
             studioStateManager: StudioStateManager,
-            definitionRegistry: studioBootstrap,
+            definitionRegistry: studioCatalogManager,
             studioSourceManager: StudioSourceManager,
             studioGraphicsManager: StudioGraphicsManager
         });
@@ -73,6 +79,10 @@ runtime.start({
             studioRenderer
         });
         studioTransitionCoordinator.start();
+        studioCatalogManager.setRemovalGuard(({ sceneId }) =>
+            studioTransitionCoordinator.isBusy() ||
+            studioRenderer.isSceneInUse(sceneId)
+        );
 
         studioUI = new StudioUI(
             document.getElementById("studio-panel"),
@@ -85,6 +95,12 @@ runtime.start({
             studioRenderer
         );
         studioMediaUI.start();
+
+        studioSourcesUI = new StudioSourcesUI(
+            document.getElementById("studio-panel"),
+            studioCatalogManager
+        );
+        studioSourcesUI.start();
 
         studioGraphicsUI = new StudioGraphicsUI(
             document.getElementById("studio-panel"),

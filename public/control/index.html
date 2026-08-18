@@ -116,6 +116,19 @@
                     <p id="studio-empty-state" class="studio-empty-state">No scenes configured</p>
                 </section>
 
+                <section class="studio-sources control-desk__module" data-control-module="sources" aria-labelledby="studio-sources-title">
+                    <h3 id="studio-sources-title">SOURCES</h3>
+                    <form id="studio-source-form" class="studio-sources__form">
+                        <label for="studio-source-name">Name</label>
+                        <input id="studio-source-name" type="text" maxlength="120" autocomplete="off" required>
+                        <label for="studio-source-url">URL / path</label>
+                        <input id="studio-source-url" type="text" maxlength="4096" autocomplete="off" spellcheck="false" required>
+                        <button type="submit">ADD MEDIA + SCENE</button>
+                    </form>
+                    <p id="studio-source-feedback" class="studio-sources__feedback" role="status" aria-live="polite"></p>
+                    <ul id="studio-source-list" class="studio-source-list" aria-label="Available media sources"></ul>
+                </section>
+
                 <section class="control-desk__module control-desk__module--transition" data-control-module="transition" aria-labelledby="studio-transition-title">
                     <label class="studio-transition-select" for="studio-transition-type">
                         <span id="studio-transition-title">TRANSITION</span>

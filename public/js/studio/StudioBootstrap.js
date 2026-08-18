@@ -1,22 +1,14 @@
 export default class StudioBootstrap {
 
     constructor({
-        studioStateManager,
-        studioSourceManager,
+        studioCatalogManager,
         studioGraphicsManager,
         configUrl = new URL("../../config/studio.json", import.meta.url)
     } = {}) {
-        if (!studioStateManager ||
-            typeof studioStateManager.registerScene !== "function") {
+        if (!studioCatalogManager ||
+            typeof studioCatalogManager.initialize !== "function") {
             throw new TypeError(
-                "StudioBootstrap requires a StudioStateManager dependency."
-            );
-        }
-
-        if (!studioSourceManager ||
-            typeof studioSourceManager.registerSource !== "function") {
-            throw new TypeError(
-                "StudioBootstrap requires a StudioSourceManager dependency."
+                "StudioBootstrap requires a StudioCatalogManager dependency."
             );
         }
 
@@ -27,11 +19,9 @@ export default class StudioBootstrap {
             );
         }
 
-        this.studioStateManager = studioStateManager;
-        this.studioSourceManager = studioSourceManager;
+        this.studioCatalogManager = studioCatalogManager;
         this.studioGraphicsManager = studioGraphicsManager;
         this.configUrl = configUrl;
-        this.definitions = new Map();
         this.initializationPromise = null;
         this.report = null;
     }
@@ -112,6 +102,8 @@ export default class StudioBootstrap {
         const acceptedSourceIds = new Set();
         const acceptedGraphicIds = new Set();
         const acceptedIds = new Set();
+        const sourceDefinitions = [];
+        const sceneDefinitions = [];
         const definitionBaseUrl = response.url || String(this.configUrl);
         let registeredSourceCount = 0;
         let registeredGraphicCount = 0;
@@ -128,18 +120,13 @@ export default class StudioBootstrap {
                 return;
             }
 
-            if (acceptedSourceIds.has(source.id) ||
-                this.studioSourceManager.getSource(source.id)) {
+            if (acceptedSourceIds.has(source.id)) {
                 issues.push(this.createIssue("duplicate-source-id", index, source.id));
                 return;
             }
 
-            if (!this.studioSourceManager.registerSource(source)) {
-                issues.push(this.createIssue("source-registration-rejected", index, source.id));
-                return;
-            }
-
             acceptedSourceIds.add(source.id);
+            sourceDefinitions.push(source);
             registeredSourceCount += 1;
         });
 
@@ -187,31 +174,26 @@ export default class StudioBootstrap {
 
             const definition = result.definition;
 
-            if (acceptedIds.has(definition.id) ||
-                this.studioStateManager.getScene?.(definition.id)) {
+            if (acceptedIds.has(definition.id)) {
                 issues.push(this.createIssue("duplicate-id", index, definition.id));
                 return;
             }
 
-            const registered = this.studioStateManager.registerScene({
-                id: definition.id,
-                name: definition.name,
-                type: definition.type
-            });
-
-            if (!registered) {
-                issues.push(this.createIssue(
-                    "registration-rejected",
-                    index,
-                    definition.id
-                ));
-                return;
-            }
-
             acceptedIds.add(definition.id);
-            this.definitions.set(definition.id, definition);
+            sceneDefinitions.push(definition);
             registeredCount += 1;
         });
+
+        const catalogReport = this.studioCatalogManager.initialize({
+            sources: sourceDefinitions,
+            scenes: sceneDefinitions
+        });
+        issues.push(...catalogReport.issues.map((issue) => ({
+            ...issue,
+            reason: `catalog-${issue.reason}`
+        })));
+        registeredSourceCount = catalogReport.registeredSourceCount;
+        registeredCount = catalogReport.registeredSceneCount;
 
         const skippedSourceCount = document.sources.length - registeredSourceCount;
         const skippedGraphicCount = graphics.length - registeredGraphicCount;
@@ -236,12 +218,11 @@ export default class StudioBootstrap {
     }
 
     getDefinition(sceneId) {
-        const id = this.normalizeString(sceneId);
-        return id ? this.definitions.get(id) || null : null;
+        return this.studioCatalogManager.getDefinition(sceneId);
     }
 
     getDefinitions() {
-        return Object.freeze(Array.from(this.definitions.values()));
+        return this.studioCatalogManager.getDefinitions();
     }
 
     getReport() {

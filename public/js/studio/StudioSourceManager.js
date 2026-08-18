@@ -49,6 +49,21 @@ class StudioSourceManager {
         );
     }
 
+    unregisterSource(sourceId) {
+        const id = this.normalizeString(sourceId);
+
+        if (!id || !this.sources.has(id) ||
+            Array.from(this.instances.values()).some(
+                (instance) => instance.sourceId === id
+            )) {
+            return null;
+        }
+
+        const source = this.sources.get(id);
+        this.sources.delete(id);
+        return this.createSourceSnapshot(source);
+    }
+
     createInstance(sourceId, { consumer, initialTime, initialPlayback } = {}) {
         const id = this.normalizeString(sourceId);
 
