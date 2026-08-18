@@ -9,6 +9,7 @@ export default class StudioCatalogManager {
     constructor({
         studioStateManager,
         studioSourceManager,
+        assetResolver = null,
         storage,
         baseUrl = globalThis.document?.baseURI,
         uuidFactory = () => globalThis.crypto?.randomUUID?.()
@@ -31,6 +32,9 @@ export default class StudioCatalogManager {
 
         this.studioStateManager = studioStateManager;
         this.studioSourceManager = studioSourceManager;
+        this.assetResolver = typeof assetResolver === "function"
+            ? assetResolver
+            : null;
         this.storage = storage === undefined ? this.getDefaultStorage() : storage;
         this.baseUrl = baseUrl;
         this.uuidFactory = uuidFactory;
@@ -148,6 +152,7 @@ export default class StudioCatalogManager {
                     name: source.name,
                     kind: source.kind,
                     url: source.url,
+                    assetId: source.assetId || null,
                     origin: source.origin,
                     removable: source.origin === "operator",
                     sceneIds: Object.freeze(scenes.map((scene) => scene.id))
@@ -169,17 +174,28 @@ export default class StudioCatalogManager {
         this.removalGuard = typeof guard === "function" ? guard : null;
     }
 
-    addMedia({ name, url } = {}) {
+    addMedia({ name, url, assetId = null } = {}) {
         if (!this.initialized || this.mutating) {
             return this.failure("catalog-unavailable");
         }
 
         const normalizedName = this.normalizeString(name, MAX_NAME_LENGTH);
-        const canonicalUrl = this.createHttpUrl(url, this.baseUrl);
+        const normalizedAssetId = assetId === null
+            ? null
+            : this.normalizeString(assetId, MAX_ID_LENGTH);
+        const asset = normalizedAssetId
+            ? this.assetResolver?.(normalizedAssetId)
+            : null;
+        const canonicalUrl = asset
+            ? this.createHttpUrl(asset.url)
+            : this.createHttpUrl(url, this.baseUrl);
         const uuid = this.createUuid();
 
         if (!normalizedName) {
             return this.failure("invalid-name");
+        }
+        if (normalizedAssetId && (!asset || asset.kind !== "video")) {
+            return this.failure("invalid-video-asset");
         }
         if (!canonicalUrl) {
             return this.failure("invalid-url");
@@ -192,7 +208,8 @@ export default class StudioCatalogManager {
             id: `media-${uuid}`,
             name: normalizedName,
             kind: "media",
-            url: canonicalUrl
+            url: canonicalUrl,
+            ...(normalizedAssetId ? { assetId: normalizedAssetId } : {})
         }, "operator");
         const scene = this.createSceneDefinition({
             id: `media-scene-${uuid}`,
@@ -310,6 +327,13 @@ export default class StudioCatalogManager {
         }
     }
 
+    isAssetReferenced(assetId) {
+        const id = this.normalizeString(assetId, MAX_ID_LENGTH);
+        return Boolean(id) && Array.from(this.sources.values()).some(
+            (source) => source.assetId === id
+        );
+    }
+
     registerSourceRecord(source) {
         if (!source || this.sources.has(source.id) ||
             !this.studioSourceManager.registerSource(source)) {
@@ -411,8 +435,16 @@ export default class StudioCatalogManager {
     }
 
     createOverlaySource(candidate) {
-        if (!this.hasExactKeys(candidate, ["id", "name", "kind", "url"]) ||
-            candidate.kind !== "media" || !this.isGeneratedSourceId(candidate.id)) {
+        const directUrl = this.hasExactKeys(
+            candidate,
+            ["id", "name", "kind", "url"]
+        );
+        const assetBacked = this.hasExactKeys(
+            candidate,
+            ["id", "name", "kind", "assetId"]
+        );
+        if ((!directUrl && !assetBacked) || candidate.kind !== "media" ||
+            !this.isGeneratedSourceId(candidate.id)) {
             return null;
         }
         return this.createSourceRecord(candidate, "operator");
@@ -441,8 +473,22 @@ export default class StudioCatalogManager {
         }
 
         if (kind === "media") {
-            const url = this.createHttpUrl(candidate.url);
-            return url ? Object.freeze({ id, name, kind, url, origin }) : null;
+            const assetId = this.normalizeString(candidate.assetId, MAX_ID_LENGTH);
+            const asset = assetId ? this.assetResolver?.(assetId) : null;
+            const url = asset
+                ? this.createHttpUrl(asset.url)
+                : this.createHttpUrl(candidate.url);
+            if (assetId && (!asset || asset.kind !== "video")) {
+                return null;
+            }
+            return url ? Object.freeze({
+                id,
+                name,
+                kind,
+                url,
+                ...(assetId ? { assetId } : {}),
+                origin
+            }) : null;
         }
         if (kind === "hls") {
             const configRef = this.normalizeString(candidate.configRef, 200);
@@ -506,8 +552,10 @@ export default class StudioCatalogManager {
 
     serializeOverlay() {
         const sources = Array.from(this.operatorSourceIds, (id) => {
-            const { id: sourceId, name, kind, url } = this.sources.get(id);
-            return { id: sourceId, name, kind, url };
+            const { id: sourceId, name, kind, url, assetId } = this.sources.get(id);
+            return assetId
+                ? { id: sourceId, name, kind, assetId }
+                : { id: sourceId, name, kind, url };
         });
         const scenes = Array.from(this.operatorSceneIds, (id) => {
             const scene = this.definitions.get(id);

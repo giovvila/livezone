@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "assets": [
+    {
+      "id": "video-demo",
+      "name": "MEDIA A",
+      "kind": "video",
+      "url": "../media/demo.mp4"
+    },
+    {
+      "id": "video-demo-2",
+      "name": "MEDIA B",
+      "kind": "video",
+      "url": "../media/demo2.mp4"
+    },
+    {
+      "id": "logo-livezone",
+      "name": "LIVEZONE",
+      "kind": "logo",
+      "url": "../assets/logo/logo-lz.svg"
+    },
+    {
+      "id": "still-livezone-favicon",
+      "name": "LIVEZONE Favicon",
+      "kind": "still",
+      "url": "../favicon.ico"
+    }
+  ]
+}

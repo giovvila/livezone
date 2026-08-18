@@ -1,13 +1,16 @@
 export default class StudioSourcesUI {
 
-    constructor(root, studioCatalogManager) {
+    constructor(root, studioCatalogManager, studioAssetLibrary = null) {
         this.root = root;
         this.catalog = studioCatalogManager;
+        this.assetLibrary = studioAssetLibrary;
         this.started = false;
         this.sources = [];
         this.handleSubmit = this.handleSubmit.bind(this);
         this.handleListClick = this.handleListClick.bind(this);
         this.render = this.render.bind(this);
+        this.renderAssets = this.renderAssets.bind(this);
+        this.handleAssetChange = this.handleAssetChange.bind(this);
     }
 
     start() {
@@ -18,18 +21,23 @@ export default class StudioSourcesUI {
         this.form = this.root.querySelector("#studio-source-form");
         this.nameInput = this.root.querySelector("#studio-source-name");
         this.urlInput = this.root.querySelector("#studio-source-url");
+        this.assetSelect = this.root.querySelector("#studio-source-asset");
         this.list = this.root.querySelector("#studio-source-list");
         this.feedback = this.root.querySelector("#studio-source-feedback");
 
-        if (!this.form || !this.nameInput || !this.urlInput || !this.list ||
+        if (!this.form || !this.nameInput || !this.urlInput ||
+            !this.assetSelect || !this.list ||
             !this.feedback || typeof this.catalog.subscribe !== "function") {
             return false;
         }
 
         this.form.addEventListener("submit", this.handleSubmit);
         this.list.addEventListener("click", this.handleListClick);
+        this.assetSelect.addEventListener("change", this.handleAssetChange);
         this.started = true;
         this.unsubscribe = this.catalog.subscribe(this.render);
+        this.unsubscribeAssets = this.assetLibrary?.subscribe(this.renderAssets);
+        this.handleAssetChange();
         return true;
     }
 
@@ -39,8 +47,11 @@ export default class StudioSourcesUI {
         }
         this.form.removeEventListener("submit", this.handleSubmit);
         this.list.removeEventListener("click", this.handleListClick);
+        this.assetSelect.removeEventListener("change", this.handleAssetChange);
         this.unsubscribe?.();
         this.unsubscribe = null;
+        this.unsubscribeAssets?.();
+        this.unsubscribeAssets = null;
         this.started = false;
     }
 
@@ -48,7 +59,8 @@ export default class StudioSourcesUI {
         event.preventDefault();
         const result = this.catalog.addMedia({
             name: this.nameInput.value,
-            url: this.urlInput.value
+            url: this.urlInput.value,
+            assetId: this.assetSelect.value || null
         });
 
         if (!result.ok) {
@@ -57,8 +69,37 @@ export default class StudioSourcesUI {
         }
 
         this.form.reset();
+        this.handleAssetChange();
         this.setFeedback(`Added ${result.source.name}.`, false);
         this.nameInput.focus();
+    }
+
+    handleAssetChange() {
+        const usingAsset = Boolean(this.assetSelect.value);
+        this.urlInput.disabled = usingAsset;
+        this.urlInput.required = !usingAsset;
+    }
+
+    renderAssets(assets) {
+        if (!this.started) {
+            return;
+        }
+        const selected = this.assetSelect.value;
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = "Manual URL / path";
+        const options = assets.filter((asset) => asset.kind === "video")
+            .map((asset) => {
+                const option = document.createElement("option");
+                option.value = asset.id;
+                option.textContent = `${asset.name} (${asset.origin.toUpperCase()})`;
+                return option;
+            });
+        this.assetSelect.replaceChildren(placeholder, ...options);
+        if (options.some((option) => option.value === selected)) {
+            this.assetSelect.value = selected;
+        }
+        this.handleAssetChange();
     }
 
     handleListClick(event) {
@@ -92,6 +133,7 @@ export default class StudioSourcesUI {
         const badge = document.createElement("span");
         const id = document.createElement("code");
         const url = document.createElement("span");
+        const asset = document.createElement("span");
         const remove = document.createElement("button");
 
         item.className = "studio-source-item";
@@ -104,6 +146,10 @@ export default class StudioSourcesUI {
         url.className = "studio-source-item__url";
         url.textContent = source.url;
         url.title = source.url;
+        asset.className = "studio-source-item__asset";
+        asset.textContent = source.assetId
+            ? `Asset: ${source.assetId}`
+            : "Direct URL";
         remove.type = "button";
         remove.className = "studio-source-item__remove";
         remove.textContent = source.removable ? "REMOVE" : "PROTECTED";
@@ -114,7 +160,7 @@ export default class StudioSourcesUI {
         }
 
         header.append(name, badge);
-        item.append(header, id, url, remove);
+        item.append(header, id, asset, url, remove);
         return item;
     }
 
@@ -127,6 +173,7 @@ export default class StudioSourcesUI {
         const messages = {
             "invalid-name": "Enter a valid media name.",
             "invalid-url": "Enter a valid HTTP(S) URL or relative path.",
+            "invalid-video-asset": "Choose an available VIDEO asset.",
             "base-source-protected": "Base media cannot be removed.",
             "scene-on-air": "Remove rejected: media is in Preview or Program.",
             "scene-in-transition": "Remove rejected: a transition is active.",

@@ -121,12 +121,47 @@
                     <form id="studio-source-form" class="studio-sources__form">
                         <label for="studio-source-name">Name</label>
                         <input id="studio-source-name" type="text" maxlength="120" autocomplete="off" required>
+                        <label for="studio-source-asset">VIDEO asset</label>
+                        <select id="studio-source-asset">
+                            <option value="">Manual URL / path</option>
+                        </select>
                         <label for="studio-source-url">URL / path</label>
                         <input id="studio-source-url" type="text" maxlength="4096" autocomplete="off" spellcheck="false" required>
                         <button type="submit">ADD MEDIA + SCENE</button>
                     </form>
                     <p id="studio-source-feedback" class="studio-sources__feedback" role="status" aria-live="polite"></p>
                     <ul id="studio-source-list" class="studio-source-list" aria-label="Available media sources"></ul>
+                </section>
+
+                <section class="studio-assets control-desk__module" data-control-module="assets" aria-labelledby="studio-assets-title">
+                    <div class="studio-assets__header">
+                        <h3 id="studio-assets-title">ASSETS</h3>
+                        <label for="studio-asset-filter">Filter</label>
+                        <select id="studio-asset-filter">
+                            <option value="all">ALL</option>
+                            <option value="video">VIDEO</option>
+                            <option value="audio">AUDIO</option>
+                            <option value="still">STILLS</option>
+                            <option value="logo">LOGOS</option>
+                        </select>
+                    </div>
+                    <p class="studio-assets__notice">References only — no file upload or filesystem import.</p>
+                    <form id="studio-asset-form" class="studio-assets__form">
+                        <label for="studio-asset-name">Name</label>
+                        <input id="studio-asset-name" type="text" maxlength="120" autocomplete="off" required>
+                        <label for="studio-asset-kind">Kind</label>
+                        <select id="studio-asset-kind">
+                            <option value="video">VIDEO</option>
+                            <option value="audio">AUDIO</option>
+                            <option value="still">STILL</option>
+                            <option value="logo">LOGO</option>
+                        </select>
+                        <label for="studio-asset-url">URL / path</label>
+                        <input id="studio-asset-url" type="text" maxlength="4096" autocomplete="off" spellcheck="false" required>
+                        <button type="submit">ADD REFERENCE</button>
+                    </form>
+                    <p id="studio-asset-feedback" class="studio-assets__feedback" role="status" aria-live="polite"></p>
+                    <ul id="studio-asset-list" class="studio-asset-list" aria-label="Asset library"></ul>
                 </section>
 
                 <section class="control-desk__module control-desk__module--transition" data-control-module="transition" aria-labelledby="studio-transition-title">
@@ -195,6 +230,11 @@
                     <legend>CHANNEL LOGO</legend>
 
                     <div class="studio-graphics-controls__fields">
+                        <label for="studio-logo-asset-select">Asset</label>
+                        <select id="studio-logo-asset-select">
+                            <option value="">Manual URL / path</option>
+                        </select>
+
                         <label for="studio-logo-asset">URL / path</label>
                         <input id="studio-logo-asset" type="text" autocomplete="off" spellcheck="false">
 

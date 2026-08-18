@@ -1,9 +1,15 @@
 export default class StudioGraphicsUI {
 
-    constructor(root, graphicsManager, graphicId = "lower-third-basic") {
+    constructor(
+        root,
+        graphicsManager,
+        graphicId = "lower-third-basic",
+        assetLibrary = null
+    ) {
         this.root = root;
         this.graphicsManager = graphicsManager;
         this.graphicId = graphicId;
+        this.assetLibrary = assetLibrary;
         this.logoGraphicId = "channel-logo";
         this.started = false;
         this.feedbackMessage = "";
@@ -21,6 +27,8 @@ export default class StudioGraphicsUI {
         this.handleLogoTake = this.handleLogoTake.bind(this);
         this.handleLogoHideProgram = this.handleLogoHideProgram.bind(this);
         this.handleLogoResetDefault = this.handleLogoResetDefault.bind(this);
+        this.handleLogoAssetChange = this.handleLogoAssetChange.bind(this);
+        this.renderLogoAssets = this.renderLogoAssets.bind(this);
     }
 
     start() {
@@ -54,6 +62,9 @@ export default class StudioGraphicsUI {
             "#studio-lower-third-feedback"
         );
         this.logoAssetInput = this.root.querySelector("#studio-logo-asset");
+        this.logoAssetSelect = this.root.querySelector(
+            "#studio-logo-asset-select"
+        );
         this.logoPositionInput = this.root.querySelector(
             "#studio-logo-position"
         );
@@ -82,6 +93,7 @@ export default class StudioGraphicsUI {
             !this.hidePreviewButton || !this.takeButton ||
             !this.hideProgramButton || !this.previewStatus ||
             !this.programStatus || !this.feedback || !this.logoAssetInput ||
+            !this.logoAssetSelect ||
             !this.logoPositionInput || !this.logoApplyButton ||
             !this.logoHidePreviewButton || !this.logoTakeButton ||
             !this.logoHideProgramButton || !this.logoResetButton ||
@@ -110,6 +122,10 @@ export default class StudioGraphicsUI {
             this.handleHideProgram
         );
         this.logoAssetInput.addEventListener("input", this.handleLogoInput);
+        this.logoAssetSelect.addEventListener(
+            "change",
+            this.handleLogoAssetChange
+        );
         this.logoPositionInput.addEventListener("change", this.handleLogoInput);
         this.logoApplyButton.addEventListener(
             "click",
@@ -137,7 +153,11 @@ export default class StudioGraphicsUI {
             "program",
             this.renderFromState
         );
+        this.unsubscribeAssets = this.assetLibrary?.subscribe(
+            this.renderLogoAssets
+        );
         this.started = true;
+        this.renderLogoAssets(this.assetLibrary?.getAssets() || []);
         this.renderFromState();
     }
 
@@ -159,6 +179,10 @@ export default class StudioGraphicsUI {
             this.handleHideProgram
         );
         this.logoAssetInput.removeEventListener("input", this.handleLogoInput);
+        this.logoAssetSelect.removeEventListener(
+            "change",
+            this.handleLogoAssetChange
+        );
         this.logoPositionInput.removeEventListener(
             "change",
             this.handleLogoInput
@@ -184,6 +208,8 @@ export default class StudioGraphicsUI {
         this.unsubscribeProgram?.();
         this.unsubscribePreview = null;
         this.unsubscribeProgram = null;
+        this.unsubscribeAssets?.();
+        this.unsubscribeAssets = null;
         this.started = false;
     }
 
@@ -240,10 +266,51 @@ export default class StudioGraphicsUI {
     }
 
     handleLogoInput() {
+        const selected = this.assetLibrary?.getAsset(this.logoAssetSelect.value);
+        if (!selected || selected.url !== this.resolveLogoUrl(
+            this.logoAssetInput.value
+        )) {
+            this.logoAssetSelect.value = "";
+        }
         this.logoFeedbackMessage = this.getLogoDraftPayload()
             ? ""
             : "Enter a valid HTTP(S) logo URL or relative path.";
         this.renderFromState();
+    }
+
+    handleLogoAssetChange() {
+        const asset = this.assetLibrary?.getAsset(this.logoAssetSelect.value);
+        if (!asset || asset.kind !== "logo") {
+            return;
+        }
+        this.logoAssetInput.value = asset.url;
+        this.logoFeedbackMessage = `${asset.name} loaded into logo draft.`;
+        this.renderFromState();
+    }
+
+    renderLogoAssets(assets) {
+        if (!this.started) {
+            return;
+        }
+        const selected = this.logoAssetSelect.value;
+        const manual = document.createElement("option");
+        manual.value = "";
+        manual.textContent = "Manual URL / path";
+        const options = assets.filter((asset) => asset.kind === "logo")
+            .map((asset) => {
+                const option = document.createElement("option");
+                option.value = asset.id;
+                option.textContent = `${asset.name} (${asset.origin.toUpperCase()})`;
+                return option;
+            });
+        this.logoAssetSelect.replaceChildren(manual, ...options);
+        const currentUrl = this.resolveLogoUrl(this.logoAssetInput.value);
+        const matching = assets.find((asset) =>
+            asset.kind === "logo" && asset.url === currentUrl
+        );
+        this.logoAssetSelect.value = options.some((option) =>
+            option.value === selected
+        ) ? selected : matching?.id || "";
     }
 
     handleLogoApplyPreview() {
@@ -294,6 +361,10 @@ export default class StudioGraphicsUI {
         }
 
         this.logoAssetInput.value = logo.asset;
+        const matching = this.assetLibrary?.getAssets("logo").find(
+            (asset) => asset.url === logo.asset
+        );
+        this.logoAssetSelect.value = matching?.id || "";
         this.logoPositionInput.value = logo.position;
         this.logoFeedbackMessage = "Default logo loaded into draft.";
         this.renderFromState();
@@ -413,6 +484,30 @@ export default class StudioGraphicsUI {
             }
 
             return { asset, position };
+        }
+        catch {
+            return null;
+        }
+    }
+
+    isAssetReferenced(asset) {
+        if (!asset || asset.kind !== "logo") {
+            return false;
+        }
+        if (this.logoAssetSelect?.value === asset.id) {
+            return true;
+        }
+        return ["preview", "program"].some((consumer) => {
+            const state = this.getGraphicState(consumer, this.logoGraphicId);
+            return state.visible && state.payload?.asset === asset.url;
+        });
+    }
+
+    resolveLogoUrl(value) {
+        const graphic = this.graphicsManager.getGraphic(this.logoGraphicId);
+        try {
+            const url = new URL(value, graphic?.asset);
+            return ["http:", "https:"].includes(url.protocol) ? url.href : null;
         }
         catch {
             return null;

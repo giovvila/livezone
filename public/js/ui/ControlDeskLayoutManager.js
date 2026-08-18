@@ -7,6 +7,7 @@ const GRID_ROW_STEP = 48;
 const MODULE_DEFINITIONS = Object.freeze([
     Object.freeze({ id: "scenes", label: "Scenes", x: 0, y: 0, w: 6, h: 4, minW: 4, minH: 3 }),
     Object.freeze({ id: "sources", label: "Sources", x: 0, y: 11, w: 6, h: 6, minW: 4, minH: 4 }),
+    Object.freeze({ id: "assets", label: "Assets", x: 6, y: 11, w: 6, h: 7, minW: 4, minH: 5 }),
     Object.freeze({ id: "transition", label: "Transition", x: 6, y: 0, w: 2, h: 3, minW: 2, minH: 2 }),
     Object.freeze({ id: "take", label: "Take", x: 8, y: 0, w: 2, h: 3, minW: 2, minH: 2 }),
     Object.freeze({ id: "broadcast", label: "Broadcast", x: 10, y: 0, w: 2, h: 3, minW: 2, minH: 3 }),

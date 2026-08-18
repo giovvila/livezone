@@ -7,6 +7,7 @@ import StudioUI from "../ui/StudioUI.js";
 import StudioGraphicsUI from "../ui/StudioGraphicsUI.js";
 import StudioMediaUI from "../ui/StudioMediaUI.js";
 import StudioSourcesUI from "../ui/StudioSourcesUI.js";
+import StudioAssetsUI from "../ui/StudioAssetsUI.js";
 import ControlDeskLayoutManager from "../ui/ControlDeskLayoutManager.js";
 import MonitorWallLayoutManager from "../ui/MonitorWallLayoutManager.js";
 import ProgramFullscreenUI from "../ui/ProgramFullscreenUI.js";
@@ -15,6 +16,7 @@ import NotificationCenter from "../ui/NotificationCenter.js";
 import DebugPanel from "../debug/DebugPanel.js";
 import StudioBootstrap from "../studio/StudioBootstrap.js";
 import StudioCatalogManager from "../studio/StudioCatalogManager.js";
+import StudioAssetLibrary from "../studio/StudioAssetLibrary.js";
 import StudioRenderer from "../studio/StudioRenderer.js";
 import StudioSourceManager from "../studio/StudioSourceManager.js";
 import StudioGraphicsManager from "../studio/StudioGraphicsManager.js";
@@ -31,9 +33,11 @@ BroadcastStateManager.initialize();
 StudioStateManager.initialize();
 
 const runtime = new PlaybackRuntime();
+const studioAssetLibrary = new StudioAssetLibrary();
 const studioCatalogManager = new StudioCatalogManager({
     studioStateManager: StudioStateManager,
-    studioSourceManager: StudioSourceManager
+    studioSourceManager: StudioSourceManager,
+    assetResolver: (assetId) => studioAssetLibrary.getAsset(assetId)
 });
 const studioBootstrap = new StudioBootstrap({
     studioCatalogManager,
@@ -44,6 +48,7 @@ let studioUI = null;
 let studioGraphicsUI = null;
 let studioMediaUI = null;
 let studioSourcesUI = null;
+let studioAssetsUI = null;
 let controlDeskLayoutManager = null;
 let monitorWallLayoutManager = null;
 let studioRenderer = null;
@@ -57,6 +62,12 @@ runtime.start({
 
         StudioSourceManager.initialize(config);
         StudioGraphicsManager.initialize();
+
+        const assetLibraryReport = await studioAssetLibrary.initialize();
+
+        if (assetLibraryReport.status !== "ready") {
+            console.warn("[StudioAssetLibrary]", assetLibraryReport);
+        }
 
         const bootstrapReport = await studioBootstrap.initialize();
 
@@ -98,15 +109,30 @@ runtime.start({
 
         studioSourcesUI = new StudioSourcesUI(
             document.getElementById("studio-panel"),
-            studioCatalogManager
+            studioCatalogManager,
+            studioAssetLibrary
         );
         studioSourcesUI.start();
 
         studioGraphicsUI = new StudioGraphicsUI(
             document.getElementById("studio-panel"),
-            StudioGraphicsManager
+            StudioGraphicsManager,
+            "lower-third-basic",
+            studioAssetLibrary
         );
         studioGraphicsUI.start();
+
+        studioAssetLibrary.setReferenceGuard((asset) =>
+            studioCatalogManager.isAssetReferenced(asset.id) ||
+            studioGraphicsUI.isAssetReferenced(asset)
+                ? "asset-still-referenced"
+                : null
+        );
+        studioAssetsUI = new StudioAssetsUI(
+            document.getElementById("studio-panel"),
+            studioAssetLibrary
+        );
+        studioAssetsUI.start();
 
         monitorWallLayoutManager = new MonitorWallLayoutManager({
             root: document.querySelector(".control-room-monitor-wall")
