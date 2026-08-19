@@ -9,8 +9,6 @@ export default class StudioUI {
         this.transitionCoordinator = transitionCoordinator;
         this.started = false;
 
-        this.handleToggleClick = this.handleToggleClick.bind(this);
-        this.handleCloseClick = this.handleCloseClick.bind(this);
         this.handleSceneListClick = this.handleSceneListClick.bind(this);
         this.handleTakeClick = this.handleTakeClick.bind(this);
         this.handleTransitionChange = this.handleTransitionChange.bind(this);
@@ -26,9 +24,6 @@ export default class StudioUI {
             return;
         }
 
-        this.main = this.root.closest(".main");
-        this.toggle = document.getElementById("studio-toggle");
-        this.closeButton = this.root.querySelector("#studio-close");
         this.sceneList = this.root.querySelector("#studio-scene-list");
         this.emptyState = this.root.querySelector("#studio-empty-state");
         this.takeButton = this.root.querySelector("#studio-take");
@@ -37,7 +32,6 @@ export default class StudioUI {
         );
 
         if (
-            !this.main || !this.toggle || !this.closeButton ||
             !this.sceneList || !this.emptyState || !this.takeButton ||
             !this.transitionSelect ||
             !this.transitionCoordinator
@@ -45,8 +39,6 @@ export default class StudioUI {
             return;
         }
 
-        this.toggle.addEventListener("click", this.handleToggleClick);
-        this.closeButton.addEventListener("click", this.handleCloseClick);
         this.sceneList.addEventListener("click", this.handleSceneListClick);
         this.takeButton.addEventListener("click", this.handleTakeClick);
         this.transitionSelect.addEventListener(
@@ -70,7 +62,6 @@ export default class StudioUI {
             this.renderFromState
         );
 
-        this.setOpen(false);
         this.renderFromState();
         this.started = true;
     }
@@ -80,8 +71,6 @@ export default class StudioUI {
             return;
         }
 
-        this.toggle.removeEventListener("click", this.handleToggleClick);
-        this.closeButton.removeEventListener("click", this.handleCloseClick);
         this.sceneList.removeEventListener("click", this.handleSceneListClick);
         this.takeButton.removeEventListener("click", this.handleTakeClick);
         this.transitionSelect.removeEventListener(
@@ -94,27 +83,14 @@ export default class StudioUI {
         });
         this.unsubscribeTransition?.();
 
-        this.setOpen(false);
         this.started = false;
         this.studioEvents = null;
         this.unsubscribeTransition = null;
-        this.main = null;
-        this.toggle = null;
-        this.closeButton = null;
         this.sceneList = null;
         this.emptyState = null;
         this.takeButton = null;
         this.transitionSelect = null;
         this.selectedTransition = null;
-    }
-
-    handleToggleClick() {
-        this.setOpen(this.root.hidden);
-    }
-
-    handleCloseClick() {
-        this.setOpen(false);
-        this.toggle.focus();
     }
 
     handleSceneListClick(event) {
@@ -150,12 +126,6 @@ export default class StudioUI {
         this.selectedTransition = this.transitionSelect.value === "dissolve"
             ? "dissolve"
             : "cut";
-    }
-
-    setOpen(isOpen) {
-        this.root.hidden = !isOpen;
-        this.toggle.setAttribute("aria-expanded", String(isOpen));
-        this.main.classList.toggle("main--studio-open", isOpen);
     }
 
     renderFromState() {

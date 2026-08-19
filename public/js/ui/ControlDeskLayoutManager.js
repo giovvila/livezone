@@ -13,8 +13,7 @@ const MODULE_DEFINITIONS = Object.freeze([
     Object.freeze({ id: "broadcast", label: "Broadcast", x: 10, y: 0, w: 2, h: 3, minW: 2, minH: 3 }),
     Object.freeze({ id: "media-preview", label: "Media Preview", x: 0, y: 4, w: 3, h: 4, minW: 3, minH: 3 }),
     Object.freeze({ id: "lower-third", label: "Lower Third", x: 3, y: 4, w: 3, h: 7, minW: 3, minH: 6 }),
-    Object.freeze({ id: "channel-logo", label: "Channel Logo", x: 6, y: 4, w: 4, h: 7, minW: 3, minH: 6 }),
-    Object.freeze({ id: "mon", label: "MON", x: 10, y: 4, w: 2, h: 3, minW: 2, minH: 2 })
+    Object.freeze({ id: "channel-logo", label: "Channel Logo", x: 6, y: 4, w: 4, h: 7, minW: 3, minH: 6 })
 ]);
 
 const MODULE_BY_ID = new Map(
@@ -56,11 +55,13 @@ export default class ControlDeskLayoutManager {
         this.modules = new Map();
         this.baseLayout = this.createDefaultLayout();
         this.activeLayout = [];
+        this.collapsedIds = new Set();
         this.operation = null;
         this.frameId = null;
 
         this.handleEditClick = this.handleEditClick.bind(this);
         this.handleResetClick = this.handleResetClick.bind(this);
+        this.handleCollapseClick = this.handleCollapseClick.bind(this);
         this.handlePointerDown = this.handlePointerDown.bind(this);
         this.handlePointerMove = this.handlePointerMove.bind(this);
         this.handlePointerEnd = this.handlePointerEnd.bind(this);
@@ -82,9 +83,11 @@ export default class ControlDeskLayoutManager {
             return false;
         }
 
+        this.installModuleChrome();
         this.installHandles();
         this.editButton.addEventListener("click", this.handleEditClick);
         this.resetButton.addEventListener("click", this.handleResetClick);
+        this.workspace.addEventListener("click", this.handleCollapseClick);
         this.workspace.addEventListener("pointerdown", this.handlePointerDown);
         this.workspace.addEventListener("pointermove", this.handlePointerMove);
         this.workspace.addEventListener("pointerup", this.handlePointerEnd);
@@ -111,6 +114,7 @@ export default class ControlDeskLayoutManager {
         this.cancelOperation({ revert: true });
         this.editButton.removeEventListener("click", this.handleEditClick);
         this.resetButton.removeEventListener("click", this.handleResetClick);
+        this.workspace.removeEventListener("click", this.handleCollapseClick);
         this.workspace.removeEventListener("pointerdown", this.handlePointerDown);
         this.workspace.removeEventListener("pointermove", this.handlePointerMove);
         this.workspace.removeEventListener("pointerup", this.handlePointerEnd);
@@ -119,9 +123,23 @@ export default class ControlDeskLayoutManager {
         this.resizeObserver?.disconnect();
         this.resizeObserver = null;
         this.setEditMode(false);
-        this.modules.forEach(({ dragHandle, resizeHandle }) => {
+        this.modules.forEach(({
+            element,
+            semanticTitle,
+            header,
+            body,
+            dragHandle,
+            resizeHandle
+        }) => {
             dragHandle.remove();
             resizeHandle.remove();
+            while (body.firstChild) {
+                element.insertBefore(body.firstChild, header);
+            }
+            body.remove();
+            header.remove();
+            semanticTitle?.classList.remove("control-desk__semantic-title");
+            element.classList.remove("is-collapsed");
         });
         this.modules.clear();
         this.started = false;
@@ -134,6 +152,7 @@ export default class ControlDeskLayoutManager {
         this.cancelOperation({ revert: false });
         this.removePersistedLayout();
         this.baseLayout = this.createDefaultLayout();
+        this.collapsedIds.clear();
         this.applyLayout();
         this.onReset();
         return this.getLayout();
@@ -143,6 +162,7 @@ export default class ControlDeskLayoutManager {
         return Object.freeze({
             version: SCHEMA_VERSION,
             columns: this.columns,
+            collapsed: Object.freeze(Array.from(this.collapsedIds)),
             modules: Object.freeze(this.activeLayout.map((item) =>
                 Object.freeze({ ...item })
             ))
@@ -186,6 +206,48 @@ export default class ControlDeskLayoutManager {
         }
 
         return MODULE_DEFINITIONS.every(({ id }) => this.modules.has(id));
+    }
+
+    installModuleChrome() {
+        const document = this.workspace.ownerDocument;
+
+        MODULE_DEFINITIONS.forEach(({ id, label }) => {
+            const module = this.modules.get(id);
+            const header = document.createElement("div");
+            const toggle = document.createElement("button");
+            const body = document.createElement("div");
+            const bodyId = `control-desk-module-body-${id}`;
+            const legend = module.element.matches("fieldset")
+                ? module.element.querySelector(":scope > legend")
+                : null;
+            const content = Array.from(module.element.children).filter(
+                (child) => child !== legend
+            );
+
+            header.className = "control-desk__module-header";
+            toggle.type = "button";
+            toggle.className = "control-desk__collapse-toggle";
+            toggle.dataset.collapseModule = id;
+            toggle.setAttribute("aria-controls", bodyId);
+            toggle.textContent = label.toUpperCase();
+            body.id = bodyId;
+            body.className = "control-desk__module-body";
+            content.forEach((child) => body.appendChild(child));
+            header.appendChild(toggle);
+
+            if (legend) {
+                legend.classList.add("control-desk__semantic-title");
+                legend.after(header, body);
+            }
+            else {
+                module.element.append(header, body);
+            }
+
+            module.header = header;
+            module.toggle = toggle;
+            module.body = body;
+            module.semanticTitle = legend;
+        });
     }
 
     installHandles() {
@@ -235,6 +297,30 @@ export default class ControlDeskLayoutManager {
         this.reset();
     }
 
+    handleCollapseClick(event) {
+        const toggle = event.target.closest("[data-collapse-module]");
+
+        if (!toggle || !this.workspace.contains(toggle)) {
+            return;
+        }
+
+        const id = toggle.dataset.collapseModule;
+        if (!MODULE_BY_ID.has(id)) {
+            return;
+        }
+
+        this.cancelOperation({ revert: false });
+        if (this.collapsedIds.has(id)) {
+            this.collapsedIds.delete(id);
+        }
+        else {
+            this.collapsedIds.add(id);
+        }
+
+        this.applyLayout();
+        this.persistLayout();
+    }
+
     handlePointerDown(event) {
         const handle = event.target.closest("[data-layout-action]");
 
@@ -246,7 +332,8 @@ export default class ControlDeskLayoutManager {
         const id = element?.dataset.controlModule;
         const item = this.baseLayout.find((candidate) => candidate.id === id);
 
-        if (!item) {
+        if (!item || (handle.dataset.layoutAction === "resize" &&
+            this.collapsedIds.has(id))) {
             return;
         }
 
@@ -314,6 +401,10 @@ export default class ControlDeskLayoutManager {
         const target = next.find((candidate) => candidate.id === id);
         const horizontalStep = Math.max(1, Math.round(BASE_COLUMNS / this.columns));
         const resize = handle.dataset.layoutAction === "resize";
+
+        if (resize && this.collapsedIds.has(id)) {
+            return;
+        }
 
         if (resize) {
             target.w += event.key === "ArrowRight" ? horizontalStep
@@ -449,7 +540,22 @@ export default class ControlDeskLayoutManager {
 
             element.style.gridColumn = `${item.x + 1} / span ${item.w}`;
             element.style.gridRow = `${item.y + 1} / span ${item.h}`;
+            this.renderModuleState(item.id);
         });
+    }
+
+    renderModuleState(id) {
+        const module = this.modules.get(id);
+        const collapsed = this.collapsedIds.has(id);
+
+        module.element.classList.toggle("is-collapsed", collapsed);
+        module.body.hidden = collapsed;
+        module.toggle.setAttribute("aria-expanded", String(!collapsed));
+        module.toggle.setAttribute(
+            "aria-label",
+            `${collapsed ? "Expand" : "Collapse"} ${MODULE_BY_ID.get(id).label}`
+        );
+        module.resizeHandle.disabled = collapsed;
     }
 
     createResponsiveLayout(baseLayout, columns) {
@@ -471,11 +577,15 @@ export default class ControlDeskLayoutManager {
                     : this.clamp(Math.floor(item.x * scale), 0, columns - width),
                 y: item.y,
                 w: width,
-                h: Math.max(definition.minH, item.h)
+                h: this.collapsedIds.has(item.id)
+                    ? 1
+                    : Math.max(definition.minH, item.h)
             };
         });
 
-        return this.packLayout(requested, columns);
+        return this.packLayout(requested, columns, null, {
+            compact: this.collapsedIds.size > 0
+        });
     }
 
     normalizeBaseLayout(layout, priorityId = null) {
@@ -496,10 +606,32 @@ export default class ControlDeskLayoutManager {
             };
         });
 
-        return this.packLayout(normalized, BASE_COLUMNS, priorityId);
+        const expandedById = new Map(
+            normalized.map((item) => [item.id, item])
+        );
+        const effective = normalized.map((item) => ({
+            ...item,
+            h: this.collapsedIds.has(item.id) ? 1 : item.h
+        }));
+        const packed = this.packLayout(
+            effective,
+            BASE_COLUMNS,
+            priorityId,
+            { compact: this.collapsedIds.size > 0 }
+        );
+
+        return packed.map((item) => ({
+            ...item,
+            h: expandedById.get(item.id).h
+        }));
     }
 
-    packLayout(layout, columns, priorityId = null) {
+    packLayout(
+        layout,
+        columns,
+        priorityId = null,
+        { compact = false } = {}
+    ) {
         const order = new Map(
             MODULE_DEFINITIONS.map(({ id }, index) => [id, index])
         );
@@ -528,7 +660,8 @@ export default class ControlDeskLayoutManager {
             const position = this.findAvailablePosition(
                 candidate,
                 placed,
-                columns
+                columns,
+                compact && item.id !== priorityId
             );
 
             placed.push({ ...candidate, ...position });
@@ -539,11 +672,24 @@ export default class ControlDeskLayoutManager {
         );
     }
 
-    findAvailablePosition(item, placed, columns) {
-        for (let y = item.y; ; y += 1) {
-            const firstX = y === item.y ? item.x : 0;
+    findAvailablePosition(item, placed, columns, compact = false) {
+        const startY = compact ? 0 : item.y;
 
-            for (let x = firstX; x <= columns - item.w; x += 1) {
+        for (let y = startY; ; y += 1) {
+            const positions = compact
+                ? [
+                    item.x,
+                    ...Array.from(
+                        { length: columns - item.w + 1 },
+                        (_, x) => x
+                    ).filter((x) => x !== item.x)
+                ]
+                : Array.from(
+                    { length: columns - item.w + 1 },
+                    (_, offset) => (y === item.y ? item.x : 0) + offset
+                ).filter((x) => x <= columns - item.w);
+
+            for (const x of positions) {
                 const candidate = { ...item, x, y };
 
                 if (!placed.some((other) => this.overlaps(candidate, other))) {
@@ -580,6 +726,8 @@ export default class ControlDeskLayoutManager {
             !Array.isArray(parsed.modules)) {
             return this.createDefaultLayout();
         }
+
+        this.collapsedIds = this.parseCollapsedIds(parsed.collapsed);
 
         const known = new Map();
 
@@ -630,10 +778,24 @@ export default class ControlDeskLayoutManager {
         return this.normalizeBaseLayout(merged);
     }
 
+    parseCollapsedIds(value) {
+        if (value === undefined) {
+            return new Set();
+        }
+
+        if (!Array.isArray(value) || value.some((id) =>
+            typeof id !== "string" || !MODULE_BY_ID.has(id))) {
+            return new Set();
+        }
+
+        return new Set(value);
+    }
+
     persistLayout() {
         const payload = {
             version: SCHEMA_VERSION,
-            modules: this.baseLayout.map((item) => ({ ...item }))
+            modules: this.baseLayout.map((item) => ({ ...item })),
+            collapsed: Array.from(this.collapsedIds)
         };
 
         try {
