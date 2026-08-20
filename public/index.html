@@ -1,123 +1,39 @@
-<!DOCTYPE html><html lang='it'>
+<!doctype html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LIVEZONE · Program</title>
     <link rel="icon" href="favicon.ico">
-    <head><meta charset='UTF-8'>
-    <meta name='viewport' content='width=device-width,initial-scale=1'>
-    <title>LIVEZONE</title>
-    <link rel='preconnect' href='https://fonts.googleapis.com'>
-    <link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
-    <link href='https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap' rel='stylesheet'>
-    <link rel="stylesheet" href="css/theme.css">
-<link rel="stylesheet" href="css/app.css">
-<link rel="stylesheet" href="css/layout.css">
-<link rel="stylesheet" href="css/player.css">
-<link rel="stylesheet" href="css/branding.css">
-<link rel="stylesheet" href="css/status.css">
-<link rel="stylesheet" href="css/ticker.css">
-<link rel="stylesheet" href="css/components.css">
-<link rel="stylesheet" href="css/overlay.css">
-<link rel="stylesheet" href="css/notification.css">
-<link rel="stylesheet" href="css/public-viewer.css">
-</head><body>
-    <div id='app'>
-        <header class="header">
-
-    <div class="brand">
-<img
-            src="assets/logo/logo-lz.svg"
-            class="brand-logo"
-            alt="LZ">
-            
-        <!--<div class="brand-logo" style="
-width:40px;
-height:40px;
-background:#ff0000;
-"></div>-->
-
-        <span class="brand-live">live</span>
-        <span class="brand-zone">zone</span>
-
-    </div>
-
-    <div class="header-info">
-
-        <div class="live-badge broadcast-offline">
-            <span class="live-dot"></span>
-            <span id="connection-state-label">SIGNAL · CONNECTING</span>
-        </div>
-
-        <div id="clock">--:--:--</div>
-
-    </div>
-
-</header>
-<main class='main'><div class='player-wrapper'><video id='video' autoplay muted controls playsinline></video>
-    <button
-        id="viewer-fullscreen-toggle"
-        class="viewer-fullscreen-toggle"
-        type="button"
-        aria-label="Enter fullscreen"
-        aria-pressed="false"
-        title="Enter fullscreen">FULLSCREEN</button>
-    <div class="video-overlay">
-
-    <div class="lz-brand">
-
-        <img
-            class="lz-watermark"
-            src="assets/logo/logo-lz.svg"
-            alt="LIVEZONE">
-
-        <div class="lz-channel">
-
-            LIVEZONE
-
-        </div>
-
-    </div>
-
-</div>
-    <div id="overlay" class="overlay">
-
-    <div class="overlay__panel">
-
-        <div class="overlay__logo">
-            LZ
-        </div>
-
-        <div id="overlay-message" class="overlay__title">
-            Segnale assente
-        </div>
-
-        <div class="overlay__subtitle">
-            Riconnessione automatica
-        </div>
-
-        <div id="overlay-countdown" class="overlay__countdown">
-            00:05
-        </div>
-
-        <div class="overlay__footer">
-            LIVEZONE Broadcast Engine
-        </div>
-
-    </div>
-
-</div>
-</div>
-</main>
-<section class='status-bar'>
-    <div id='status'>● CONNECTING...</div>
-<div>HLS</div>
-<div>FULL HD</div>
-<a class="public-control-link" href="./control/" aria-label="Open LIVEZONE Control Room">CONTROL</a>
-</section>
-<section class='ticker'>
-    <div class='ticker-text'>► Benvenuti su LIVEZONE • Broadcast Engine •</div>
-</section>
-</div>
-<div id="notification-center" class="notification-center"></div>
-    <script src='lib/hls.min.js'></script><script type='module' src='js/entries/public-app.js'>
-
-</script>
+    <link rel="stylesheet" href="css/public-viewer.css">
+</head>
+<body class="public-viewer">
+    <main id="public-site" class="public-site">
+        <header class="public-site__brand" aria-label="LIVEZONE">
+            <img src="assets/logo/logo-lz.svg" alt="" class="public-site__logo">
+            <span>LIVEZONE</span>
+        </header>
+        <section class="public-site__welcome" aria-labelledby="public-welcome-title">
+            <p class="public-site__eyebrow">LIVE CHANNEL</p>
+            <h1 id="public-welcome-title">Benvenuto su LIVEZONE</h1>
+            <p>Segui qui il Program ufficiale LIVEZONE.</p>
+        </section>
+        <section id="public-program" class="public-program" aria-label="LIVEZONE Program output">
+            <div class="public-program__tv">
+                <div class="public-program__composition">
+                    <div class="public-program__base" data-public-base></div>
+                    <div class="public-program__graphics" data-public-graphics></div>
+                </div>
+            </div>
+            <div id="public-program-status" class="public-program__status" data-state="offline">OFFLINE</div>
+            <button id="public-audio-enable" class="public-program__audio" type="button" hidden>ENABLE AUDIO</button>
+        </section>
+        <button id="public-fullscreen-toggle" class="public-site__fullscreen" type="button"
+            aria-label="Guarda LIVEZONE a tutto schermo" aria-pressed="false">
+            GUARDA A TUTTO SCHERMO
+        </button>
+    </main>
+    <script src="lib/hls.min.js"></script>
+    <script type="module" src="js/entries/public-app.js"></script>
 </body>
 </html>

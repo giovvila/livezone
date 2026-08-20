@@ -21,7 +21,9 @@ export default class StudioRenderer {
         this.studioGraphicsManager = studioGraphicsManager;
         this.started = false;
         this.previewTransportListeners = new Set();
+        this.programTransportListeners = new Set();
         this.previewTransportSnapshot = null;
+        this.programTransportSnapshot = null;
         this.previewHandoff = null;
         this.preview = this.createSlot(
             previewRoot,
@@ -73,7 +75,9 @@ export default class StudioRenderer {
         this.preview.root.replaceChildren();
         this.program.root.replaceChildren();
         this.previewTransportListeners.clear();
+        this.programTransportListeners.clear();
         this.previewTransportSnapshot = null;
+        this.programTransportSnapshot = null;
         this.previewHandoff = null;
         this.started = false;
     }
@@ -200,7 +204,7 @@ export default class StudioRenderer {
         this.program.generation += 1;
         this.program.prepared = null;
         this.program.sceneId = sceneId;
-        this.program.renderer = prepared.renderer;
+        this.setSlotRenderer(this.program, prepared.renderer);
         this.program.contentRoot = prepared.root;
         prepared.root.hidden = false;
         outgoingRenderer?.deactivateProgram?.();
@@ -520,6 +524,17 @@ export default class StudioRenderer {
         };
     }
 
+    subscribeProgramTransport(listener) {
+        if (typeof listener !== "function") return () => {};
+        this.programTransportListeners.add(listener);
+        listener(this.programTransportSnapshot);
+        return () => this.programTransportListeners.delete(listener);
+    }
+
+    getProgramTransport() {
+        return this.programTransportSnapshot;
+    }
+
     getPreviewPreparationContext(sceneId) {
         if (!sceneId ||
             this.studioStateManager.getPreviewSceneId() !== sceneId ||
@@ -653,31 +668,39 @@ export default class StudioRenderer {
     }
 
     setSlotRenderer(slot, renderer) {
-        if (slot === this.preview) {
-            slot.transportUnsubscribe?.();
-            slot.transportUnsubscribe = null;
-        }
+        slot.transportUnsubscribe?.();
+        slot.transportUnsubscribe = null;
 
         slot.renderer = renderer;
 
-        if (slot !== this.preview) {
-            return;
-        }
-
-        const mediaRenderer = this.getPreviewTransportRenderer();
+        const mediaRenderer = slot === this.preview
+            ? this.getPreviewTransportRenderer()
+            : renderer && typeof renderer.getTransport === "function" &&
+                typeof renderer.subscribeTransport === "function"
+                ? renderer : null;
 
         if (!mediaRenderer) {
-            this.setPreviewTransportSnapshot(null);
+            if (slot === this.preview) this.setPreviewTransportSnapshot(null);
+            else this.setProgramTransportSnapshot(null);
             return;
         }
 
         slot.transportUnsubscribe = mediaRenderer.subscribeTransport(
             (snapshot) => {
-                if (this.preview.renderer === mediaRenderer) {
+                if (slot.renderer === mediaRenderer && slot === this.preview) {
                     this.setPreviewTransportSnapshot(snapshot);
+                }
+                else if (slot.renderer === mediaRenderer) {
+                    this.setProgramTransportSnapshot(snapshot);
                 }
             }
         );
+    }
+
+    setProgramTransportSnapshot(snapshot) {
+        this.programTransportSnapshot = snapshot ? Object.freeze({ ...snapshot }) : null;
+        this.programTransportListeners.forEach((listener) =>
+            listener(this.programTransportSnapshot));
     }
 
     setPreviewTransportSnapshot(snapshot) {

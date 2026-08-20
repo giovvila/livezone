@@ -257,7 +257,8 @@ class StudioSourceManager {
                 ? {
                     id: source.id,
                     kind: source.kind,
-                    configRef: source.configRef
+                    configRef: source.configRef,
+                    url: source.resolvedUrl
                 }
                 : {
                     id: source.id,
