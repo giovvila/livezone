@@ -203,6 +203,8 @@ export default class StudioRenderer {
         this.program.renderer = prepared.renderer;
         this.program.contentRoot = prepared.root;
         prepared.root.hidden = false;
+        outgoingRenderer?.deactivateProgram?.();
+        void prepared.renderer.activateProgram?.();
 
         if (type !== "dissolve" || !outgoingRoot || durationMs <= 0) {
             this.program.baseRoot.replaceChildren(prepared.root);
@@ -417,6 +419,10 @@ export default class StudioRenderer {
             this.setSlotRenderer(slot, renderer);
             await renderer.start(content);
 
+            if (slot === this.program) {
+                void renderer.activateProgram?.();
+            }
+
             if (slot.generation !== generation) {
                 if (slot.renderer === renderer) {
                     this.setSlotRenderer(slot, null);
@@ -454,9 +460,12 @@ export default class StudioRenderer {
                 definition.renderer.sourceId,
                 {
                     consumer: slot.consumer,
-                    initialTime: preparationContext?.mediaCueTime ??
+                    initialTime: preparationContext?.transportCueTime ??
+                        preparationContext?.transportInitialTime ??
+                        preparationContext?.mediaCueTime ??
                         preparationContext?.mediaInitialTime,
                     initialPlayback:
+                        preparationContext?.transportInitialPlayback ??
                         preparationContext?.mediaInitialPlayback
                 }
             );
@@ -495,6 +504,10 @@ export default class StudioRenderer {
     }
 
     subscribePreviewMediaTransport(listener) {
+        return this.subscribePreviewTransport(listener);
+    }
+
+    subscribePreviewTransport(listener) {
         if (typeof listener !== "function") {
             return () => {};
         }
@@ -514,19 +527,19 @@ export default class StudioRenderer {
             return null;
         }
 
-        const renderer = this.getPreviewMediaRenderer();
+        const renderer = this.getPreviewTransportRenderer();
         const snapshot = renderer?.getTransport();
 
         if (!snapshot || snapshot.consumer !== "preview") {
             return null;
         }
 
-        const mediaCueTime = Number.isFinite(snapshot.currentTime) &&
+        const transportCueTime = Number.isFinite(snapshot.currentTime) &&
             snapshot.currentTime >= 0
             ? snapshot.currentTime
             : 0;
 
-        return Object.freeze({ mediaCueTime });
+        return Object.freeze({ transportCueTime });
     }
 
     captureProgramPreviewHandoff(sceneId, { generation } = {}) {
@@ -544,13 +557,13 @@ export default class StudioRenderer {
             return null;
         }
 
-        const mediaInitialTime = Number.isFinite(snapshot.currentTime) &&
+        const transportInitialTime = Number.isFinite(snapshot.currentTime) &&
             snapshot.currentTime >= 0
             ? snapshot.currentTime
             : 0;
         const preparationContext = Object.freeze({
-            mediaInitialTime,
-            mediaInitialPlayback: "paused"
+            transportInitialTime,
+            transportInitialPlayback: "paused"
         });
 
         this.previewHandoff = Object.freeze({
@@ -586,21 +599,37 @@ export default class StudioRenderer {
     }
 
     playPreviewMedia() {
-        const renderer = this.getPreviewMediaRenderer();
+        return this.playPreviewTransport();
+    }
+
+    playPreviewTransport() {
+        const renderer = this.getPreviewTransportRenderer();
         return renderer ? renderer.play() : Promise.resolve(false);
     }
 
     pausePreviewMedia() {
-        const renderer = this.getPreviewMediaRenderer();
+        return this.pausePreviewTransport();
+    }
+
+    pausePreviewTransport() {
+        const renderer = this.getPreviewTransportRenderer();
         return renderer ? renderer.pause() : false;
     }
 
     restartPreviewMedia() {
-        const renderer = this.getPreviewMediaRenderer();
+        return this.restartPreviewTransport();
+    }
+
+    restartPreviewTransport() {
+        const renderer = this.getPreviewTransportRenderer();
         return renderer ? renderer.restart() : false;
     }
 
     getPreviewMediaRenderer() {
+        return this.getPreviewTransportRenderer();
+    }
+
+    getPreviewTransportRenderer() {
         const renderer = this.preview.renderer;
 
         return renderer && typeof renderer.getTransport === "function" &&
@@ -635,7 +664,7 @@ export default class StudioRenderer {
             return;
         }
 
-        const mediaRenderer = this.getPreviewMediaRenderer();
+        const mediaRenderer = this.getPreviewTransportRenderer();
 
         if (!mediaRenderer) {
             this.setPreviewTransportSnapshot(null);
@@ -676,7 +705,10 @@ export default class StudioRenderer {
         return Object.freeze({
             ...snapshot,
             sceneId,
-            displayName: definition.name || snapshot.sourceId
+            displayName: definition.name || snapshot.sourceId,
+            sourceKind: this.studioSourceManager.getSource(
+                snapshot.sourceId
+            )?.kind || null
         });
     }
 

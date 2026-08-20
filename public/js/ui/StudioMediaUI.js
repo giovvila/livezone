@@ -27,7 +27,7 @@ export default class StudioMediaUI {
 
         if (!this.section || !this.restartButton || !this.playButton ||
             !this.pauseButton || !this.name || !this.time || !this.state ||
-            typeof this.studioRenderer.subscribePreviewMediaTransport !==
+            typeof this.studioRenderer.subscribePreviewTransport !==
                 "function") {
             return;
         }
@@ -37,7 +37,7 @@ export default class StudioMediaUI {
         this.pauseButton.addEventListener("click", this.handlePause);
         this.started = true;
         this.unsubscribe = this.studioRenderer
-            .subscribePreviewMediaTransport(this.render);
+            .subscribePreviewTransport(this.render);
     }
 
     destroy() {
@@ -56,15 +56,15 @@ export default class StudioMediaUI {
     }
 
     handlePlay() {
-        void this.studioRenderer.playPreviewMedia();
+        void this.studioRenderer.playPreviewTransport();
     }
 
     handlePause() {
-        this.studioRenderer.pausePreviewMedia();
+        this.studioRenderer.pausePreviewTransport();
     }
 
     handleRestart() {
-        this.studioRenderer.restartPreviewMedia();
+        this.studioRenderer.restartPreviewTransport();
     }
 
     render(snapshot) {
@@ -79,11 +79,14 @@ export default class StudioMediaUI {
             return;
         }
 
-        const unavailable = ["error", "destroyed", "idle"].includes(
+        const unavailable = ["error", "destroyed", "idle", "loading"].includes(
             snapshot.state
         );
 
-        this.name.textContent = `— ${snapshot.displayName || snapshot.sourceId}`;
+        const kind = snapshot.sourceKind?.toUpperCase();
+        this.name.textContent = `— ${snapshot.displayName || snapshot.sourceId}${
+            kind ? ` · ${kind}` : ""
+        }`;
         this.time.textContent = [
             this.formatTime(snapshot.currentTime),
             this.formatTime(snapshot.duration)
@@ -97,7 +100,7 @@ export default class StudioMediaUI {
     }
 
     renderUnavailable() {
-        this.name.textContent = "— No media in Preview";
+        this.name.textContent = "— No transport in Preview";
         this.time.textContent = "00:00 / --:--";
         this.state.textContent = "UNAVAILABLE";
         this.setButtonsDisabled(true, true, true);

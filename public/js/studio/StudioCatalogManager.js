@@ -140,8 +140,13 @@ export default class StudioCatalogManager {
     }
 
     getMediaSources() {
+        return Object.freeze(this.getSources()
+            .filter((source) => source.kind === "media"));
+    }
+
+    getSources() {
         return Object.freeze(Array.from(this.sources.values())
-            .filter((source) => source.kind === "media")
+            .filter((source) => ["media", "audio"].includes(source.kind))
             .map((source) => {
                 const scenes = Array.from(this.definitions.values()).filter(
                     (definition) => definition.renderer.kind === "source" &&
@@ -153,6 +158,10 @@ export default class StudioCatalogManager {
                     kind: source.kind,
                     url: source.url,
                     assetId: source.assetId || null,
+                    audioAssetId: source.audioAssetId || null,
+                    stillAssetId: source.stillAssetId || null,
+                    audioUrl: source.audioUrl || null,
+                    stillUrl: source.stillUrl || null,
                     origin: source.origin,
                     removable: source.origin === "operator",
                     sceneIds: Object.freeze(scenes.map((scene) => scene.id))
@@ -166,7 +175,7 @@ export default class StudioCatalogManager {
         }
 
         this.listeners.add(listener);
-        listener(this.getMediaSources());
+        listener(this.getSources());
         return () => this.listeners.delete(listener);
     }
 
@@ -255,7 +264,100 @@ export default class StudioCatalogManager {
         }
     }
 
+    addAudio({ name, audioAssetId, stillAssetId } = {}) {
+        if (!this.initialized || this.mutating) {
+            return this.failure("catalog-unavailable");
+        }
+
+        const normalizedName = this.normalizeString(name, MAX_NAME_LENGTH);
+        const normalizedAudioAssetId = this.normalizeString(
+            audioAssetId,
+            MAX_ID_LENGTH
+        );
+        const normalizedStillAssetId = this.normalizeString(
+            stillAssetId,
+            MAX_ID_LENGTH
+        );
+        const audioAsset = normalizedAudioAssetId
+            ? this.assetResolver?.(normalizedAudioAssetId)
+            : null;
+        const stillAsset = normalizedStillAssetId
+            ? this.assetResolver?.(normalizedStillAssetId)
+            : null;
+        const uuid = this.createUuid();
+
+        if (!normalizedName) {
+            return this.failure("invalid-name");
+        }
+        if (!audioAsset || audioAsset.kind !== "audio") {
+            return this.failure("invalid-audio-asset");
+        }
+        if (!stillAsset || stillAsset.kind !== "still") {
+            return this.failure("invalid-still-asset");
+        }
+        if (!uuid) {
+            return this.failure("id-generation-failed");
+        }
+
+        const source = this.createSourceRecord({
+            id: `audio-${uuid}`,
+            name: normalizedName,
+            kind: "audio",
+            audioAssetId: normalizedAudioAssetId,
+            stillAssetId: normalizedStillAssetId
+        }, "operator");
+        const scene = this.createSceneDefinition({
+            id: `audio-scene-${uuid}`,
+            name: normalizedName,
+            type: "AUDIO",
+            renderer: { kind: "source", sourceId: source?.id }
+        }, "operator");
+
+        return this.addOperatorPair(source, scene);
+    }
+
+    addOperatorPair(source, scene) {
+        if (!source || !scene || this.sources.has(source.id) ||
+            this.definitions.has(scene.id)) {
+            return this.failure("id-collision");
+        }
+
+        this.mutating = true;
+        try {
+            if (!this.registerSourceRecord(source)) {
+                return this.failure("source-registration-rejected");
+            }
+            if (!this.registerSceneDefinition(scene)) {
+                this.sources.delete(source.id);
+                this.studioSourceManager.unregisterSource(source.id);
+                return this.failure("scene-registration-rejected");
+            }
+
+            this.operatorSourceIds.add(source.id);
+            this.operatorSceneIds.add(scene.id);
+            if (!this.persistOverlay()) {
+                this.operatorSceneIds.delete(scene.id);
+                this.operatorSourceIds.delete(source.id);
+                this.definitions.delete(scene.id);
+                this.studioStateManager.unregisterScene(scene.id);
+                this.sources.delete(source.id);
+                this.studioSourceManager.unregisterSource(source.id);
+                return this.failure("persistence-failed");
+            }
+
+            this.notify();
+            return Object.freeze({ ok: true, source, scene });
+        }
+        finally {
+            this.mutating = false;
+        }
+    }
+
     removeMedia(sourceId) {
+        return this.removeSource(sourceId);
+    }
+
+    removeSource(sourceId) {
         if (!this.initialized || this.mutating) {
             return this.failure("catalog-unavailable");
         }
@@ -330,7 +432,8 @@ export default class StudioCatalogManager {
     isAssetReferenced(assetId) {
         const id = this.normalizeString(assetId, MAX_ID_LENGTH);
         return Boolean(id) && Array.from(this.sources.values()).some(
-            (source) => source.assetId === id
+            (source) => source.assetId === id ||
+                source.audioAssetId === id || source.stillAssetId === id
         );
     }
 
@@ -443,8 +546,22 @@ export default class StudioCatalogManager {
             candidate,
             ["id", "name", "kind", "assetId"]
         );
-        if ((!directUrl && !assetBacked) || candidate.kind !== "media" ||
-            !this.isGeneratedSourceId(candidate.id)) {
+        const audio = this.hasExactKeys(
+            candidate,
+            ["id", "name", "kind", "audioAssetId", "stillAssetId"]
+        );
+        if (candidate.kind === "media") {
+            if ((!directUrl && !assetBacked) ||
+                !this.isGeneratedSourceId(candidate.id, "media")) {
+                return null;
+            }
+        }
+        else if (candidate.kind === "audio") {
+            if (!audio || !this.isGeneratedSourceId(candidate.id, "audio")) {
+                return null;
+            }
+        }
+        else {
             return null;
         }
         return this.createSourceRecord(candidate, "operator");
@@ -452,10 +569,17 @@ export default class StudioCatalogManager {
 
     createOverlayScene(candidate) {
         if (!this.hasExactKeys(candidate, ["id", "name", "type", "renderer"]) ||
-            candidate.type !== "MEDIA" || !this.isGeneratedSceneId(candidate.id) ||
+            !["MEDIA", "AUDIO"].includes(candidate.type) ||
+            !this.isGeneratedSceneId(
+                candidate.id,
+                candidate.type === "AUDIO" ? "audio" : "media"
+            ) ||
             !this.hasExactKeys(candidate.renderer, ["kind", "sourceId"]) ||
             candidate.renderer.kind !== "source" ||
-            !this.isGeneratedSourceId(candidate.renderer.sourceId)) {
+            !this.isGeneratedSourceId(
+                candidate.renderer.sourceId,
+                candidate.type === "AUDIO" ? "audio" : "media"
+            )) {
             return null;
         }
         return this.createSceneDefinition(candidate, "operator");
@@ -489,6 +613,42 @@ export default class StudioCatalogManager {
                 ...(assetId ? { assetId } : {}),
                 origin
             }) : null;
+        }
+        if (kind === "audio") {
+            const audioAssetId = this.normalizeString(
+                candidate.audioAssetId,
+                MAX_ID_LENGTH
+            );
+            const stillAssetId = this.normalizeString(
+                candidate.stillAssetId,
+                MAX_ID_LENGTH
+            );
+            const audioAsset = audioAssetId
+                ? this.assetResolver?.(audioAssetId)
+                : null;
+            const stillAsset = stillAssetId
+                ? this.assetResolver?.(stillAssetId)
+                : null;
+            const audioUrl = audioAsset
+                ? this.createHttpUrl(audioAsset.url)
+                : null;
+            const stillUrl = stillAsset
+                ? this.createHttpUrl(stillAsset.url)
+                : null;
+            if (!audioAsset || audioAsset.kind !== "audio" || !audioUrl ||
+                !stillAsset || stillAsset.kind !== "still" || !stillUrl) {
+                return null;
+            }
+            return Object.freeze({
+                id,
+                name,
+                kind,
+                audioAssetId,
+                stillAssetId,
+                audioUrl,
+                stillUrl,
+                origin
+            });
         }
         if (kind === "hls") {
             const configRef = this.normalizeString(candidate.configRef, 200);
@@ -552,7 +712,19 @@ export default class StudioCatalogManager {
 
     serializeOverlay() {
         const sources = Array.from(this.operatorSourceIds, (id) => {
-            const { id: sourceId, name, kind, url, assetId } = this.sources.get(id);
+            const source = this.sources.get(id);
+            const {
+                id: sourceId,
+                name,
+                kind,
+                url,
+                assetId,
+                audioAssetId,
+                stillAssetId
+            } = source;
+            if (kind === "audio") {
+                return { id: sourceId, name, kind, audioAssetId, stillAssetId };
+            }
             return assetId
                 ? { id: sourceId, name, kind, assetId }
                 : { id: sourceId, name, kind, url };
@@ -583,7 +755,7 @@ export default class StudioCatalogManager {
     }
 
     notify() {
-        const snapshot = this.getMediaSources();
+        const snapshot = this.getSources();
         this.listeners.forEach((listener) => listener(snapshot));
     }
 
@@ -634,14 +806,15 @@ export default class StudioCatalogManager {
         return uuid && /^[a-zA-Z0-9-]+$/.test(uuid) ? uuid : null;
     }
 
-    isGeneratedSourceId(value) {
+    isGeneratedSourceId(value, kind = "media") {
         return typeof value === "string" &&
-            /^media-[a-zA-Z0-9-]+$/.test(value) && value.length <= MAX_ID_LENGTH;
+            new RegExp(`^${kind}-[a-zA-Z0-9-]+$`).test(value) &&
+            value.length <= MAX_ID_LENGTH;
     }
 
-    isGeneratedSceneId(value) {
+    isGeneratedSceneId(value, kind = "media") {
         return typeof value === "string" &&
-            /^media-scene-[a-zA-Z0-9-]+$/.test(value) &&
+            new RegExp(`^${kind}-scene-[a-zA-Z0-9-]+$`).test(value) &&
             value.length <= MAX_ID_LENGTH;
     }
 

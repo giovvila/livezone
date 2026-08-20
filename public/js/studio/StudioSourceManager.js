@@ -1,5 +1,6 @@
 import StudioHlsSurface from "./renderers/StudioHlsSurface.js";
 import StudioMediaSurface from "./renderers/StudioMediaSurface.js";
+import StudioAudioSurface from "./renderers/StudioAudioSurface.js";
 
 class StudioSourceManager {
 
@@ -11,7 +12,8 @@ class StudioSourceManager {
         this.nextInstanceId = 1;
         this.sourceFactories = new Map([
             ["hls", (options) => new StudioHlsSurface(options)],
-            ["media", (options) => new StudioMediaSurface(options)]
+            ["media", (options) => new StudioMediaSurface(options)],
+            ["audio", (options) => new StudioAudioSurface(options)]
         ]);
     }
 
@@ -81,7 +83,7 @@ class StudioSourceManager {
             ? definition.resolvedUrl
             : definition.url;
 
-        if (!sourceUrl) {
+        if (definition.kind !== "audio" && !sourceUrl) {
             throw new Error("Studio source unavailable");
         }
 
@@ -95,10 +97,15 @@ class StudioSourceManager {
         const instance = factory({
             sourceId: definition.id,
             sourceUrl,
+            audioUrl: definition.audioUrl,
+            stillUrl: definition.stillUrl,
             instanceId,
             consumer,
             initialTime,
-            initialPlayback,
+            initialPlayback: initialPlayback ??
+                (definition.kind === "audio" && consumer === "preview"
+                    ? "paused"
+                    : "playing"),
             onDestroyed: () => {
                 this.instances.delete(instanceId);
             }
@@ -223,10 +230,28 @@ class StudioSourceManager {
                 : null;
         }
 
+        if (kind === "audio") {
+            const audioUrl = this.createHttpUrl(definition.audioUrl);
+            const stillUrl = this.createHttpUrl(definition.stillUrl);
+
+            return audioUrl && stillUrl
+                ? Object.freeze({ id, kind, audioUrl, stillUrl })
+                : null;
+        }
+
         return null;
     }
 
     createSourceSnapshot(source) {
+        if (source.kind === "audio") {
+            return Object.freeze({
+                id: source.id,
+                kind: source.kind,
+                audioUrl: source.audioUrl,
+                stillUrl: source.stillUrl
+            });
+        }
+
         return Object.freeze(
             source.kind === "hls" && source.configRef
                 ? {

@@ -117,18 +117,31 @@
                 <section class="studio-sources control-desk__module" data-control-module="sources" aria-labelledby="studio-sources-title">
                     <h3 id="studio-sources-title">SOURCES</h3>
                     <form id="studio-source-form" class="studio-sources__form">
+                        <label for="studio-source-type">Source type</label>
+                        <select id="studio-source-type">
+                            <option value="media">MEDIA</option>
+                            <option value="audio">AUDIO + STILL</option>
+                        </select>
                         <label for="studio-source-name">Name</label>
                         <input id="studio-source-name" type="text" maxlength="120" autocomplete="off" required>
-                        <label for="studio-source-asset">VIDEO asset</label>
-                        <select id="studio-source-asset">
-                            <option value="">Manual URL / path</option>
-                        </select>
-                        <label for="studio-source-url">URL / path</label>
-                        <input id="studio-source-url" type="text" maxlength="4096" autocomplete="off" spellcheck="false" required>
-                        <button type="submit">ADD MEDIA + SCENE</button>
+                        <div id="studio-source-media-fields" class="studio-sources__type-fields">
+                            <label for="studio-source-asset">VIDEO asset</label>
+                            <select id="studio-source-asset">
+                                <option value="">Manual URL / path</option>
+                            </select>
+                            <label for="studio-source-url">URL / path</label>
+                            <input id="studio-source-url" type="text" maxlength="4096" autocomplete="off" spellcheck="false" required>
+                        </div>
+                        <div id="studio-source-audio-fields" class="studio-sources__type-fields" hidden>
+                            <label for="studio-source-audio-asset">AUDIO asset</label>
+                            <select id="studio-source-audio-asset"></select>
+                            <label for="studio-source-still-asset">STILL asset</label>
+                            <select id="studio-source-still-asset"></select>
+                        </div>
+                        <button id="studio-source-submit" type="submit">ADD MEDIA + SCENE</button>
                     </form>
                     <p id="studio-source-feedback" class="studio-sources__feedback" role="status" aria-live="polite"></p>
-                    <ul id="studio-source-list" class="studio-source-list" aria-label="Available media sources"></ul>
+                    <ul id="studio-source-list" class="studio-source-list" aria-label="Available Studio sources"></ul>
                 </section>
 
                 <section class="studio-assets control-desk__module" data-control-module="assets" aria-labelledby="studio-assets-title">
@@ -187,7 +200,7 @@
                     </div>
                 </section>
                 <section id="studio-media-transport" class="studio-media-transport control-desk__module" data-control-module="media-preview" aria-labelledby="studio-media-title">
-                    <h3 id="studio-media-title">MEDIA PREVIEW <span id="studio-media-name">— No media in Preview</span></h3>
+                    <h3 id="studio-media-title">PREVIEW TRANSPORT <span id="studio-media-name">— No transport in Preview</span></h3>
                     <div class="studio-media-transport__actions">
                         <button id="studio-media-restart" type="button" disabled>RESTART</button>
                         <button id="studio-media-play" type="button" disabled>PLAY</button>

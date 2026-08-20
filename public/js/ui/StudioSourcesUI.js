@@ -11,6 +11,7 @@ export default class StudioSourcesUI {
         this.render = this.render.bind(this);
         this.renderAssets = this.renderAssets.bind(this);
         this.handleAssetChange = this.handleAssetChange.bind(this);
+        this.handleTypeChange = this.handleTypeChange.bind(this);
     }
 
     start() {
@@ -20,13 +21,25 @@ export default class StudioSourcesUI {
 
         this.form = this.root.querySelector("#studio-source-form");
         this.nameInput = this.root.querySelector("#studio-source-name");
+        this.typeInput = this.root.querySelector("#studio-source-type");
         this.urlInput = this.root.querySelector("#studio-source-url");
         this.assetSelect = this.root.querySelector("#studio-source-asset");
+        this.audioAssetSelect = this.root.querySelector(
+            "#studio-source-audio-asset"
+        );
+        this.stillAssetSelect = this.root.querySelector(
+            "#studio-source-still-asset"
+        );
+        this.mediaFields = this.root.querySelector("#studio-source-media-fields");
+        this.audioFields = this.root.querySelector("#studio-source-audio-fields");
+        this.submitButton = this.root.querySelector("#studio-source-submit");
         this.list = this.root.querySelector("#studio-source-list");
         this.feedback = this.root.querySelector("#studio-source-feedback");
 
-        if (!this.form || !this.nameInput || !this.urlInput ||
-            !this.assetSelect || !this.list ||
+        if (!this.form || !this.nameInput || !this.typeInput ||
+            !this.urlInput || !this.assetSelect || !this.audioAssetSelect ||
+            !this.stillAssetSelect || !this.mediaFields || !this.audioFields ||
+            !this.submitButton || !this.list ||
             !this.feedback || typeof this.catalog.subscribe !== "function") {
             return false;
         }
@@ -34,10 +47,12 @@ export default class StudioSourcesUI {
         this.form.addEventListener("submit", this.handleSubmit);
         this.list.addEventListener("click", this.handleListClick);
         this.assetSelect.addEventListener("change", this.handleAssetChange);
+        this.typeInput.addEventListener("change", this.handleTypeChange);
         this.started = true;
         this.unsubscribe = this.catalog.subscribe(this.render);
         this.unsubscribeAssets = this.assetLibrary?.subscribe(this.renderAssets);
         this.handleAssetChange();
+        this.handleTypeChange();
         return true;
     }
 
@@ -48,6 +63,7 @@ export default class StudioSourcesUI {
         this.form.removeEventListener("submit", this.handleSubmit);
         this.list.removeEventListener("click", this.handleListClick);
         this.assetSelect.removeEventListener("change", this.handleAssetChange);
+        this.typeInput.removeEventListener("change", this.handleTypeChange);
         this.unsubscribe?.();
         this.unsubscribe = null;
         this.unsubscribeAssets?.();
@@ -57,11 +73,18 @@ export default class StudioSourcesUI {
 
     handleSubmit(event) {
         event.preventDefault();
-        const result = this.catalog.addMedia({
-            name: this.nameInput.value,
-            url: this.urlInput.value,
-            assetId: this.assetSelect.value || null
-        });
+        const audio = this.typeInput.value === "audio";
+        const result = audio
+            ? this.catalog.addAudio({
+                name: this.nameInput.value,
+                audioAssetId: this.audioAssetSelect.value,
+                stillAssetId: this.stillAssetSelect.value
+            })
+            : this.catalog.addMedia({
+                name: this.nameInput.value,
+                url: this.urlInput.value,
+                assetId: this.assetSelect.value || null
+            });
 
         if (!result.ok) {
             this.setFeedback(this.messageFor(result.reason), true);
@@ -69,6 +92,7 @@ export default class StudioSourcesUI {
         }
 
         this.form.reset();
+        this.handleTypeChange();
         this.handleAssetChange();
         this.setFeedback(`Added ${result.source.name}.`, false);
         this.nameInput.focus();
@@ -78,6 +102,22 @@ export default class StudioSourcesUI {
         const usingAsset = Boolean(this.assetSelect.value);
         this.urlInput.disabled = usingAsset;
         this.urlInput.required = !usingAsset;
+    }
+
+    handleTypeChange() {
+        const audio = this.typeInput.value === "audio";
+        this.mediaFields.hidden = audio;
+        this.audioFields.hidden = !audio;
+        this.assetSelect.disabled = audio;
+        this.urlInput.disabled = audio || Boolean(this.assetSelect.value);
+        this.urlInput.required = !audio && !this.assetSelect.value;
+        this.audioAssetSelect.disabled = !audio;
+        this.stillAssetSelect.disabled = !audio;
+        this.audioAssetSelect.required = audio;
+        this.stillAssetSelect.required = audio;
+        this.submitButton.textContent = audio
+            ? "ADD AUDIO + SCENE"
+            : "ADD MEDIA + SCENE";
     }
 
     renderAssets(assets) {
@@ -99,7 +139,35 @@ export default class StudioSourcesUI {
         if (options.some((option) => option.value === selected)) {
             this.assetSelect.value = selected;
         }
+        this.renderAssetOptions(
+            this.audioAssetSelect,
+            assets.filter((asset) => asset.kind === "audio")
+        );
+        this.renderAssetOptions(
+            this.stillAssetSelect,
+            assets.filter((asset) => asset.kind === "still")
+        );
         this.handleAssetChange();
+        this.handleTypeChange();
+    }
+
+    renderAssetOptions(select, assets) {
+        const selected = select.value;
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = assets.length
+            ? "Choose asset"
+            : "No matching assets";
+        const options = assets.map((asset) => {
+            const option = document.createElement("option");
+            option.value = asset.id;
+            option.textContent = `${asset.name} (${asset.origin.toUpperCase()})`;
+            return option;
+        });
+        select.replaceChildren(placeholder, ...options);
+        if (options.some((option) => option.value === selected)) {
+            select.value = selected;
+        }
     }
 
     handleListClick(event) {
@@ -108,7 +176,7 @@ export default class StudioSourcesUI {
             return;
         }
 
-        const result = this.catalog.removeMedia(button.dataset.removeSourceId);
+        const result = this.catalog.removeSource(button.dataset.removeSourceId);
         if (!result.ok) {
             this.setFeedback(this.messageFor(result.reason), true);
             return;
@@ -140,16 +208,23 @@ export default class StudioSourcesUI {
         header.className = "studio-source-item__header";
         name.textContent = source.name;
         badge.className = "studio-source-item__origin";
-        badge.textContent = source.origin === "base" ? "BASE" : "LOCAL";
+        badge.textContent = `${source.kind.toUpperCase()} · ${
+            source.origin === "base" ? "BASE" : "LOCAL"
+        }`;
         id.className = "studio-source-item__id";
         id.textContent = source.id;
         url.className = "studio-source-item__url";
-        url.textContent = source.url;
-        url.title = source.url;
+        const sourcePath = source.kind === "audio"
+            ? `${source.audioUrl} + ${source.stillUrl}`
+            : source.url;
+        url.textContent = sourcePath;
+        url.title = sourcePath;
         asset.className = "studio-source-item__asset";
-        asset.textContent = source.assetId
-            ? `Asset: ${source.assetId}`
-            : "Direct URL";
+        asset.textContent = source.kind === "audio"
+            ? `AUDIO: ${source.audioAssetId} · STILL: ${source.stillAssetId}`
+            : source.assetId
+                ? `Asset: ${source.assetId}`
+                : "Direct URL";
         remove.type = "button";
         remove.className = "studio-source-item__remove";
         remove.textContent = source.removable ? "REMOVE" : "PROTECTED";
@@ -171,16 +246,18 @@ export default class StudioSourcesUI {
 
     messageFor(reason) {
         const messages = {
-            "invalid-name": "Enter a valid media name.",
+            "invalid-name": "Enter a valid source name.",
             "invalid-url": "Enter a valid HTTP(S) URL or relative path.",
             "invalid-video-asset": "Choose an available VIDEO asset.",
-            "base-source-protected": "Base media cannot be removed.",
-            "scene-on-air": "Remove rejected: media is in Preview or Program.",
+            "invalid-audio-asset": "Choose an available AUDIO asset.",
+            "invalid-still-asset": "Choose an available STILL asset.",
+            "base-source-protected": "Base sources cannot be removed.",
+            "scene-on-air": "Remove rejected: source is in Preview or Program.",
             "scene-in-transition": "Remove rejected: a transition is active.",
-            "source-still-referenced": "Remove rejected: media is still referenced.",
-            "source-has-active-instances": "Remove rejected: media is still active.",
+            "source-still-referenced": "Remove rejected: source is still referenced.",
+            "source-has-active-instances": "Remove rejected: source is still active.",
             "persistence-failed": "The local media catalog could not be saved."
         };
-        return messages[reason] || "The media catalog operation was rejected.";
+        return messages[reason] || "The source catalog operation was rejected.";
     }
 }
