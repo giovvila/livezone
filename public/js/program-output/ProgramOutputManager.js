@@ -63,7 +63,7 @@ export default class ProgramOutputManager {
 
     publish(reason) {
         const sceneId = this.stateManager.getProgramSceneId();
-        if (!sceneId) return null;
+        if (!sceneId) return this.publishEmpty(reason);
         const scene = this.stateManager.getScene(sceneId);
         const definition = this.catalog.getDefinition(sceneId);
         if (!scene || !definition) return null;
@@ -88,6 +88,28 @@ export default class ProgramOutputManager {
             playback,
             graphics: this.createGraphics(),
             transition
+        });
+        if (!snapshot) return null;
+        this.snapshot = snapshot;
+        this.transport.publish(snapshot);
+        return snapshot;
+    }
+
+    publishEmpty(reason) {
+        const nowIso = new Date(this.now()).toISOString();
+        const snapshot = validateProgramOutputSnapshot({
+            version: 1,
+            revision: ++this.revision,
+            publisherSessionId: this.publisherSessionId,
+            publishedAt: nowIso,
+            committedAt: reason === "program" || !this.snapshot
+                ? nowIso : this.snapshot.committedAt,
+            scene: null,
+            source: null,
+            playback: { initialTime: 0, duration: null, playing: false,
+                ended: false, state: "ready", startedAt: nowIso },
+            graphics: { items: [] },
+            transition: { type: "cut", durationMs: 0 }
         });
         if (!snapshot) return null;
         this.snapshot = snapshot;

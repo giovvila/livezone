@@ -198,6 +198,22 @@
                         <button class="broadcast-control" type="button" data-broadcast-state="OFFLINE" aria-pressed="true">OFFLINE</button>
                         <button class="broadcast-control" type="button" data-broadcast-state="PROGRAM" aria-pressed="false">PROGRAM</button>
                     </div>
+                    <div class="program-output-setup">
+                        <div class="program-output-setup__summary">
+                            <span id="program-output-status" role="status" aria-live="polite">OUTPUT · LOCAL</span>
+                            <button id="program-output-setup-toggle" type="button" aria-expanded="false"
+                                aria-controls="program-output-setup-panel">OUTPUT SETUP</button>
+                        </div>
+                        <div id="program-output-setup-panel" class="program-output-setup__panel" hidden>
+                            <form id="program-output-token-form">
+                                <label for="program-output-token">PROGRAM OUTPUT TOKEN</label>
+                                <input id="program-output-token" type="password" maxlength="4096"
+                                    autocomplete="current-password" spellcheck="false" required>
+                                <button type="submit">SAVE / CONNECT</button>
+                            </form>
+                            <button id="program-output-token-clear" type="button">CLEAR / DISCONNECT</button>
+                        </div>
+                    </div>
                 </section>
                 <section id="studio-media-transport" class="studio-media-transport control-desk__module" data-control-module="media-preview" aria-labelledby="studio-media-title">
                     <h3 id="studio-media-title">PREVIEW TRANSPORT <span id="studio-media-name">— No transport in Preview</span></h3>

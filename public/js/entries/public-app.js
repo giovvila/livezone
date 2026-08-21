@@ -1,12 +1,14 @@
-import LocalProgramOutputTransport from "../program-output/LocalProgramOutputTransport.js";
+import { createProgramOutputTransport } from
+    "../program-output/ProgramOutputTransportFactory.js";
 import PublicProgramController from "../public/PublicProgramController.js";
 import PublicShellController from "../public/PublicShellController.js";
 
+const transport = await createProgramOutputTransport({ role: "subscriber" });
 const controller = new PublicProgramController({
     root: document.getElementById("public-program"),
     status: document.getElementById("public-program-status"),
     audioButton: document.getElementById("public-audio-enable"),
-    transport: new LocalProgramOutputTransport()
+    transport
 });
 
 controller.start();

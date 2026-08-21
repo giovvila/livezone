@@ -191,6 +191,14 @@ export default class StudioAudioSurface {
     }
 
     handlePause() {
+        if (this.consumer === "program" && this.initialPlayback === "playing" &&
+            !this.destroyed && !this.transportEnded && !this.transportError &&
+            !this.audio?.ended) {
+            void this.startPlayback().then((resumed) => {
+                if (!resumed) this.notifyTransport();
+            });
+            return;
+        }
         this.notifyTransport();
     }
 

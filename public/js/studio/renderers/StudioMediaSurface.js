@@ -7,6 +7,7 @@ export default class StudioMediaSurface {
         consumer,
         initialTime = 0,
         initialPlayback = "playing",
+        initialEnded = false,
         onDestroyed
     }) {
         this.sourceId = sourceId;
@@ -16,12 +17,15 @@ export default class StudioMediaSurface {
         this.initialTime = Number.isFinite(initialTime) && initialTime >= 0
             ? initialTime
             : 0;
-        this.initialPlayback = initialPlayback === "paused"
+        this.initialEnded = initialEnded === true;
+        this.initialPlayback = initialPlayback === "paused" || this.initialEnded
             ? "paused"
             : "playing";
-        this.initialCueState = this.initialTime > 0
+        this.initialCueState = this.initialTime > 0 || this.initialEnded
             ? "pending"
             : "ready";
+        this.initialCueTarget = null;
+        this.initialSeekAttempts = 0;
         this.onDestroyed = onDestroyed;
         this.video = null;
         this.root = null;
@@ -82,6 +86,7 @@ export default class StudioMediaSurface {
     }
 
     handleLoadedData() {
+        this.tryApplyInitialCue();
         this.markReadyIfFrameAvailable();
         this.notifyTransport();
     }
@@ -93,6 +98,7 @@ export default class StudioMediaSurface {
     }
 
     handleCanPlay() {
+        this.tryApplyInitialCue();
         this.markReadyIfFrameAvailable();
         this.notifyTransport();
     }
@@ -116,6 +122,14 @@ export default class StudioMediaSurface {
     }
 
     handlePause() {
+        if (this.consumer === "program" && this.initialPlayback === "playing" &&
+            !this.destroyed && !this.transportEnded && !this.transportError &&
+            !this.video?.ended) {
+            void this.startPlayback().then((resumed) => {
+                if (!resumed) this.notifyTransport();
+            });
+            return;
+        }
         this.notifyTransport();
     }
 
@@ -130,28 +144,45 @@ export default class StudioMediaSurface {
             this.video.duration >= 0
             ? this.video.duration
             : null;
-        const cueTime = duration === null
+        this.initialCueTarget = this.initialEnded && duration !== null
+            ? this.getPlayableEnd(duration)
+            : duration === null
             ? this.initialTime
             : Math.min(this.initialTime, this.getPlayableEnd(duration));
 
+        this.tryApplyInitialCue();
+    }
+
+    tryApplyInitialCue() {
+        if (this.initialCueState !== "pending" || !this.video ||
+            !Number.isFinite(this.initialCueTarget) ||
+            this.initialSeekAttempts >= 2 ||
+            !this.isInitialCueSeekable(this.initialCueTarget)) {
+            return false;
+        }
+
         try {
-            this.video.currentTime = cueTime;
+            this.initialSeekAttempts += 1;
+            this.video.currentTime = this.initialCueTarget;
+            if (this.video.seeking === false &&
+                Math.abs(this.video.currentTime - this.initialCueTarget) <= 0.05) {
+                this.completeInitialCue();
+            }
+            return true;
         }
         catch {
-            this.fallbackInitialCue();
+            if (this.initialSeekAttempts >= 2) this.failInitialCue();
+            return false;
         }
     }
 
     handleSeeked() {
         if (this.initialCueState === "pending") {
-            this.initialCueState = "ready";
-
-            if (this.initialPlayback === "playing") {
-                void this.startPlayback();
+            if (Number.isFinite(this.initialCueTarget) &&
+                Math.abs(this.video.currentTime - this.initialCueTarget) <= 0.1) {
+                this.completeInitialCue();
             }
-            else {
-                this.video?.pause();
-            }
+            else if (!this.tryApplyInitialCue()) this.failInitialCue();
         }
 
         this.markReadyIfFrameAvailable();
@@ -177,28 +208,26 @@ export default class StudioMediaSurface {
         }
     }
 
-    fallbackInitialCue() {
-        if (!this.video || this.destroyed) {
-            return;
-        }
+    completeInitialCue() {
+        this.initialCueState = "ready";
+        if (this.initialPlayback === "playing") void this.startPlayback();
+        else this.video?.pause();
+    }
 
-        try {
-            this.video.currentTime = 0;
-            this.initialCueState = "ready";
+    failInitialCue() {
+        this.initialCueState = "failed";
+        this.video?.pause();
+        this.failReadiness("initial-cue-failed");
+    }
 
-            if (this.initialPlayback === "playing") {
-                void this.startPlayback();
-            }
-            else {
-                this.video.pause();
-            }
-
-            this.markReadyIfFrameAvailable();
+    isInitialCueSeekable(target) {
+        const ranges = this.video?.seekable;
+        if (!ranges || ranges.length === 0) return false;
+        for (let index = 0; index < ranges.length; index += 1) {
+            if (target >= ranges.start(index) - 0.05 &&
+                target <= ranges.end(index) + 0.05) return true;
         }
-        catch {
-            this.initialCueState = "failed";
-            this.failReadiness("initial-cue-failed");
-        }
+        return false;
     }
 
     getPlayableEnd(duration) {

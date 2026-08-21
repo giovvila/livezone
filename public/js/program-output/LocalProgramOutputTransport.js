@@ -5,6 +5,7 @@ const CHANNEL_NAME = "livezone.programOutput.v1";
 
 export default class LocalProgramOutputTransport {
     constructor({ storage, channelFactory } = {}) {
+        this.mode = "local";
         this.storage = storage === undefined ? this.getStorage() : storage;
         this.channelFactory = channelFactory || ((name) =>
             typeof BroadcastChannel === "function" ? new BroadcastChannel(name) : null);

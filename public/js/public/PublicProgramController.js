@@ -6,6 +6,8 @@ export default class PublicProgramController {
     constructor({ root, status, audioButton, transport, now = () => Date.now() }) {
         Object.assign(this, { root, status, audioButton, transport, now });
         this.revisionBySession = new Map();
+        this.activePublisherSessionId = null;
+        this.retiredPublisherSessions = new Set();
         this.generation = 0;
         this.audioEnabled = false;
         this.current = null;
@@ -29,32 +31,54 @@ export default class PublicProgramController {
     }
 
     handleSnapshot(snapshot, { livePublisher = false } = {}) {
+        if (!this.acceptSnapshotRevision(snapshot, { livePublisher })) return;
+        if (snapshot.scene === null && snapshot.source === null) {
+            this.scheduleStaleState(snapshot, livePublisher ? this.now() : null);
+            this.renderWaiting();
+            return;
+        }
+        if (!snapshot.scene || !snapshot.source) return;
+        const previousSnapshot = this.current?.snapshot;
+        const sameActivation = previousSnapshot &&
+            this.activationKey(previousSnapshot) === this.activationKey(snapshot);
+        if (sameActivation) {
+            const playbackChanged = JSON.stringify(previousSnapshot.playback) !==
+                JSON.stringify(snapshot.playback);
+            this.current.snapshot = snapshot;
+            this.renderGraphics(snapshot.graphics.items);
+            this.scheduleStaleState(snapshot, livePublisher ? this.now() : null);
+            if (playbackChanged) void this.reconcilePlayback(snapshot, this.current);
+            return;
+        }
+        this.scheduleStaleState(snapshot, livePublisher ? this.now() : null);
+        void this.renderSnapshot(snapshot);
+    }
+
+    acceptSnapshotRevision(snapshot, { livePublisher = false } = {}) {
+        const sessionId = snapshot?.publisherSessionId;
+        if (!sessionId || this.retiredPublisherSessions.has(sessionId)) return false;
+        if (this.activePublisherSessionId &&
+            this.activePublisherSessionId !== sessionId) {
+            this.retiredPublisherSessions.add(this.activePublisherSessionId);
+            this.activePublisherSessionId = sessionId;
+        }
+        else if (!this.activePublisherSessionId) {
+            this.activePublisherSessionId = sessionId;
+        }
         const previous = this.revisionBySession.get(snapshot.publisherSessionId) || 0;
         if (snapshot.revision <= previous) {
             if (livePublisher && snapshot.revision === previous) {
                 this.scheduleStaleState(snapshot, this.now());
             }
-            return;
+            return false;
         }
         this.revisionBySession.set(snapshot.publisherSessionId, snapshot.revision);
         if (!livePublisher &&
             this.now() - Date.parse(snapshot.publishedAt) > MAX_RETAINED_AGE_MS) {
             this.renderWaiting("PROGRAM STATE STALE");
-            return;
+            return false;
         }
-        const graphicsOnly = this.current?.snapshot.scene.id === snapshot.scene.id &&
-            this.current.snapshot.source.id === snapshot.source.id &&
-            this.current.snapshot.committedAt === snapshot.committedAt &&
-            JSON.stringify(this.current.snapshot.playback) ===
-                JSON.stringify(snapshot.playback);
-        if (graphicsOnly) {
-            this.current.snapshot = snapshot;
-            this.renderGraphics(snapshot.graphics.items);
-            this.scheduleStaleState(snapshot, livePublisher ? this.now() : null);
-            return;
-        }
-        this.scheduleStaleState(snapshot, livePublisher ? this.now() : null);
-        void this.renderSnapshot(snapshot);
+        return true;
     }
 
     async renderSnapshot(snapshot) {
@@ -99,7 +123,8 @@ export default class PublicProgramController {
         if (source.kind === "audio") return this.createAudio(root, snapshot);
         const video = document.createElement("video");
         video.className = "public-program__media";
-        video.autoplay = true;
+        video.autoplay = source.kind === "hls" ||
+            (snapshot.playback.playing && !snapshot.playback.ended);
         video.muted = source.kind === "hls" || !this.audioEnabled;
         video.defaultMuted = video.muted;
         video.playsInline = true;
@@ -124,11 +149,14 @@ export default class PublicProgramController {
             throw error;
         }
         if (source.kind === "media") {
-            video.currentTime = expectedPlaybackTime(snapshot, this.now());
+            await this.seekRecordedMedia(video, snapshot);
         }
         if (source.kind === "hls" || snapshot.playback.playing) {
             try { await video.play(); }
-            catch { /* Explicit audio gesture may be needed. */ }
+            catch {
+                this.showAudioButton();
+                this.setStatus("TAP TO START PROGRAM", "error");
+            }
         }
         return () => { hls?.destroy(); video.pause(); video.removeAttribute("src"); video.load(); };
     }
@@ -155,7 +183,7 @@ export default class PublicProgramController {
             audio.load();
             throw error;
         }
-        audio.currentTime = expectedPlaybackTime(snapshot, this.now());
+        await this.seekRecordedMedia(audio, snapshot);
         if (this.audioEnabled && snapshot.playback.playing) {
             try { await audio.play(); } catch { this.showAudioButton(); }
         }
@@ -191,6 +219,60 @@ export default class PublicProgramController {
         });
     }
 
+    seekRecordedMedia(element, snapshot, timeoutMs = 12000) {
+        const expected = expectedPlaybackTime(snapshot, this.now());
+        const duration = Number.isFinite(element.duration) && element.duration >= 0
+            ? element.duration : snapshot.playback.duration;
+        const target = duration === null || !Number.isFinite(duration)
+            ? Math.max(0, expected)
+            : Math.min(Math.max(0, expected), Math.max(0, duration - 0.05));
+        if (Math.abs(element.currentTime - target) <= 0.05) return Promise.resolve();
+        return new Promise((resolve, reject) => {
+            let timer;
+            const cleanup = () => {
+                element.removeEventListener("seeked", ready);
+                element.removeEventListener("error", fail);
+                clearTimeout(timer);
+            };
+            const ready = () => { cleanup(); resolve(); };
+            const fail = () => { cleanup(); reject(new Error("Public seek unavailable")); };
+            element.addEventListener("seeked", ready, { once: true });
+            element.addEventListener("error", fail, { once: true });
+            timer = setTimeout(fail, timeoutMs);
+            element.currentTime = target;
+            queueMicrotask(() => {
+                if (!element.seeking && Math.abs(element.currentTime - target) <= 0.05) {
+                    ready();
+                }
+            });
+        });
+    }
+
+    async reconcilePlayback(snapshot, entry) {
+        if (!entry || this.current !== entry ||
+            !["media", "audio"].includes(snapshot.source.kind)) return;
+        const media = entry.layer.querySelector("audio, video");
+        if (!media) return;
+        if (!snapshot.playback.playing || snapshot.playback.ended) media.pause();
+        try { await this.seekRecordedMedia(media, snapshot); }
+        catch { return; }
+        if (this.current !== entry || entry.snapshot !== snapshot) return;
+        if (snapshot.playback.playing && !snapshot.playback.ended) {
+            if (snapshot.source.kind !== "audio" || this.audioEnabled) {
+                try { await media.play(); }
+                catch { this.showAudioButton(); }
+            }
+            else this.showAudioButton();
+        }
+        else media.pause();
+        this.setStatus(snapshot.playback.ended ? "PROGRAM ENDED" : "PROGRAM", "online");
+    }
+
+    activationKey(snapshot) {
+        return [snapshot.publisherSessionId, snapshot.committedAt,
+            snapshot.scene?.id || "", snapshot.source?.id || ""].join("|");
+    }
+
     renderGraphics(items) {
         const elements = items.map((item) => {
             if (item.kind === "image") {
@@ -214,7 +296,12 @@ export default class PublicProgramController {
         this.audioEnabled = true;
         this.audioButton.hidden = true;
         const media = this.current?.layer.querySelector("audio, video");
-        if (media) { media.muted = false; void media.play().catch(() => this.showAudioButton()); }
+        if (!media) return;
+        media.muted = false;
+        const playback = this.current?.snapshot.playback;
+        if (playback?.playing && !playback.ended) {
+            void media.play().catch(() => this.showAudioButton());
+        }
     }
 
     showAudioButton() { if (this.audioButton) this.audioButton.hidden = false; }

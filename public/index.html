@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>LIVEZONE · Program</title>
     <link rel="icon" href="favicon.ico">
-    <link rel="stylesheet" href="css/public-viewer.css">
+    <link rel="stylesheet" href="css/public-viewer.css?v=6l-tv-cursor-hotfix">
 </head>
 <body class="public-viewer">
     <main id="public-site" class="public-site">
@@ -24,8 +24,11 @@
                     <div class="public-program__base" data-public-base></div>
                     <div class="public-program__graphics" data-public-graphics></div>
                 </div>
+                <button class="public-program__fullscreen-exit" type="button"
+                    aria-label="Esci da tutto schermo" title="Esci da tutto schermo" hidden>
+                    &times;
+                </button>
             </div>
-            <div id="public-program-status" class="public-program__status" data-state="offline">OFFLINE</div>
             <button id="public-audio-enable" class="public-program__audio" type="button" hidden>ENABLE AUDIO</button>
         </section>
         <button id="public-fullscreen-toggle" class="public-site__fullscreen" type="button"
@@ -34,6 +37,6 @@
         </button>
     </main>
     <script src="lib/hls.min.js"></script>
-    <script type="module" src="js/entries/public-app.js"></script>
+    <script type="module" src="js/entries/public-app.js?v=6l-network-subscriber"></script>
 </body>
 </html>

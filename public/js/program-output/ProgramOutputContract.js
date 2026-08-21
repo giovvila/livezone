@@ -16,14 +16,16 @@ export function validateProgramOutputSnapshot(candidate) {
         return null;
     }
 
-    const scene = validateScene(candidate.scene);
-    const source = validateSource(candidate.source);
+    const isEmpty = candidate.scene === null && candidate.source === null;
+    const scene = isEmpty ? null : validateScene(candidate.scene);
+    const source = isEmpty ? null : validateSource(candidate.source);
     const playback = validatePlayback(candidate.playback);
     const graphics = validateGraphics(candidate.graphics);
     const transition = validateTransition(candidate.transition);
 
-    if (!scene || !source || !playback || !graphics || !transition ||
-        (scene.type === "SLATE") !== (source.kind === "break")) {
+    if ((!isEmpty && (!scene || !source)) || !playback || !graphics ||
+        !transition || (!isEmpty &&
+        (scene.type === "SLATE") !== (source.kind === "break"))) {
         return null;
     }
 

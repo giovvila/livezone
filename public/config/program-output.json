@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "mode": "local",
+  "network": {
+    "publishUrl": "/api/program-output",
+    "subscribeUrl": "/api/program-output/events"
+  }
+}

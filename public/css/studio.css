@@ -558,6 +558,20 @@
     min-width: 0;
 }
 
+.program-output-setup { margin-top: 8px; }
+.program-output-setup__summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.program-output-setup__summary span { color: var(--text-muted, #9ca3af); font-size: 10px; font-weight: 700; letter-spacing: .06em; }
+.program-output-setup__summary span[data-state="token-missing"],
+.program-output-setup__summary span[data-state="auth-error"],
+.program-output-setup__summary span[data-state="publishing-error"] { color: #ff6673; }
+.program-output-setup__summary span[data-state="connected"] { color: #55d98b; }
+.program-output-setup__panel { margin-top: 8px; padding: 8px; border: 1px solid rgba(255,255,255,.14); border-radius: 4px; background: rgba(0,0,0,.22); }
+.program-output-setup__panel[hidden] { display: none; }
+.program-output-setup__panel form { display: grid; gap: 6px; }
+.program-output-setup__panel label { font-size: 10px; font-weight: 700; letter-spacing: .06em; }
+.program-output-setup__panel input { min-width: 0; width: 100%; }
+.program-output-setup__panel > button { width: 100%; margin-top: 6px; }
+
 .studio-panel h2,
 .studio-panel h3 {
     margin: 0;

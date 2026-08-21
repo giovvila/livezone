@@ -470,7 +470,9 @@ export default class StudioRenderer {
                         preparationContext?.mediaInitialTime,
                     initialPlayback:
                         preparationContext?.transportInitialPlayback ??
-                        preparationContext?.mediaInitialPlayback
+                        preparationContext?.mediaInitialPlayback,
+                    initialEnded: preparationContext?.transportInitialEnded ??
+                        preparationContext?.mediaInitialEnded
                 }
             );
         }
@@ -572,13 +574,20 @@ export default class StudioRenderer {
             return null;
         }
 
-        const transportInitialTime = Number.isFinite(snapshot.currentTime) &&
+        const transportDuration = Number.isFinite(snapshot.duration) &&
+            snapshot.duration >= 0 ? snapshot.duration : null;
+        const transportInitialEnded = snapshot.ended === true;
+        const capturedTime = Number.isFinite(snapshot.currentTime) &&
             snapshot.currentTime >= 0
             ? snapshot.currentTime
             : 0;
+        const transportInitialTime = transportInitialEnded &&
+            transportDuration !== null
+            ? transportDuration : capturedTime;
         const preparationContext = Object.freeze({
             transportInitialTime,
-            transportInitialPlayback: "paused"
+            transportInitialPlayback: "paused",
+            transportInitialEnded
         });
 
         this.previewHandoff = Object.freeze({

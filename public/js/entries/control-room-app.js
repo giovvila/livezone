@@ -22,7 +22,9 @@ import StudioSourceManager from "../studio/StudioSourceManager.js";
 import StudioGraphicsManager from "../studio/StudioGraphicsManager.js";
 import StudioTransitionCoordinator from "../studio/StudioTransitionCoordinator.js";
 import ProgramOutputManager from "../program-output/ProgramOutputManager.js";
-import LocalProgramOutputTransport from "../program-output/LocalProgramOutputTransport.js";
+import ProgramOutputSetupUI from "../ui/ProgramOutputSetupUI.js";
+import { createProgramOutputTransport } from
+    "../program-output/ProgramOutputTransportFactory.js";
 
 const adaptivePlayer = new AdaptivePlayer(
     document.querySelector(".player-wrapper"),
@@ -57,6 +59,7 @@ let studioRenderer = null;
 let studioTransitionCoordinator = null;
 let programFullscreenUI = null;
 let programOutputManager = null;
+let programOutputSetupUI = null;
 
 runtime.start({
     async beforePlayerStart(config) {
@@ -93,6 +96,9 @@ runtime.start({
             studioRenderer
         });
         studioTransitionCoordinator.start();
+        const programOutputTransport = await createProgramOutputTransport({
+            role: "publisher"
+        });
         programOutputManager = new ProgramOutputManager({
             stateManager: StudioStateManager,
             catalog: studioCatalogManager,
@@ -100,9 +106,14 @@ runtime.start({
             renderer: studioRenderer,
             graphicsManager: StudioGraphicsManager,
             transitionCoordinator: studioTransitionCoordinator,
-            transport: new LocalProgramOutputTransport()
+            transport: programOutputTransport
         });
         programOutputManager.start();
+        programOutputSetupUI = new ProgramOutputSetupUI({
+            root: document,
+            transport: programOutputTransport
+        });
+        programOutputSetupUI.start();
         studioCatalogManager.setRemovalGuard(({ sceneId }) =>
             studioTransitionCoordinator.isBusy() ||
             studioRenderer.isSceneInUse(sceneId)

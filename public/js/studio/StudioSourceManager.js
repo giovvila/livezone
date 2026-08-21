@@ -66,7 +66,8 @@ class StudioSourceManager {
         return this.createSourceSnapshot(source);
     }
 
-    createInstance(sourceId, { consumer, initialTime, initialPlayback } = {}) {
+    createInstance(sourceId, { consumer, initialTime, initialPlayback,
+        initialEnded } = {}) {
         const id = this.normalizeString(sourceId);
 
         if (!id || !["preview", "program"].includes(consumer)) {
@@ -106,6 +107,7 @@ class StudioSourceManager {
                 (definition.kind === "audio" && consumer === "preview"
                     ? "paused"
                     : "playing"),
+            initialEnded: initialEnded === true,
             onDestroyed: () => {
                 this.instances.delete(instanceId);
             }
