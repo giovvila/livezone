@@ -8,7 +8,11 @@ import {
 import ScheduleStore from "../public/js/scheduler/ScheduleStore.js";
 import SchedulerEngine from "../public/js/scheduler/SchedulerEngine.js";
 import StudioProgramCommand from "../public/js/scheduler/StudioProgramCommand.js";
+import { calculateEffectiveSchedule, isHardClock,
+    RESUME_POLICIES } from "../public/js/scheduler/ScheduleClock.js";
 import { getScheduleEditorTime } from "../public/js/ui/StudioScheduleUI.js";
+import ProgramRemainingTimeUI, { calculateProgramRemaining, formatRemainingSeconds } from
+    "../public/js/ui/ProgramRemainingTimeUI.js";
 import Events from "../public/js/core/Events.js";
 
 const item = (id, start, durationSeconds = 1800, sceneId = id) => ({
@@ -41,6 +45,181 @@ test("legacy items migrate to ABSOLUTE NORMAL without a version bump", () => {
         items: [item("legacy", "2026-08-23T20:00:00+02:00")] });
     assert.equal(result.schedule.items[0].startMode, "ABSOLUTE");
     assert.equal(result.schedule.items[0].behavior, "NORMAL");
+    assert.equal(result.schedule.items[0].resumePolicy, "RESUME_FIXED");
+});
+
+test("RESUME_SHIFT extends item and its AFTER_PREVIOUS chain only", () => {
+    const after = { ...item("b", null, 600), startMode: "AFTER_PREVIOUS" };
+    delete after.start;
+    const base = validateSchedule({ version: 1, timezone: "Europe/Rome", items: [
+        { ...item("a", "2026-08-23T20:00:00+02:00", 1800), resumePolicy: "RESUME_SHIFT" },
+        after
+    ] }).schedule;
+    const before = JSON.stringify(base);
+    const effective = calculateEffectiveSchedule(base, new Map([["a", 300000]]));
+    assert.equal(effective.items.find(({ id }) => id === "a").endMs,
+        Date.parse("2026-08-23T20:35:00+02:00"));
+    assert.equal(effective.items.find(({ id }) => id === "b").startMs,
+        Date.parse("2026-08-23T20:35:00+02:00"));
+    assert.equal(JSON.stringify(base), before, "runtime shift must not mutate base schedule");
+});
+
+test("FILLER absorbs drift and hard clock remains fixed", () => {
+    const create = (shift) => {
+        const base = validateSchedule({ version: 1, timezone: "Europe/Rome", items: [
+            { ...item("a", "2026-08-23T20:00:00+02:00", 2400), resumePolicy: "RESUME_SHIFT" },
+            { ...item("f", "2026-08-23T20:40:00+02:00", 1200), resumePolicy: "FILLER" },
+            item("hard", "2026-08-23T21:00:00+02:00", 600)
+        ] }).schedule;
+        return calculateEffectiveSchedule(base, new Map([["a", shift]]));
+    };
+    const shortened = create(480000);
+    assert.equal(shortened.items.find(({ id }) => id === "f").effectiveDurationSeconds, 720);
+    assert.equal(shortened.items.find(({ id }) => id === "hard").startMs,
+        Date.parse("2026-08-23T21:00:00+02:00"));
+    const skipped = create(1200000);
+    assert.equal(skipped.items.find(({ id }) => id === "f").effectiveDurationSeconds, 0);
+    assert.equal(skipped.items.find(({ id }) => id === "f").skipped, true);
+    assert.equal(isHardClock(skipped.items.find(({ id }) => id === "hard")), true);
+});
+
+test("RESUME_FIXED leaves the base hard-clock window unchanged", () => {
+    const base = schedule(item("a", "2026-08-23T20:00:00+02:00", 1800),
+        item("hard", "2026-08-23T20:30:00+02:00", 600));
+    const effective = calculateEffectiveSchedule(base);
+    assert.equal(effective.items.find(({ id }) => id === "a").endMs,
+        Date.parse("2026-08-23T20:30:00+02:00"));
+    assert.equal(effective.items.find(({ id }) => id === "hard").startMs,
+        Date.parse("2026-08-23T20:30:00+02:00"));
+});
+
+test("Program remaining uses recorded source position and ENDED state", () => {
+    const source = calculateProgramRemaining({ transport: {
+        duration: 60, currentTime: 20, paused: false, ended: false
+    } });
+    assert.deepEqual(source, { label: "SOURCE", remainingSeconds: 40 });
+    const paused = calculateProgramRemaining({ transport: {
+        duration: 60, currentTime: 20, paused: true, ended: false
+    } });
+    assert.equal(paused.remainingSeconds, 40);
+    assert.equal(calculateProgramRemaining({ transport: {
+        duration: 60, currentTime: 60, ended: true
+    } }).remainingSeconds, 0);
+    assert.equal(calculateProgramRemaining({ transport: null }).remainingSeconds, null);
+});
+
+test("matching schedule authority remains editorially authoritative after source end", () => {
+    const authority = (effectiveEnd) => ({
+        mode: "scheduled", sceneId: "media", effectiveEnd
+    });
+    const transport = { duration: 34, currentTime: 0, ended: false };
+    assert.deepEqual(calculateProgramRemaining({
+        now: 0, schedulerAuthority: authority(70000), programSceneId: "media", transport
+    }), { label: "SCHEDULE", remainingSeconds: 70 });
+    assert.deepEqual(calculateProgramRemaining({
+        now: 34000, schedulerAuthority: authority(70000), programSceneId: "media",
+        transport: { duration: 34, currentTime: 34, ended: true }
+    }), { label: "SCHEDULE", remainingSeconds: 36 });
+    assert.equal(calculateProgramRemaining({
+        now: 69000, schedulerAuthority: authority(70000), programSceneId: "media",
+        transport
+    }).remainingSeconds, 1);
+    assert.equal(calculateProgramRemaining({
+        now: 70000, schedulerAuthority: authority(70000), programSceneId: "media",
+        transport
+    }).remainingSeconds, 0);
+    assert.deepEqual(calculateProgramRemaining({
+        now: 0, schedulerAuthority: authority(20000), programSceneId: "media", transport
+    }), { label: "SCHEDULE", remainingSeconds: 20 });
+});
+
+test("ended transport is zero only outside matching schedule authority", () => {
+    const ended = { duration: 34, currentTime: 34, ended: true };
+    assert.deepEqual(calculateProgramRemaining({ transport: ended }),
+        { label: "SOURCE", remainingSeconds: 0 });
+    assert.deepEqual(calculateProgramRemaining({
+        now: 1000,
+        schedulerAuthority: { mode: "scheduled", sceneId: "other", effectiveEnd: 70000 },
+        programSceneId: "media", transport: ended
+    }), { label: "SOURCE", remainingSeconds: 0 });
+});
+
+test("scheduled boundary wins over longer source duration with ceil rounding", () => {
+    const remaining = calculateProgramRemaining({
+        now: 1000,
+        schedulerAuthority: { mode: "scheduled", sceneId: "media",
+            effectiveEnd: 16001 },
+        programSceneId: "media",
+        transport: { duration: 60, currentTime: 20 }
+    });
+    assert.deepEqual(remaining, { label: "SCHEDULE", remainingSeconds: 16 });
+    assert.equal(formatRemainingSeconds(16), "00:00:16");
+    assert.equal(formatRemainingSeconds(null), "--:--:--");
+});
+
+test("manual override displays countdown to scheduler takeover boundary", () => {
+    const remaining = calculateProgramRemaining({ now: 1000,
+        schedulerAuthority: { mode: "manual-override", effectiveEnd: 11000 },
+        programSceneId: "manual", transport: null });
+    assert.deepEqual(remaining, { label: "NEXT TAKE", remainingSeconds: 10 });
+});
+
+test("effective SHIFT, FIXED and shortened FILLER ends drive countdown", () => {
+    const authority = (item) => ({ mode: "scheduled", sceneId: item.sceneId,
+        effectiveEnd: item.endMs });
+    const endedTransport = { duration: 34, currentTime: 34, ended: true };
+    const base = validateSchedule({ version: 1, timezone: "Europe/Rome", items: [
+        { ...item("a", "2026-08-23T20:00:00+02:00", 2400), resumePolicy: "RESUME_SHIFT" },
+        { ...item("f", "2026-08-23T20:40:00+02:00", 1200), resumePolicy: "FILLER" },
+        item("hard", "2026-08-23T21:00:00+02:00", 600)
+    ] }).schedule;
+    const effective = calculateEffectiveSchedule(base, new Map([["a", 480000]]));
+    const shifted = effective.items.find(({ id }) => id === "a");
+    const filler = effective.items.find(({ id }) => id === "f");
+    assert.equal(calculateProgramRemaining({ now: shifted.startMs,
+        schedulerAuthority: authority(shifted), programSceneId: shifted.sceneId,
+        transport: endedTransport })
+        .remainingSeconds, 2880);
+    assert.equal(calculateProgramRemaining({ now: filler.startMs,
+        schedulerAuthority: authority(filler), programSceneId: filler.sceneId,
+        transport: endedTransport })
+        .remainingSeconds, 720);
+    const hard = effective.items.find(({ id }) => id === "hard");
+    assert.equal(hard.startMs, Date.parse("2026-08-23T21:00:00+02:00"));
+    assert.equal(calculateProgramRemaining({ now: hard.startMs,
+        schedulerAuthority: authority(hard), programSceneId: hard.sceneId,
+        transport: endedTransport }).remainingSeconds, 600);
+});
+
+test("Program remaining UI owns one presentation timer and destroys cleanly", () => {
+    const timer = fakeTimer(0);
+    const label = { textContent: "" };
+    const output = { textContent: "" };
+    const listeners = new Map();
+    const eventBus = {
+        on: (event, listener) => listeners.set(event, listener),
+        off: (event) => listeners.delete(event)
+    };
+    const ui = new ProgramRemainingTimeUI({
+        root: { querySelector: (selector) => selector.includes("label") ? label : output },
+        schedulerEngine: { subscribe: (listener) => { listener(); return () => {}; },
+            getCurrentEffectiveAuthority: () => ({ mode: "none" }) },
+        renderer: { subscribeProgramTransport: (listener) => {
+            listener({ duration: 60, currentTime: 20, ended: false }); return () => {};
+        } },
+        stateManager: { getProgramSceneId: () => "media" },
+        eventBus,
+        clock: timer.now,
+        setTimer: timer.set,
+        clearTimer: timer.clear
+    });
+    assert.equal(ui.start(), true);
+    assert.equal(ui.start(), false);
+    assert.equal(timer.count(), 1);
+    assert.equal(output.textContent, "00:00:40");
+    ui.destroy();
+    assert.equal(timer.count(), 0);
+    assert.equal(listeners.size, 0);
 });
 
 test("AFTER_PREVIOUS chains derive from preceding NORMAL duration", () => {
@@ -188,6 +367,7 @@ test("manual override does not snap back and clears at next boundary", async () 
     harness.now.value = Date.parse("2026-08-23T20:10:00+02:00");
     harness.bus.emit(Events.STUDIO_PROGRAM_CHANGED, { source: "operator" });
     assert.equal(harness.engine.getSnapshot().status, "MANUAL OVERRIDE");
+    assert.equal(harness.engine.getCurrentEffectiveAuthority().mode, "manual-override");
     await harness.engine.reconcile(true);
     assert.equal(harness.calls.length, 1);
     harness.now.value = Date.parse("2026-08-23T20:30:00+02:00");
@@ -232,6 +412,31 @@ test("Studio command uses authoritative Preview and transition path", async () =
     assert.equal(program, "target");
     assert.equal(transitions[0].source, "schedule");
     assert.equal(transitions[0].durationMs, 400);
+});
+
+test("Studio command forwards cue only for recorded MEDIA/AUDIO", async () => {
+    const contexts = [];
+    const sourceKind = { media: "media", audio: "audio", hls: "hls" };
+    const state = { preview: null, program: null };
+    const command = new StudioProgramCommand({
+        stateManager: {
+            getProgramSceneId: () => state.program,
+            getPreviewSceneId: () => state.preview,
+            setPreviewScene: (id) => { state.preview = id; return {}; }
+        },
+        catalog: {
+            getDefinition: (id) => ({ id, renderer: { kind: "source", sourceId: id } }),
+            getSources: () => Object.entries(sourceKind).map(([id, kind]) => ({ id, kind }))
+        },
+        transitionCoordinator: {
+            isBusy: () => false,
+            transition: async ({ preparationContext }) => { contexts.push(preparationContext); return {}; }
+        }
+    });
+    await command.execute({ sceneId: "media", initialCueSeconds: 600 });
+    await command.execute({ sceneId: "audio", initialCueSeconds: 42 });
+    await command.execute({ sceneId: "hls", initialCueSeconds: 99 });
+    assert.deepEqual(contexts.map((value) => value?.transportCueTime ?? null), [600, 42, null]);
 });
 
 test("boundary timer activates consecutive A and B without toggling", async () => {
@@ -382,6 +587,87 @@ test("interrupt boundary clears manual override and it does not return", async (
     harness.engine.destroy();
 });
 
+test("scheduled interrupt captures MEDIA cue, resumes it, and shifts chained item", async () => {
+    const harness = boundaryHarness("2026-08-23T20:00:00+02:00", null, {
+        transport: { sourceId: "source-a", currentTime: 600 }, sourceKind: "media"
+    });
+    const after = { ...item("b", null, 600), startMode: "AFTER_PREVIOUS" };
+    delete after.start;
+    harness.engine.setSchedule(validateSchedule({ version: 1, timezone: "Europe/Rome", items: [
+        { ...item("a", "2026-08-23T20:00:00+02:00", 1800), resumePolicy: "RESUME_SHIFT" },
+        { ...item("x", "2026-08-23T20:10:00+02:00", 300), behavior: "INTERRUPT" },
+        after
+    ] }).schedule);
+    harness.engine.start();
+    await flushTwice();
+    await harness.timer.advanceTo(Date.parse("2026-08-23T20:10:00+02:00"));
+    assert.equal(harness.engine.getSnapshot().status, "INTERRUPTED");
+    assert.equal(harness.engine.getSnapshot().interruptionContext.cueAtInterruption, 600);
+    assert.equal(harness.engine.getCurrentEffectiveAuthority().item.id, "x");
+    assert.equal(harness.engine.getCurrentEffectiveAuthority().effectiveEnd,
+        Date.parse("2026-08-23T20:15:00+02:00"));
+    await harness.timer.advanceTo(Date.parse("2026-08-23T20:15:00+02:00"));
+    assert.deepEqual(harness.calls, ["a", "x", "a"]);
+    assert.equal(harness.requests.at(-1).initialCueSeconds, 600);
+    assert.equal(harness.engine.getEffectiveSchedule().items.find(({ id }) => id === "b").startMs,
+        Date.parse("2026-08-23T20:35:00+02:00"));
+    assert.equal(harness.engine.getCurrentEffectiveAuthority().item.id, "a");
+    assert.equal(harness.engine.getCurrentEffectiveAuthority().effectiveEnd,
+        Date.parse("2026-08-23T20:35:00+02:00"));
+    harness.engine.destroy();
+});
+
+test("RESUME_FIXED resumes cue without moving next hard clock", async () => {
+    const harness = boundaryHarness("2026-08-23T20:00:00+02:00", null, {
+        transport: { sourceId: "source-a", currentTime: 600 }, sourceKind: "media"
+    });
+    harness.engine.setSchedule(validateSchedule({ version: 1, timezone: "Europe/Rome", items: [
+        item("a", "2026-08-23T20:00:00+02:00", 1800),
+        { ...item("x", "2026-08-23T20:10:00+02:00", 300), behavior: "INTERRUPT" },
+        item("hard", "2026-08-23T20:30:00+02:00", 600)
+    ] }).schedule);
+    harness.engine.start();
+    await flushTwice();
+    await harness.timer.advanceTo(Date.parse("2026-08-23T20:10:00+02:00"));
+    await harness.timer.advanceTo(Date.parse("2026-08-23T20:15:00+02:00"));
+    assert.equal(harness.requests.at(-1).initialCueSeconds, 600);
+    assert.equal(harness.engine.getEffectiveSchedule().items.find(({ id }) => id === "hard").startMs,
+        Date.parse("2026-08-23T20:30:00+02:00"));
+    harness.engine.destroy();
+});
+
+test("HLS and BREAK interruption contexts carry no cue and nested begin is rejected", async () => {
+    const harness = boundaryHarness("2026-08-23T20:00:00+02:00", null, {
+        transport: { sourceId: "source-a", currentTime: 80 }, sourceKind: "hls"
+    });
+    harness.engine.setSchedule(schedule(item("a", "2026-08-23T20:00:00+02:00", 1800)));
+    harness.engine.start();
+    await flushTwice();
+    const context = harness.engine.beginInterruption();
+    assert.equal(context.cueAtInterruption, null);
+    assert.equal(harness.engine.beginInterruption(), null);
+    harness.engine.endInterruption(Date.parse("2026-08-23T20:01:00+02:00"));
+    await flushTwice();
+    assert.equal(harness.engine.getSnapshot().interruptionContext, null);
+    harness.engine.destroy();
+});
+
+test("external interruption API explicitly ends and reissues recorded resume command", async () => {
+    const harness = boundaryHarness("2026-08-23T20:00:00+02:00", null, {
+        transport: { sourceId: "source-a", currentTime: 75 }, sourceKind: "audio"
+    });
+    harness.engine.setSchedule(schedule(item("a", "2026-08-23T20:00:00+02:00", 1800)));
+    harness.engine.start();
+    await flushTwice();
+    assert.equal(harness.engine.beginInterruption().kind, "external");
+    harness.timer.setNow(Date.parse("2026-08-23T20:01:00+02:00"));
+    harness.engine.endInterruption();
+    await flushTwice();
+    assert.deepEqual(harness.calls, ["a", "a"]);
+    assert.equal(harness.requests.at(-1).initialCueSeconds, 75);
+    harness.engine.destroy();
+});
+
 function engineHarness(isoNow, failScene = null) {
     const now = { value: Date.parse(isoNow) };
     const listeners = new Map();
@@ -407,7 +693,7 @@ function engineHarness(isoNow, failScene = null) {
 
 function flush() { return new Promise((resolve) => setImmediate(resolve)); }
 
-function boundaryHarness(isoNow, failScene = null) {
+function boundaryHarness(isoNow, failScene = null, options = {}) {
     const timer = fakeTimer(Date.parse(isoNow));
     const listeners = new Map();
     const bus = {
@@ -416,18 +702,27 @@ function boundaryHarness(isoNow, failScene = null) {
         emit: (event, value) => listeners.get(event)?.(value)
     };
     const calls = [];
+    const requests = [];
     const engine = new SchedulerEngine({
-        command: { execute: async ({ sceneId }) => {
+        command: { execute: async (request) => {
+            const { sceneId } = request;
             calls.push(sceneId);
+            requests.push(request);
             return sceneId === failScene ? { ok: false, reason: "prepare-failed" } : { ok: true };
         } },
-        catalog: { getDefinition: (id) => ({ id }) },
+        catalog: {
+            getDefinition: (id) => ({ id, renderer: { kind: "source", sourceId: `source-${id}` } }),
+            getSources: () => ["a", "b", "x", "hard"].map((id) => ({
+                id: `source-${id}`, kind: id === "a" ? options.sourceKind || "media" : "media"
+            }))
+        },
         eventBus: bus,
         clock: () => timer.now(),
         setTimer: timer.set,
-        clearTimer: timer.clear
+        clearTimer: timer.clear,
+        programTransportProvider: () => options.transport || null
     });
-    return { engine, calls, bus, timer };
+    return { engine, calls, requests, bus, timer };
 }
 
 function fakeTimer(initialNow) {
@@ -448,6 +743,7 @@ function fakeTimer(initialNow) {
         set,
         clear,
         now: () => current,
+        setNow: (timestamp) => { current = timestamp; },
         count: () => timers.size,
         nextAt: () => Math.min(...Array.from(timers.values(), ({ at }) => at)),
         async advanceTo(timestamp) {

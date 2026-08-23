@@ -1,16 +1,22 @@
 import EventBus from "../core/EventBus.js";
 import Events from "../core/Events.js";
-import { createEmptySchedule, getActiveItem, getNextBoundary, getNextItem } from "./ScheduleContract.js";
+import { createEmptySchedule, getActiveInterruptItem, getActiveItem,
+    getActiveNormalItem, getNextBoundary, getNextItem } from "./ScheduleContract.js";
+import { applyInterruptionShift, calculateEffectiveSchedule,
+    RESUME_POLICIES } from "./ScheduleClock.js";
 
 export default class SchedulerEngine {
     constructor({ command, catalog, eventBus = EventBus, clock = () => Date.now(),
-        setTimer = globalThis.setTimeout, clearTimer = globalThis.clearTimeout } = {}) {
+        setTimer = globalThis.setTimeout, clearTimer = globalThis.clearTimeout,
+        programTransportProvider = null } = {}) {
         this.command = command;
         this.catalog = catalog;
         this.eventBus = eventBus;
         this.clock = clock;
         this.setTimer = (callback, delay) => setTimer(callback, delay);
         this.clearTimer = (timerId) => clearTimer(timerId);
+        this.programTransportProvider = typeof programTransportProvider === "function"
+            ? programTransportProvider : () => null;
         this.schedule = createEmptySchedule();
         this.listeners = new Set();
         this.enabled = false;
@@ -22,6 +28,10 @@ export default class SchedulerEngine {
         this.reconciling = false;
         this.pendingReconcile = false;
         this.pendingActivation = false;
+        this.runtimeShiftMs = new Map();
+        this.interruptionContext = null;
+        this.resumeCues = new Map();
+        this.resumingItemId = null;
         this.handleProgramChanged = this.handleProgramChanged.bind(this);
         this.handleTimer = this.handleTimer.bind(this);
         this.eventBus.on(Events.STUDIO_PROGRAM_CHANGED, this.handleProgramChanged);
@@ -32,6 +42,10 @@ export default class SchedulerEngine {
         this.attemptedKey = null;
         this.overrideItemId = null;
         this.failure = null;
+        this.runtimeShiftMs.clear();
+        this.interruptionContext = null;
+        this.resumeCues.clear();
+        this.resumingItemId = null;
         if (this.enabled) void this.reconcile(false);
         else this.emit();
     }
@@ -51,6 +65,9 @@ export default class SchedulerEngine {
         this.failure = null;
         this.pendingReconcile = false;
         this.pendingActivation = false;
+        this.interruptionContext = null;
+        this.resumeCues.clear();
+        this.resumingItemId = null;
         this.emit();
         return true;
     }
@@ -71,15 +88,91 @@ export default class SchedulerEngine {
     }
 
     getSnapshot(now = this.clock()) {
-        const activeItem = getActiveItem(this.schedule, now);
-        const nextItem = getNextItem(this.schedule, now);
+        const effectiveSchedule = this.getEffectiveSchedule();
+        const activeItem = getActiveItem(effectiveSchedule, now);
+        const nextItem = getNextItem(effectiveSchedule, now);
         let status = "OFF";
         if (this.enabled) status = this.failure ? "ERROR"
+            : this.resumingItemId ? "RESUMING"
+                : this.interruptionContext ? "INTERRUPTED"
             : this.overrideItemId === activeItem?.id ? "MANUAL OVERRIDE"
                 : activeItem ? "ACTIVE" : "ARMED";
         return Object.freeze({ enabled: this.enabled, status, activeItem, nextItem,
-            failure: this.failure, scheduledElapsedSeconds: activeItem
+            failure: this.failure, interruptionContext: this.interruptionContext,
+            scheduledElapsedSeconds: activeItem
                 ? Math.max(0, Math.floor((Number(now) - activeItem.startMs) / 1000)) : 0 });
+    }
+
+    getEffectiveSchedule() {
+        return calculateEffectiveSchedule(this.schedule, this.runtimeShiftMs);
+    }
+
+    getCurrentEffectiveAuthority(now = this.clock()) {
+        if (!this.enabled) return Object.freeze({ mode: "none", item: null,
+            sceneId: null, effectiveStart: null, effectiveEnd: null });
+        const effectiveSchedule = this.getEffectiveSchedule();
+        const active = getActiveItem(effectiveSchedule, now);
+        if (this.overrideItemId && this.overrideItemId === active?.id) {
+            const boundary = getNextBoundary(effectiveSchedule, now);
+            return Object.freeze({ mode: "manual-override", item: null,
+                sceneId: null, effectiveStart: null,
+                effectiveEnd: Number.isFinite(boundary) ? boundary : null });
+        }
+        if (!active || active.skipped) return Object.freeze({ mode: "none",
+            item: null, sceneId: null, effectiveStart: null, effectiveEnd: null });
+        return Object.freeze({ mode: "scheduled", item: active,
+            sceneId: active.sceneId, effectiveStart: active.startMs,
+            effectiveEnd: active.endMs });
+    }
+
+    beginInterruption({ now = this.clock(), interruptionItem = null } = {}) {
+        if (this.interruptionContext) return null;
+        const effectiveSchedule = this.getEffectiveSchedule();
+        const interruptedItem = getActiveNormalItem(effectiveSchedule, now);
+        if (!interruptedItem) return null;
+        const transport = this.programTransportProvider() || null;
+        const definition = this.catalog?.getDefinition(interruptedItem.sceneId);
+        const sourceId = definition?.renderer?.kind === "source"
+            ? definition.renderer.sourceId : null;
+        const sourceKind = sourceId ? this.catalog.getSources?.().find(({ id }) =>
+            id === sourceId)?.kind || null : null;
+        const cue = ["media", "audio"].includes(sourceKind) &&
+            transport?.sourceId === sourceId && Number.isFinite(transport.currentTime) &&
+            transport.currentTime >= 0 ? transport.currentTime : null;
+        this.interruptionContext = Object.freeze({
+            interruptedItemId: interruptedItem.id,
+            sceneId: interruptedItem.sceneId,
+            sourceId,
+            sourceKind,
+            interruptionItemId: interruptionItem?.id || null,
+            kind: interruptionItem ? "scheduled" : "external",
+            interruptedAt: Number(now),
+            cueAtInterruption: cue,
+            scheduledStart: interruptedItem.startMs,
+            scheduledEnd: interruptedItem.endMs,
+            resumePolicy: interruptedItem.resumePolicy
+        });
+        this.emit();
+        return this.interruptionContext;
+    }
+
+    endInterruption(now = this.clock(), { reconcile = true } = {}) {
+        const context = this.interruptionContext;
+        if (!context) return null;
+        const endedAt = Number(now);
+        const durationMs = Math.max(0, endedAt - context.interruptedAt);
+        if (context.resumePolicy === RESUME_POLICIES.SHIFT) {
+            this.runtimeShiftMs = applyInterruptionShift(
+                this.runtimeShiftMs, context.interruptedItemId, durationMs);
+        }
+        if (Number.isFinite(context.cueAtInterruption)) {
+            this.resumeCues.set(context.interruptedItemId, context.cueAtInterruption);
+        }
+        this.interruptionContext = null;
+        this.attemptedKey = null;
+        if (reconcile && this.enabled) void this.reconcile(true);
+        else this.emit();
+        return Object.freeze({ ...context, endedAt, durationMs });
     }
 
     async reconcile(allowActivateCurrent = true) {
@@ -94,7 +187,23 @@ export default class SchedulerEngine {
         this.clearBoundaryTimer();
         try {
             const now = this.clock();
-            const active = getActiveItem(this.schedule, now);
+            let effectiveSchedule = this.getEffectiveSchedule();
+            const activeInterrupt = getActiveInterruptItem(effectiveSchedule, now);
+            if (activeInterrupt && !this.interruptionContext) {
+                this.beginInterruption({ now, interruptionItem: activeInterrupt });
+            }
+            let endedInterruption = null;
+            if (!activeInterrupt && this.interruptionContext?.kind === "scheduled") {
+                endedInterruption = this.endInterruption(now, { reconcile: false });
+                effectiveSchedule = this.getEffectiveSchedule();
+            }
+            const active = getActiveItem(effectiveSchedule, now);
+
+            if (endedInterruption && active?.id !== endedInterruption.interruptedItemId) {
+                this.resumeCues.delete(endedInterruption.interruptedItemId);
+            }
+
+            if (this.interruptionContext?.kind === "external") return;
 
             if (this.overrideItemId && this.overrideItemId !== active?.id) this.overrideItemId = null;
             const key = active ? `${active.id}:${active.startMs}` : null;
@@ -105,10 +214,18 @@ export default class SchedulerEngine {
                     this.failure = Object.freeze({ itemId: active.id, reason: "unresolved-scene" });
                 }
                 else {
+                    const resumeCue = this.resumeCues.get(active.id);
+                    const scheduledElapsedSeconds = Math.max(0, (now - active.startMs) / 1000);
+                    this.resumingItemId = Number.isFinite(resumeCue) ? active.id : null;
+                    if (this.resumingItemId) this.emit();
                     const result = await this.command.execute({
                         sceneId: active.sceneId, transition: active.transition, origin: "scheduler",
-                        scheduledElapsedSeconds: Math.max(0, (now - active.startMs) / 1000)
+                        scheduledElapsedSeconds,
+                        initialCueSeconds: Number.isFinite(resumeCue)
+                            ? resumeCue : scheduledElapsedSeconds
                     });
+                    if (result?.ok) this.resumeCues.delete(active.id);
+                    this.resumingItemId = null;
                     this.failure = result?.ok ? null : Object.freeze({
                         itemId: active.id, reason: result?.reason || "command-failed"
                     });
@@ -116,6 +233,7 @@ export default class SchedulerEngine {
             }
         }
         catch {
+            this.resumingItemId = null;
             const active = getActiveItem(this.schedule, this.clock());
             this.failure = Object.freeze({ itemId: active?.id || null, reason: "command-failed" });
         }
@@ -137,7 +255,7 @@ export default class SchedulerEngine {
 
     handleProgramChanged(record) {
         if (!this.enabled || record?.source === "scheduler") return;
-        const active = getActiveItem(this.schedule, this.clock());
+        const active = getActiveItem(this.getEffectiveSchedule(), this.clock());
         if (active) {
             this.overrideItemId = active.id;
             this.failure = null;
@@ -150,7 +268,7 @@ export default class SchedulerEngine {
     scheduleBoundary() {
         if (!this.enabled || this.timerId !== null) return;
         const now = this.clock();
-        const boundary = getNextBoundary(this.schedule, now);
+        const boundary = getNextBoundary(this.getEffectiveSchedule(), now);
         if (boundary !== null) this.timerId = this.setTimer(this.handleTimer, Math.max(0, boundary - now));
     }
 

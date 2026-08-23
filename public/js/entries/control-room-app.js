@@ -24,6 +24,7 @@ import StudioTransitionCoordinator from "../studio/StudioTransitionCoordinator.j
 import ProgramOutputManager from "../program-output/ProgramOutputManager.js";
 import ProgramOutputSetupUI from "../ui/ProgramOutputSetupUI.js";
 import StudioScheduleUI from "../ui/StudioScheduleUI.js";
+import ProgramRemainingTimeUI from "../ui/ProgramRemainingTimeUI.js";
 import ScheduleStore from "../scheduler/ScheduleStore.js";
 import SchedulerEngine from "../scheduler/SchedulerEngine.js";
 import StudioProgramCommand from "../scheduler/StudioProgramCommand.js";
@@ -66,6 +67,7 @@ let programOutputManager = null;
 let programOutputSetupUI = null;
 let studioScheduleUI = null;
 let schedulerEngine = null;
+let programRemainingTimeUI = null;
 
 runtime.start({
     async beforePlayerStart(config) {
@@ -138,7 +140,8 @@ runtime.start({
         });
         schedulerEngine = new SchedulerEngine({
             command: studioProgramCommand,
-            catalog: studioCatalogManager
+            catalog: studioCatalogManager,
+            programTransportProvider: () => studioRenderer.getProgramTransport()
         });
         studioScheduleUI = new StudioScheduleUI({
             root: document.getElementById("studio-panel"),
@@ -148,6 +151,13 @@ runtime.start({
             assetLibrary: studioAssetLibrary
         });
         studioScheduleUI.start();
+        programRemainingTimeUI = new ProgramRemainingTimeUI({
+            root: document,
+            schedulerEngine,
+            renderer: studioRenderer,
+            stateManager: StudioStateManager
+        });
+        programRemainingTimeUI.start();
 
         studioMediaUI = new StudioMediaUI(
             document.getElementById("studio-panel"),

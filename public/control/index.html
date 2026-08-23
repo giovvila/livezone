@@ -51,6 +51,10 @@
                         <h2 id="control-room-program-title">PROGRAM</h2>
                         <div class="control-room-program__tools">
                             <span>Studio composition</span>
+                            <div class="program-remaining" aria-live="polite" aria-atomic="true">
+                                <span id="program-remaining-label">TEMPO RESIDUO</span>
+                                <strong id="program-remaining-time">--:--:--</strong>
+                            </div>
                             <button id="program-fullscreen-toggle" class="program-fullscreen-toggle" type="button" aria-label="Enter Program fullscreen" aria-pressed="false" title="Enter Program fullscreen">FULLSCREEN</button>
                         </div>
                     </header>
@@ -177,7 +181,7 @@
 
                 <section class="studio-schedule control-desk__module" data-control-module="schedule" aria-labelledby="studio-schedule-title">
                     <h3 id="studio-schedule-title">PALINSESTO</h3>
-                    <p class="studio-schedule__notice">Operator-runtime foundation: automation requires this Control session to remain active.</p>
+                    <p class="studio-schedule__notice">Operator-runtime foundation: keep this Control session active. Reload resets in-progress interruption and runtime shift.</p>
                     <div class="studio-schedule__status" aria-live="polite">
                         <span>STATUS <strong id="studio-schedule-status">OFF</strong></span>
                         <span>TIME <strong id="studio-schedule-now">—</strong></span>
@@ -214,6 +218,12 @@
                         <select id="studio-schedule-behavior" name="behavior">
                             <option value="NORMAL">NORMAL</option>
                             <option value="INTERRUPT">INTERRUPT</option>
+                        </select>
+                        <label for="studio-schedule-resume-policy">Gestione interruzione</label>
+                        <select id="studio-schedule-resume-policy" name="resumePolicy">
+                            <option value="RESUME_FIXED">RIPRENDI FINO AL PROSSIMO ORARIO</option>
+                            <option value="RESUME_SHIFT">RIPRENDI E SPOSTA</option>
+                            <option value="FILLER">CUSCINETTO</option>
                         </select>
                         <button type="submit">SAVE ITEM</button>
                     </form>

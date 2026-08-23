@@ -43,9 +43,9 @@ function serialize(schedule) {
     return {
         version: schedule.version,
         timezone: schedule.timezone,
-        items: schedule.items.map(({ id, title, startMode, behavior, start,
+        items: schedule.items.map(({ id, title, startMode, behavior, resumePolicy, start,
             durationSeconds, sceneId, transition }) => ({
-            id, title, startMode, behavior,
+            id, title, startMode, behavior, resumePolicy,
             ...(startMode === "ABSOLUTE" ? { start } : {}),
             durationSeconds, sceneId, transition
         }))

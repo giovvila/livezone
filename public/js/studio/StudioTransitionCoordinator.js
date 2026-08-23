@@ -60,7 +60,8 @@ export default class StudioTransitionCoordinator {
         type = "cut",
         durationMs,
         source = null,
-        reason = null
+        reason = null,
+        preparationContext: requestedPreparationContext = null
     } = {}) {
         const normalizedDuration = type === "cut"
             ? 0
@@ -84,9 +85,8 @@ export default class StudioTransitionCoordinator {
         }
 
         const generation = ++this.generation;
-        const preparationContext =
-            this.studioRenderer.getPreviewPreparationContext?.(toSceneId) ??
-            null;
+        const preparationContext = requestedPreparationContext ??
+            this.studioRenderer.getPreviewPreparationContext?.(toSceneId) ?? null;
 
         this.busy = true;
         this.setSnapshot(Object.freeze({

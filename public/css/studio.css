@@ -212,6 +212,28 @@
     min-width: 0;
 }
 
+.program-remaining {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    border: 1px solid var(--lz-border);
+    border-radius: 6px;
+    padding: 4px 7px;
+    background: rgba(0, 0, 0, .28);
+    color: var(--lz-text-muted);
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    white-space: nowrap;
+}
+
+.program-remaining strong {
+    color: var(--lz-text);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: .04em;
+}
+
 .program-fullscreen-toggle {
     flex: 0 0 auto;
     border: 1px solid rgba(229, 9, 20, .58);

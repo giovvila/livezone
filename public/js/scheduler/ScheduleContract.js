@@ -1,6 +1,7 @@
 export const SCHEDULE_VERSION = 1;
 export const DEFAULT_TIMEZONE = "Europe/Rome";
 export const MAX_SCHEDULE_ITEMS = 500;
+export const DEFAULT_RESUME_POLICY = "RESUME_FIXED";
 
 const MAX_TITLE_LENGTH = 120;
 const MAX_DURATION_SECONDS = 7 * 24 * 60 * 60;
@@ -9,6 +10,7 @@ const ISO_WITH_ZONE_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,
 const TRANSITIONS = new Set(["CUT", "DISSOLVE"]);
 const START_MODES = new Set(["ABSOLUTE", "AFTER_PREVIOUS"]);
 const BEHAVIORS = new Set(["NORMAL", "INTERRUPT"]);
+const RESUME_POLICIES = new Set(["RESUME_SHIFT", "RESUME_FIXED", "FILLER"]);
 
 export function createEmptySchedule(timezone = DEFAULT_TIMEZONE) {
     return Object.freeze({ version: SCHEDULE_VERSION, timezone, items: Object.freeze([]) });
@@ -133,7 +135,7 @@ export function zonedLocalToIso(dateValue, timeValue, timezone = DEFAULT_TIMEZON
 function canonicalItem(item, index, ids, issues, previousNormal) {
     const requiredKeys = ["id", "title", "durationSeconds", "sceneId"];
     if (!isPlainObject(item) || !hasAllowedKeys(item, requiredKeys,
-        ["start", "transition", "startMode", "behavior"])) {
+        ["start", "transition", "startMode", "behavior", "resumePolicy"])) {
         issues.push(`item-structure:${index}`);
         return null;
     }
@@ -145,6 +147,8 @@ function canonicalItem(item, index, ids, issues, previousNormal) {
         : typeof item.startMode === "string" ? item.startMode.toUpperCase() : "";
     const behavior = item.behavior === undefined ? "NORMAL"
         : typeof item.behavior === "string" ? item.behavior.toUpperCase() : "";
+    const resumePolicy = item.resumePolicy === undefined ? DEFAULT_RESUME_POLICY
+        : typeof item.resumePolicy === "string" ? item.resumePolicy.toUpperCase() : "";
     const absoluteStartMs = typeof item.start === "string" && ISO_WITH_ZONE_PATTERN.test(item.start)
         ? Date.parse(item.start) : NaN;
 
@@ -156,6 +160,10 @@ function canonicalItem(item, index, ids, issues, previousNormal) {
     if (!TRANSITIONS.has(transition)) issues.push(`item-transition:${index}`);
     if (!START_MODES.has(startMode)) issues.push(`item-start-mode:${index}`);
     if (!BEHAVIORS.has(behavior)) issues.push(`item-behavior:${index}`);
+    if (!RESUME_POLICIES.has(resumePolicy)) issues.push(`item-resume-policy:${index}`);
+    if (behavior === "INTERRUPT" && resumePolicy === "FILLER") {
+        issues.push(`item-interrupt-filler:${index}`);
+    }
     if (startMode === "ABSOLUTE" && !Number.isFinite(absoluteStartMs)) issues.push(`item-start:${index}`);
     if (startMode === "AFTER_PREVIOUS" && (!previousNormal || behavior !== "NORMAL")) {
         issues.push(`item-after-previous:${index}`);
@@ -165,7 +173,7 @@ function canonicalItem(item, index, ids, issues, previousNormal) {
     if (issues.some((issue) => issue.endsWith(`:${index}`))) return null;
     const startMs = startMode === "AFTER_PREVIOUS" ? previousNormal.endMs : absoluteStartMs;
     const endMs = startMs + item.durationSeconds * 1000;
-    return Object.freeze({ id: item.id, title, startMode, behavior,
+    return Object.freeze({ id: item.id, title, startMode, behavior, resumePolicy,
         start: startMode === "ABSOLUTE" ? item.start : null,
         effectiveStart: new Date(startMs).toISOString(), durationSeconds: item.durationSeconds,
         sceneId: item.sceneId, transition, startMs, endMs });

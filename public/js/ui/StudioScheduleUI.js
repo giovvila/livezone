@@ -86,6 +86,7 @@ export default class StudioScheduleUI {
         const data = new FormData(this.form);
         const startMode = String(data.get("startMode") || "ABSOLUTE");
         const behavior = String(data.get("behavior") || "NORMAL");
+        const resumePolicy = String(data.get("resumePolicy") || "RESUME_FIXED");
         const start = startMode === "ABSOLUTE"
             ? zonedLocalToIso(data.get("date"), data.get("time"), this.schedule.timezone)
             : null;
@@ -100,6 +101,7 @@ export default class StudioScheduleUI {
             title: String(data.get("title") || "").trim(),
             startMode,
             behavior,
+            resumePolicy,
             ...(start ? { start } : {}),
             durationSeconds,
             sceneId: String(data.get("sceneId") || ""),
@@ -142,6 +144,7 @@ export default class StudioScheduleUI {
         this.form.elements.title.value = item.title;
         this.form.elements.startMode.value = item.startMode;
         this.form.elements.behavior.value = item.behavior;
+        this.form.elements.resumePolicy.value = item.resumePolicy;
         this.form.elements.date.value = item.start?.slice(0, 10) || "";
         this.form.elements.time.value = getScheduleEditorTime(item.start);
         this.form.elements.duration.value = formatDuration(item.durationSeconds);
@@ -168,10 +171,12 @@ export default class StudioScheduleUI {
         this.status.textContent = snapshot.status;
         this.toggle.textContent = snapshot.enabled ? "SCHEDULER OFF" : "SCHEDULER ON";
         this.toggle.setAttribute("aria-pressed", String(snapshot.enabled));
-        this.current.textContent = describeItem(snapshot.activeItem, this.catalog);
-        this.next.textContent = describeItem(snapshot.nextItem, this.catalog);
+        this.current.textContent = describeItem(snapshot.activeItem, this.catalog,
+            this.schedule.timezone);
+        this.next.textContent = describeItem(snapshot.nextItem, this.catalog,
+            this.schedule.timezone);
         this.list.replaceChildren();
-        this.schedule.items.forEach((item) => this.list.appendChild(
+        this.engine.getEffectiveSchedule().items.forEach((item) => this.list.appendChild(
             this.createItem(item, snapshot.activeItem?.id === item.id)));
     }
 
@@ -198,6 +203,10 @@ export default class StudioScheduleUI {
             interruptBadge.textContent = "INTERRUPT";
             badges.appendChild(interruptBadge);
         }
+        const policyBadge = document.createElement("strong");
+        policyBadge.textContent = item.resumePolicy === "RESUME_SHIFT" ? "SHIFT"
+            : item.resumePolicy === "FILLER" ? "FILLER" : "FIXED";
+        badges.appendChild(policyBadge);
         edit.type = remove.type = "button";
         edit.textContent = "EDIT";
         remove.textContent = "REMOVE";
@@ -235,9 +244,15 @@ export default class StudioScheduleUI {
 
     updateStartFields() {
         const afterOption = this.startMode.querySelector('option[value="AFTER_PREVIOUS"]');
+        const fillerOption = this.form.elements.resumePolicy.querySelector(
+            'option[value="FILLER"]');
         afterOption.disabled = this.behavior.value === "INTERRUPT";
+        fillerOption.disabled = this.behavior.value === "INTERRUPT";
         if (afterOption.disabled && this.startMode.value === "AFTER_PREVIOUS") {
             this.startMode.value = "ABSOLUTE";
+        }
+        if (fillerOption.disabled && this.form.elements.resumePolicy.value === "FILLER") {
+            this.form.elements.resumePolicy.value = "RESUME_FIXED";
         }
         const absolute = this.startMode.value === "ABSOLUTE";
         this.absoluteFields.hidden = !absolute;
@@ -262,8 +277,10 @@ export default class StudioScheduleUI {
 
     refreshTimelinePresentation() {
         const snapshot = this.engine.getSnapshot();
-        this.current.textContent = describeItem(snapshot.activeItem, this.catalog);
-        this.next.textContent = describeItem(snapshot.nextItem, this.catalog);
+        this.current.textContent = describeItem(snapshot.activeItem, this.catalog,
+            this.schedule.timezone);
+        this.next.textContent = describeItem(snapshot.nextItem, this.catalog,
+            this.schedule.timezone);
         this.list.querySelectorAll("[data-schedule-item-id]").forEach((row) => {
             const active = row.dataset.scheduleItemId === snapshot.activeItem?.id;
             row.classList.toggle("is-active", active);
@@ -273,8 +290,8 @@ export default class StudioScheduleUI {
     }
 }
 
-function stripDerived({ id, title, startMode, behavior, start, durationSeconds, sceneId, transition }) {
-    return { id, title, startMode, behavior,
+function stripDerived({ id, title, startMode, behavior, resumePolicy, start, durationSeconds, sceneId, transition }) {
+    return { id, title, startMode, behavior, resumePolicy,
         ...(startMode === "ABSOLUTE" ? { start } : {}), durationSeconds, sceneId, transition };
 }
 function parseDuration(value) {
@@ -295,9 +312,9 @@ function formatScheduleTime(start, timezone) {
         timeZone: timezone, dateStyle: "short", timeStyle: "medium"
     }).format(new Date(start));
 }
-function describeItem(item, catalog) {
+function describeItem(item, catalog, timezone) {
     if (!item) return "—";
-    return `${item.title} · ${catalog.getDefinition(item.sceneId)?.name || "UNRESOLVED"}`;
+    return `${formatScheduleTime(item.effectiveStart, timezone)} · ${item.title} · ${catalog.getDefinition(item.sceneId)?.name || "UNRESOLVED"}`;
 }
 
 export function getScheduleEditorTime(start) {
