@@ -175,6 +175,52 @@
                     <ul id="studio-asset-list" class="studio-asset-list" aria-label="Asset library"></ul>
                 </section>
 
+                <section class="studio-schedule control-desk__module" data-control-module="schedule" aria-labelledby="studio-schedule-title">
+                    <h3 id="studio-schedule-title">PALINSESTO</h3>
+                    <p class="studio-schedule__notice">Operator-runtime foundation: automation requires this Control session to remain active.</p>
+                    <div class="studio-schedule__status" aria-live="polite">
+                        <span>STATUS <strong id="studio-schedule-status">OFF</strong></span>
+                        <span>TIME <strong id="studio-schedule-now">—</strong></span>
+                    </div>
+                    <button id="studio-schedule-toggle" type="button" aria-pressed="false">SCHEDULER ON</button>
+                    <div class="studio-schedule__now-next">
+                        <span>NOW <strong id="studio-schedule-current">—</strong></span>
+                        <span>NEXT <strong id="studio-schedule-next">—</strong></span>
+                    </div>
+                    <form id="studio-schedule-form" class="studio-schedule__form">
+                        <label for="studio-schedule-title-input">Title</label>
+                        <input id="studio-schedule-title-input" name="title" type="text" maxlength="120" required>
+                        <label for="studio-schedule-start-mode">Start</label>
+                        <select id="studio-schedule-start-mode" name="startMode">
+                            <option value="ABSOLUTE">DATA E ORA</option>
+                            <option value="AFTER_PREVIOUS">AL TERMINE DEL PRECEDENTE</option>
+                        </select>
+                        <div id="studio-schedule-absolute-fields" class="studio-schedule__absolute-fields">
+                            <label for="studio-schedule-date">Date</label>
+                            <input id="studio-schedule-date" name="date" type="date" required>
+                            <label for="studio-schedule-time">Start time</label>
+                            <input id="studio-schedule-time" name="time" type="time" step="1" required>
+                        </div>
+                        <label for="studio-schedule-duration">Duration (HH:MM:SS)</label>
+                        <input id="studio-schedule-duration" name="duration" type="text" value="00:30:00" pattern="[0-9]{2}:[0-9]{2}:[0-9]{2}" required>
+                        <label for="studio-schedule-scene">Scene</label>
+                        <select id="studio-schedule-scene" name="sceneId" required></select>
+                        <label for="studio-schedule-transition">Transition</label>
+                        <select id="studio-schedule-transition" name="transition">
+                            <option value="CUT">CUT</option>
+                            <option value="DISSOLVE">DISSOLVE</option>
+                        </select>
+                        <label for="studio-schedule-behavior">Behavior</label>
+                        <select id="studio-schedule-behavior" name="behavior">
+                            <option value="NORMAL">NORMAL</option>
+                            <option value="INTERRUPT">INTERRUPT</option>
+                        </select>
+                        <button type="submit">SAVE ITEM</button>
+                    </form>
+                    <p id="studio-schedule-feedback" class="studio-schedule__feedback" role="status" aria-live="polite"></p>
+                    <ol id="studio-schedule-list" class="studio-schedule__list" aria-label="Scheduled items"></ol>
+                </section>
+
                 <section class="control-desk__module control-desk__module--transition" data-control-module="transition" aria-labelledby="studio-transition-title">
                     <label class="studio-transition-select" for="studio-transition-type">
                         <span id="studio-transition-title">TRANSITION</span>

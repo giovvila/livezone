@@ -253,17 +253,25 @@ export default class StudioAssetLibrary {
     }
 
     createBaseAsset(candidate, baseUrl) {
-        if (!this.hasExactKeys(candidate, ["id", "name", "kind", "url"])) {
+        if (!this.hasAllowedKeys(candidate, ["id", "name", "kind", "url"],
+            ["durationSeconds"])) {
             return null;
         }
         const id = this.normalizeString(candidate.id, MAX_ID_LENGTH);
         const name = this.normalizeString(candidate.name, MAX_NAME_LENGTH);
         const kind = this.normalizeKind(candidate.kind);
         const url = this.createHttpUrl(candidate.url, baseUrl);
+        const durationSeconds = candidate.durationSeconds === undefined
+            ? null : Number(candidate.durationSeconds);
         if (!id || !/^[a-z0-9][a-z0-9-]*$/.test(id) || !name || !kind || !url) {
             return null;
         }
-        return Object.freeze({ id, name, kind, url, origin: "base" });
+        if (durationSeconds !== null && (kind !== "video" ||
+            !Number.isFinite(durationSeconds) || durationSeconds <= 0 ||
+            durationSeconds > 7 * 24 * 60 * 60)) {
+            return null;
+        }
+        return Object.freeze({ id, name, kind, url, durationSeconds, origin: "base" });
     }
 
     createOperatorAsset(candidate) {
@@ -287,6 +295,7 @@ export default class StudioAssetLibrary {
             name: asset.name,
             kind: asset.kind,
             url: asset.url,
+            durationSeconds: asset.durationSeconds ?? null,
             origin: asset.origin,
             removable: asset.origin === "operator"
         });
@@ -382,6 +391,13 @@ export default class StudioAssetLibrary {
         const expected = [...keys].sort();
         return actual.length === expected.length &&
             actual.every((key, index) => key === expected[index]);
+    }
+
+    hasAllowedKeys(value, required, optional) {
+        if (!this.isPlainObject(value)) return false;
+        const keys = Object.keys(value);
+        return required.every((key) => keys.includes(key)) &&
+            keys.every((key) => required.includes(key) || optional.includes(key));
     }
 
     isPlainObject(value) {

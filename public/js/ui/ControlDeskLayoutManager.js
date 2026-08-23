@@ -13,7 +13,8 @@ const MODULE_DEFINITIONS = Object.freeze([
     Object.freeze({ id: "broadcast", label: "Broadcast", x: 10, y: 0, w: 2, h: 3, minW: 2, minH: 3 }),
     Object.freeze({ id: "media-preview", label: "Preview Transport", x: 0, y: 4, w: 3, h: 4, minW: 3, minH: 3 }),
     Object.freeze({ id: "lower-third", label: "Lower Third", x: 3, y: 4, w: 3, h: 7, minW: 3, minH: 6 }),
-    Object.freeze({ id: "channel-logo", label: "Channel Logo", x: 6, y: 4, w: 4, h: 7, minW: 3, minH: 6 })
+    Object.freeze({ id: "channel-logo", label: "Channel Logo", x: 6, y: 4, w: 4, h: 7, minW: 3, minH: 6 }),
+    Object.freeze({ id: "schedule", label: "Palinsesto", x: 0, y: 18, w: 12, h: 8, minW: 6, minH: 5 })
 ]);
 
 const MODULE_BY_ID = new Map(

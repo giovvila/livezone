@@ -23,6 +23,10 @@ import StudioGraphicsManager from "../studio/StudioGraphicsManager.js";
 import StudioTransitionCoordinator from "../studio/StudioTransitionCoordinator.js";
 import ProgramOutputManager from "../program-output/ProgramOutputManager.js";
 import ProgramOutputSetupUI from "../ui/ProgramOutputSetupUI.js";
+import StudioScheduleUI from "../ui/StudioScheduleUI.js";
+import ScheduleStore from "../scheduler/ScheduleStore.js";
+import SchedulerEngine from "../scheduler/SchedulerEngine.js";
+import StudioProgramCommand from "../scheduler/StudioProgramCommand.js";
 import { createProgramOutputTransport } from
     "../program-output/ProgramOutputTransportFactory.js";
 
@@ -60,6 +64,8 @@ let studioTransitionCoordinator = null;
 let programFullscreenUI = null;
 let programOutputManager = null;
 let programOutputSetupUI = null;
+let studioScheduleUI = null;
+let schedulerEngine = null;
 
 runtime.start({
     async beforePlayerStart(config) {
@@ -124,6 +130,24 @@ runtime.start({
             studioTransitionCoordinator
         );
         studioUI.start();
+
+        const studioProgramCommand = new StudioProgramCommand({
+            stateManager: StudioStateManager,
+            catalog: studioCatalogManager,
+            transitionCoordinator: studioTransitionCoordinator
+        });
+        schedulerEngine = new SchedulerEngine({
+            command: studioProgramCommand,
+            catalog: studioCatalogManager
+        });
+        studioScheduleUI = new StudioScheduleUI({
+            root: document.getElementById("studio-panel"),
+            engine: schedulerEngine,
+            store: new ScheduleStore(),
+            catalog: studioCatalogManager,
+            assetLibrary: studioAssetLibrary
+        });
+        studioScheduleUI.start();
 
         studioMediaUI = new StudioMediaUI(
             document.getElementById("studio-panel"),

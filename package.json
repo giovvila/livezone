@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "serve": "node server/program-output-server.js",
-    "test:program-output": "node --test test/program-output-network.test.js"
+    "test:program-output": "node --test test/program-output-network.test.js",
+    "test:scheduler": "node --test test/scheduler.test.js"
   }
 }

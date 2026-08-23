@@ -5,13 +5,15 @@
       "id": "video-demo",
       "name": "MEDIA A",
       "kind": "video",
-      "url": "../media/demo.mp4"
+      "url": "../media/demo.mp4",
+      "durationSeconds": 34
     },
     {
       "id": "video-demo-2",
       "name": "MEDIA B",
       "kind": "video",
-      "url": "../media/demo2.mp4"
+      "url": "../media/demo2.mp4",
+      "durationSeconds": 33.8
     },
     {
       "id": "logo-livezone",
