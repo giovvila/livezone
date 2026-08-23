@@ -6,8 +6,7 @@ import BroadcastUI from "../ui/BroadcastUI.js";
 import StudioUI from "../ui/StudioUI.js";
 import StudioGraphicsUI from "../ui/StudioGraphicsUI.js";
 import StudioMediaUI from "../ui/StudioMediaUI.js";
-import StudioSourcesUI from "../ui/StudioSourcesUI.js";
-import StudioAssetsUI from "../ui/StudioAssetsUI.js";
+import StudioOperationalSourcesUI from "../ui/StudioOperationalSourcesUI.js";
 import ControlDeskLayoutManager from "../ui/ControlDeskLayoutManager.js";
 import MonitorWallLayoutManager from "../ui/MonitorWallLayoutManager.js";
 import ProgramFullscreenUI from "../ui/ProgramFullscreenUI.js";
@@ -23,7 +22,7 @@ import StudioGraphicsManager from "../studio/StudioGraphicsManager.js";
 import StudioTransitionCoordinator from "../studio/StudioTransitionCoordinator.js";
 import ProgramOutputManager from "../program-output/ProgramOutputManager.js";
 import ProgramOutputSetupUI from "../ui/ProgramOutputSetupUI.js";
-import StudioScheduleUI from "../ui/StudioScheduleUI.js";
+import StudioScheduleSummaryUI from "../ui/StudioScheduleSummaryUI.js";
 import ProgramRemainingTimeUI from "../ui/ProgramRemainingTimeUI.js";
 import ScheduleStore from "../scheduler/ScheduleStore.js";
 import SchedulerEngine from "../scheduler/SchedulerEngine.js";
@@ -57,7 +56,6 @@ let studioUI = null;
 let studioGraphicsUI = null;
 let studioMediaUI = null;
 let studioSourcesUI = null;
-let studioAssetsUI = null;
 let controlDeskLayoutManager = null;
 let monitorWallLayoutManager = null;
 let studioRenderer = null;
@@ -143,12 +141,11 @@ runtime.start({
             catalog: studioCatalogManager,
             programTransportProvider: () => studioRenderer.getProgramTransport()
         });
-        studioScheduleUI = new StudioScheduleUI({
+        studioScheduleUI = new StudioScheduleSummaryUI({
             root: document.getElementById("studio-panel"),
             engine: schedulerEngine,
             store: new ScheduleStore(),
-            catalog: studioCatalogManager,
-            assetLibrary: studioAssetLibrary
+            catalog: studioCatalogManager
         });
         studioScheduleUI.start();
         programRemainingTimeUI = new ProgramRemainingTimeUI({
@@ -165,10 +162,9 @@ runtime.start({
         );
         studioMediaUI.start();
 
-        studioSourcesUI = new StudioSourcesUI(
+        studioSourcesUI = new StudioOperationalSourcesUI(
             document.getElementById("studio-panel"),
-            studioCatalogManager,
-            studioAssetLibrary
+            studioCatalogManager
         );
         studioSourcesUI.start();
 
@@ -186,12 +182,6 @@ runtime.start({
                 ? "asset-still-referenced"
                 : null
         );
-        studioAssetsUI = new StudioAssetsUI(
-            document.getElementById("studio-panel"),
-            studioAssetLibrary
-        );
-        studioAssetsUI.start();
-
         monitorWallLayoutManager = new MonitorWallLayoutManager({
             root: document.querySelector(".control-room-monitor-wall")
         });

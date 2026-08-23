@@ -7,14 +7,13 @@ const GRID_ROW_STEP = 48;
 const MODULE_DEFINITIONS = Object.freeze([
     Object.freeze({ id: "scenes", label: "Scenes", x: 0, y: 0, w: 6, h: 4, minW: 4, minH: 3 }),
     Object.freeze({ id: "sources", label: "Sources", x: 0, y: 11, w: 6, h: 6, minW: 4, minH: 4 }),
-    Object.freeze({ id: "assets", label: "Assets", x: 6, y: 11, w: 6, h: 7, minW: 4, minH: 5 }),
     Object.freeze({ id: "transition", label: "Transition", x: 6, y: 0, w: 2, h: 3, minW: 2, minH: 2 }),
     Object.freeze({ id: "take", label: "Take", x: 8, y: 0, w: 2, h: 3, minW: 2, minH: 2 }),
     Object.freeze({ id: "broadcast", label: "Broadcast", x: 10, y: 0, w: 2, h: 3, minW: 2, minH: 3 }),
     Object.freeze({ id: "media-preview", label: "Preview Transport", x: 0, y: 4, w: 3, h: 4, minW: 3, minH: 3 }),
     Object.freeze({ id: "lower-third", label: "Lower Third", x: 3, y: 4, w: 3, h: 7, minW: 3, minH: 6 }),
     Object.freeze({ id: "channel-logo", label: "Channel Logo", x: 6, y: 4, w: 4, h: 7, minW: 3, minH: 6 }),
-    Object.freeze({ id: "schedule", label: "Palinsesto", x: 0, y: 18, w: 12, h: 8, minW: 6, minH: 5 })
+    Object.freeze({ id: "schedule", label: "Palinsesto", x: 0, y: 18, w: 6, h: 4, minW: 4, minH: 3 })
 ]);
 
 const MODULE_BY_ID = new Map(
@@ -776,7 +775,9 @@ export default class ControlDeskLayoutManager {
             return geometry;
         });
 
-        return this.normalizeBaseLayout(merged);
+        return known.size === MODULE_DEFINITIONS.length
+            ? merged
+            : this.normalizeBaseLayout(merged);
     }
 
     parseCollapsedIds(value) {
@@ -784,12 +785,11 @@ export default class ControlDeskLayoutManager {
             return new Set();
         }
 
-        if (!Array.isArray(value) || value.some((id) =>
-            typeof id !== "string" || !MODULE_BY_ID.has(id))) {
+        if (!Array.isArray(value) || value.some((id) => typeof id !== "string")) {
             return new Set();
         }
 
-        return new Set(value);
+        return new Set(value.filter((id) => MODULE_BY_ID.has(id)));
     }
 
     persistLayout() {

@@ -146,7 +146,7 @@ export default class StudioCatalogManager {
 
     getSources() {
         return Object.freeze(Array.from(this.sources.values())
-            .filter((source) => ["media", "audio"].includes(source.kind))
+            .filter((source) => ["media", "audio", "hls"].includes(source.kind))
             .map((source) => {
                 const scenes = Array.from(this.definitions.values()).filter(
                     (definition) => definition.renderer.kind === "source" &&
@@ -162,6 +162,7 @@ export default class StudioCatalogManager {
                     stillAssetId: source.stillAssetId || null,
                     audioUrl: source.audioUrl || null,
                     stillUrl: source.stillUrl || null,
+                    configRef: source.configRef || null,
                     origin: source.origin,
                     removable: source.origin === "operator",
                     sceneIds: Object.freeze(scenes.map((scene) => scene.id))

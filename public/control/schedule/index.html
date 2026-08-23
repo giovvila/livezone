@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="it">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>LIVEZONE Palinsesto</title>
+    <link rel="icon" href="../../favicon.ico">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../../css/theme.css">
+    <link rel="stylesheet" href="../../css/schedule-workspace.css">
+</head>
+<body>
+    <header class="schedule-header">
+        <a class="schedule-brand" href="../" aria-label="Torna alla Control Room">
+            <img src="../../assets/logo/logo-lz.svg" alt="LZ">
+            <span>LIVEZONE</span>
+        </a>
+        <div><strong>PALINSESTO</strong><span>EDITORIAL WORKSPACE</span></div>
+        <a class="schedule-button" href="../">TORNA ALLA REGIA</a>
+    </header>
+    <main id="schedule-workspace" class="schedule-workspace">
+        <div class="schedule-editorial-grid">
+            <div class="schedule-editorial-main">
+        <section class="schedule-card schedule-navigation" aria-labelledby="schedule-date-title">
+            <div class="schedule-section-heading">
+                <div><span class="schedule-kicker">PIANO EDITORIALE</span><h1 id="schedule-date-title">GIORNATA</h1></div>
+                <p>Il piano salvato è condiviso con la Regia. Il drift runtime resta locale alla sessione Control attiva.</p>
+            </div>
+            <div class="schedule-date-controls">
+                <button id="schedule-previous-day" type="button">GIORNO PRECEDENTE</button>
+                <button id="schedule-today" type="button">OGGI</button>
+                <button id="schedule-next-day" type="button">GIORNO SUCCESSIVO</button>
+                <label for="schedule-selected-date">Data</label>
+                <input id="schedule-selected-date" type="date">
+            </div>
+            <div id="schedule-week" class="schedule-week" role="group" aria-label="Settimana selezionata"></div>
+        </section>
+
+        <section class="schedule-summary" aria-label="Copertura giornaliera">
+            <article><span>PROGRAMMATO</span><strong id="schedule-covered">00:00:00</strong></article>
+            <article><span>NON PROGRAMMATO</span><strong id="schedule-uncovered">24:00:00</strong></article>
+            <article><span>COPERTURA</span><strong id="schedule-coverage">0.00%</strong></article>
+            <article><span>STATO</span><strong id="schedule-day-status">EMPTY</strong></article>
+        </section>
+
+        <section class="schedule-card" aria-labelledby="schedule-timeline-title">
+            <div class="schedule-section-heading">
+                <div><span class="schedule-kicker">COPERTURA</span><h2 id="schedule-timeline-title">TIMELINE GIORNALIERA</h2></div>
+                <div id="schedule-plan-now-next" class="schedule-plan-now-next" aria-live="polite"></div>
+            </div>
+            <div id="schedule-timeline" class="schedule-timeline" role="img" aria-label="Copertura temporale della giornata"></div>
+            <div class="schedule-timeline-scale" aria-hidden="true"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>
+            <ul id="schedule-gaps" class="schedule-gaps" aria-label="Intervalli non programmati"></ul>
+        </section>
+
+            <section class="schedule-card" aria-labelledby="schedule-items-title">
+                <div class="schedule-section-heading"><div><span class="schedule-kicker">ELEMENTI</span><h2 id="schedule-items-title">PROGRAMMA DEL GIORNO</h2></div></div>
+                <ol id="schedule-item-list" class="schedule-item-list"></ol>
+                <p id="schedule-empty" class="schedule-empty">Nessun elemento interseca la giornata selezionata.</p>
+            </section>
+            </div>
+
+            <section class="schedule-card" aria-labelledby="schedule-editor-title">
+                <div class="schedule-section-heading"><div><span class="schedule-kicker">CONFIGURAZIONE</span><h2 id="schedule-editor-title">EDITOR ELEMENTO</h2></div></div>
+                <form id="schedule-item-form" class="schedule-form">
+                    <label for="schedule-item-title">Titolo</label>
+                    <input id="schedule-item-title" name="title" maxlength="120" required>
+                    <label for="schedule-item-start-mode">Avvio</label>
+                    <select id="schedule-item-start-mode" name="startMode">
+                        <option value="ABSOLUTE">DATA E ORA</option>
+                        <option value="AFTER_PREVIOUS">AL TERMINE DEL PRECEDENTE</option>
+                    </select>
+                    <div id="schedule-item-absolute-fields" class="schedule-form-grid">
+                        <div><label for="schedule-item-date">Data</label><input id="schedule-item-date" name="date" type="date" required></div>
+                        <div><label for="schedule-item-time">Ora</label><input id="schedule-item-time" name="time" type="time" step="1" required></div>
+                    </div>
+                    <label for="schedule-item-duration">Durata (HH:MM:SS)</label>
+                    <input id="schedule-item-duration" name="duration" value="00:30:00" pattern="[0-9]{2,3}:[0-9]{2}:[0-9]{2}" required>
+                    <label for="schedule-item-scene">Scena</label>
+                    <select id="schedule-item-scene" name="sceneId" required></select>
+                    <div class="schedule-form-grid">
+                        <div><label for="schedule-item-transition">Transizione</label><select id="schedule-item-transition" name="transition"><option>CUT</option><option>DISSOLVE</option></select></div>
+                        <div><label for="schedule-item-behavior">Comportamento</label><select id="schedule-item-behavior" name="behavior"><option>NORMAL</option><option>INTERRUPT</option></select></div>
+                    </div>
+                    <label for="schedule-item-resume-policy">Gestione interruzione</label>
+                    <select id="schedule-item-resume-policy" name="resumePolicy">
+                        <option value="RESUME_FIXED">RIPRENDI FINO AL PROSSIMO ORARIO</option>
+                        <option value="RESUME_SHIFT">RIPRENDI E SPOSTA</option>
+                        <option value="FILLER">CUSCINETTO</option>
+                    </select>
+                    <div class="schedule-form-actions"><button type="submit">SALVA ELEMENTO</button><button id="schedule-item-cancel" type="button">ANNULLA MODIFICA</button></div>
+                </form>
+                <p id="schedule-feedback" class="schedule-feedback" role="status" aria-live="polite"></p>
+            </section>
+        </div>
+
+        <section class="schedule-card" aria-labelledby="schedule-sources-title">
+            <div class="schedule-section-heading"><div><span class="schedule-kicker">METADATA</span><h2 id="schedule-sources-title">SORGENTI CONFIGURATE</h2></div><p>Vista read-only: le azioni operative e la rimozione sicura restano nella Regia.</p></div>
+            <ul id="schedule-source-list" class="schedule-library-list"></ul>
+        </section>
+
+        <section class="schedule-card studio-assets" aria-labelledby="studio-assets-title">
+            <div class="schedule-section-heading"><div><span class="schedule-kicker">LIBRARY</span><h2 id="studio-assets-title">ASSET REFERENCES</h2></div></div>
+            <div class="studio-assets__header"><label for="studio-asset-filter">Filtro</label><select id="studio-asset-filter"><option value="all">ALL</option><option value="video">VIDEO</option><option value="audio">AUDIO</option><option value="still">STILLS</option><option value="logo">LOGOS</option></select></div>
+            <form id="studio-asset-form" class="schedule-form schedule-asset-form">
+                <div><label for="studio-asset-name">Nome</label><input id="studio-asset-name" maxlength="120" required></div>
+                <div><label for="studio-asset-kind">Tipo</label><select id="studio-asset-kind"><option value="video">VIDEO</option><option value="audio">AUDIO</option><option value="still">STILL</option><option value="logo">LOGO</option></select></div>
+                <div><label for="studio-asset-url">URL / percorso</label><input id="studio-asset-url" maxlength="4096" spellcheck="false" required></div>
+                <button type="submit">AGGIUNGI RIFERIMENTO</button>
+            </form>
+            <p id="studio-asset-feedback" class="schedule-feedback" role="status" aria-live="polite"></p>
+            <ul id="studio-asset-list" class="schedule-library-list"></ul>
+        </section>
+    </main>
+    <script type="module" src="../../js/entries/schedule-app.js"></script>
+</body>
+</html>

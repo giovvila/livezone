@@ -216,11 +216,12 @@ export default class StudioSourcesUI {
         url.className = "studio-source-item__url";
         const sourcePath = source.kind === "audio"
             ? `${source.audioUrl} + ${source.stillUrl}`
-            : source.url;
+            : source.url || source.configRef || "Configured at runtime";
         url.textContent = sourcePath;
         url.title = sourcePath;
         asset.className = "studio-source-item__asset";
-        asset.textContent = source.kind === "audio"
+        asset.textContent = source.kind === "hls" ? "LIVE source"
+            : source.kind === "audio"
             ? `AUDIO: ${source.audioAssetId} · STILL: ${source.stillAssetId}`
             : source.assetId
                 ? `Asset: ${source.assetId}`
