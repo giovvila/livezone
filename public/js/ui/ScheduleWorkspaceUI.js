@@ -4,16 +4,24 @@ import { addLocalDays, calculateDayMetrics } from "../scheduler/ScheduleDayMetri
 
 export default class ScheduleWorkspaceUI {
     constructor({ root, store, catalog, assetLibrary = null,
-        clock = () => Date.now(), uuidFactory = () => globalThis.crypto?.randomUUID?.() } = {}) {
+        clock = () => Date.now(), uuidFactory = () => globalThis.crypto?.randomUUID?.(),
+        setTimer = globalThis.setTimeout, clearTimer = globalThis.clearTimeout,
+        clockTicker = null, readOnly = false, editorUrl = null } = {}) {
         this.root = root;
         this.store = store;
         this.catalog = catalog;
         this.assetLibrary = assetLibrary;
         this.clock = clock;
         this.uuidFactory = uuidFactory;
+        this.setTimer = (callback, delay) => setTimer(callback, delay);
+        this.clearTimer = (id) => clearTimer(id);
+        this.clockTicker = clockTicker;
+        this.readOnly = Boolean(readOnly);
+        this.editorUrl = editorUrl;
         this.schedule = null;
         this.selectedDate = null;
         this.editingId = null;
+        this.clockTimerId = null;
         this.started = false;
         this.handleDateChange = this.handleDateChange.bind(this);
         this.handleFormSubmit = this.handleFormSubmit.bind(this);
@@ -23,6 +31,7 @@ export default class ScheduleWorkspaceUI {
         this.handleSceneChange = this.handleSceneChange.bind(this);
         this.handleSchedule = this.handleSchedule.bind(this);
         this.renderSources = this.renderSources.bind(this);
+        this.tickClock = this.tickClock.bind(this);
     }
 
     start() {
@@ -49,11 +58,17 @@ export default class ScheduleWorkspaceUI {
         this.absoluteFields = this.root.querySelector("#schedule-item-absolute-fields");
         this.sceneSelect = this.root.querySelector("#schedule-item-scene");
         this.sourceList = this.root.querySelector("#schedule-source-list");
-        if ([this.dateInput, this.previous, this.todayButton, this.next, this.week,
+        this.liveClock = this.root.querySelector("#schedule-live-clock");
+        this.clockTimezone = this.root.querySelector("#schedule-clock-timezone");
+        this.selectedDateLabel = this.root.querySelector("#schedule-selected-date-label");
+        const coreNodes = [this.dateInput, this.previous, this.todayButton, this.next, this.week,
             this.covered, this.uncovered, this.coverage, this.dayStatus, this.timeline,
-            this.gaps, this.planNowNext, this.list, this.empty, this.form, this.feedback,
-            this.cancel, this.startMode, this.behavior, this.absoluteFields,
-            this.sceneSelect, this.sourceList].some((node) => !node)) return false;
+            this.gaps, this.planNowNext, this.list, this.empty, this.liveClock,
+            this.clockTimezone];
+        const editorNodes = [this.form, this.feedback, this.cancel, this.startMode,
+            this.behavior, this.absoluteFields, this.sceneSelect, this.sourceList];
+        if (coreNodes.some((node) => !node) ||
+            (!this.readOnly && editorNodes.some((node) => !node))) return false;
 
         this.started = true;
         this.dateInput.addEventListener("change", this.handleDateChange);
@@ -64,30 +79,35 @@ export default class ScheduleWorkspaceUI {
             const button = event.target.closest("button[data-date]");
             if (button) this.selectDate(button.dataset.date);
         });
-        this.form.addEventListener("submit", this.handleFormSubmit);
+        this.form?.addEventListener("submit", this.handleFormSubmit);
         this.list.addEventListener("click", this.handleListClick);
-        this.cancel.addEventListener("click", () => this.resetEditor());
-        this.startMode.addEventListener("change", this.handleStartModeChange);
-        this.behavior.addEventListener("change", this.handleBehaviorChange);
-        this.sceneSelect.addEventListener("change", this.handleSceneChange);
+        this.cancel?.addEventListener("click", () => this.resetEditor());
+        this.startMode?.addEventListener("change", this.handleStartModeChange);
+        this.behavior?.addEventListener("change", this.handleBehaviorChange);
+        this.sceneSelect?.addEventListener("change", this.handleSceneChange);
         this.unsubscribeStore = this.store.subscribe(this.handleSchedule);
         this.unsubscribeCatalog = this.catalog.subscribe(() => {
             this.renderScenes(); this.renderSources(); this.render();
         });
         this.renderSources();
+        this.unsubscribeClock = this.clockTicker?.subscribe(this.tickClock);
+        if (!this.unsubscribeClock) this.tickClock();
         return true;
     }
 
     destroy() {
         if (!this.started) return;
         this.dateInput.removeEventListener("change", this.handleDateChange);
-        this.form.removeEventListener("submit", this.handleFormSubmit);
+        this.form?.removeEventListener("submit", this.handleFormSubmit);
         this.list.removeEventListener("click", this.handleListClick);
-        this.startMode.removeEventListener("change", this.handleStartModeChange);
-        this.behavior.removeEventListener("change", this.handleBehaviorChange);
-        this.sceneSelect.removeEventListener("change", this.handleSceneChange);
+        this.startMode?.removeEventListener("change", this.handleStartModeChange);
+        this.behavior?.removeEventListener("change", this.handleBehaviorChange);
+        this.sceneSelect?.removeEventListener("change", this.handleSceneChange);
         this.unsubscribeStore?.();
         this.unsubscribeCatalog?.();
+        this.unsubscribeClock?.();
+        if (this.clockTimerId !== null) this.clearTimer(this.clockTimerId);
+        this.clockTimerId = null;
         this.started = false;
     }
 
@@ -96,6 +116,7 @@ export default class ScheduleWorkspaceUI {
         this.schedule = schedule;
         if (!this.selectedDate) this.selectedDate = todayInTimezone(schedule.timezone, this.clock());
         this.dateInput.value = this.selectedDate;
+        if (this.selectedDateLabel) this.selectedDateLabel.textContent = `· ${this.selectedDate}`;
         if (issues?.length) this.showFeedback("Il palinsesto persistito non è valido.", true);
         this.renderScenes();
         this.render();
@@ -107,7 +128,7 @@ export default class ScheduleWorkspaceUI {
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date || "")) return;
         this.selectedDate = date;
         this.dateInput.value = date;
-        if (!this.editingId) this.form.elements.date.value = date;
+        if (!this.editingId && this.form) this.form.elements.date.value = date;
         this.render();
     }
 
@@ -147,6 +168,12 @@ export default class ScheduleWorkspaceUI {
     handleListClick(event) {
         const button = event.target.closest("button[data-action]");
         if (!button) return;
+        if (this.readOnly) {
+            if (button.dataset.action === "edit" && this.editorUrl) {
+                globalThis.location.assign(this.editorUrl);
+            }
+            return;
+        }
         const item = this.schedule.items.find(({ id }) => id === button.dataset.id);
         if (!item) return;
         if (button.dataset.action === "remove") {
@@ -232,7 +259,7 @@ export default class ScheduleWorkspaceUI {
         this.renderTimeline(metrics);
         this.renderItems(metrics);
         this.renderPlanStatus(metrics);
-        if (!this.editingId && !this.form.elements.date.value) this.resetEditor();
+        if (this.form && !this.editingId && !this.form.elements.date.value) this.resetEditor();
     }
 
     renderWeek() {
@@ -302,36 +329,68 @@ export default class ScheduleWorkspaceUI {
     createItem(item, active) {
         const row = document.createElement("li");
         const summary = document.createElement("div");
-        const time = document.createElement("span");
+        const start = document.createElement("time");
+        const duration = document.createElement("span");
         const title = document.createElement("strong");
-        const meta = document.createElement("span");
-        const badges = document.createElement("div");
+        const sceneName = document.createElement("span");
+        const type = document.createElement("div");
+        const transition = document.createElement("span");
+        const policy = document.createElement("strong");
         const actions = document.createElement("div");
         const edit = document.createElement("button");
         const remove = document.createElement("button");
         const scene = this.catalog.getDefinition(item.sceneId);
         row.className = `schedule-item${active ? " is-active" : ""}${scene ? "" : " is-unresolved"}`;
-        summary.className = "schedule-item__summary";
-        time.className = "schedule-item__time";
-        time.textContent = `${formatTime(item.startMs, this.schedule.timezone)}–${formatTime(item.endMs, this.schedule.timezone)} · ${formatDuration(item.durationSeconds)}`;
+        row.dataset.behavior = item.behavior;
+        row.dataset.policy = item.resumePolicy;
+        row.dataset.transition = item.transition;
+        row.dataset.startMode = item.startMode;
+        summary.className = "schedule-item__program";
+        start.className = "schedule-item__start";
+        start.textContent = formatTime(item.startMs, this.schedule.timezone);
+        duration.className = "schedule-item__duration";
+        duration.textContent = formatCompactDuration(item.durationSeconds);
         title.className = "schedule-item__title";
         title.textContent = item.title;
-        meta.className = "schedule-item__meta";
-        meta.textContent = `${scene?.name || "UNRESOLVED"} · ${item.sceneId} · ${item.transition}`;
-        badges.className = "schedule-item__badges";
-        [active ? "ACTIVE" : null, item.behavior === "INTERRUPT" ? "INTERRUPT" : null,
-            item.resumePolicy === "RESUME_SHIFT" ? "SHIFT" : item.resumePolicy === "FILLER" ? "FILLER" : "FIXED",
+        sceneName.className = "schedule-item__scene";
+        sceneName.textContent = `${scene?.name || "UNRESOLVED"} · ${item.sceneId}`;
+        type.className = "schedule-item__type";
+        [active ? "NOW" : null, item.behavior === "INTERRUPT" ? "INTERRUPT" : "NORMAL",
+            item.startMode === "AFTER_PREVIOUS" ? "AFTER PREV" : null,
             scene ? null : "UNRESOLVED"].filter(Boolean).forEach((label) => {
-            const badge = document.createElement("strong"); badge.textContent = label; badges.appendChild(badge);
+            const badge = document.createElement("strong");
+            badge.textContent = label;
+            type.appendChild(badge);
         });
-        summary.append(time, title, meta, badges);
+        transition.className = "schedule-item__transition";
+        transition.textContent = item.transition;
+        policy.className = "schedule-item__policy";
+        policy.textContent = item.resumePolicy === "RESUME_SHIFT" ? "SHIFT"
+            : item.resumePolicy === "FILLER" ? "FILLER" : "FIXED";
+        summary.append(title, sceneName);
         actions.className = "schedule-item__actions";
         edit.type = remove.type = "button";
-        edit.textContent = "EDIT"; remove.textContent = "REMOVE";
+        edit.textContent = "EDIT"; remove.textContent = "×";
+        remove.title = "Remove schedule item";
+        remove.setAttribute("aria-label", `Remove ${item.title}`);
         edit.dataset.action = "edit"; remove.dataset.action = "remove";
         edit.dataset.id = remove.dataset.id = item.id;
-        actions.append(edit, remove); row.append(summary, actions);
+        actions.append(edit);
+        if (!this.readOnly) actions.append(remove);
+        row.append(start, duration, summary, type, transition, policy, actions);
         return row;
+    }
+
+    tickClock(timestamp = this.clock()) {
+        if (!this.started) return;
+        const now = timestamp;
+        const timezone = this.schedule?.timezone || "Europe/Rome";
+        this.liveClock.textContent = formatClock(now, timezone);
+        this.liveClock.dateTime = new Date(now).toISOString();
+        this.clockTimezone.textContent = timezone.toUpperCase();
+        this.render();
+        if (!this.clockTicker) this.clockTimerId = this.setTimer(this.tickClock,
+            Math.max(1, 1000 - now % 1000));
     }
 
     renderPlanStatus(metrics) {
@@ -385,6 +444,7 @@ export default class ScheduleWorkspaceUI {
     }
 
     showFeedback(message, error) {
+        if (!this.feedback) return false;
         this.feedback.textContent = message;
         this.feedback.classList.toggle("is-error", Boolean(error));
         return false;
@@ -407,6 +467,15 @@ function formatDuration(seconds) {
     const value = Math.max(0, Math.round(seconds));
     return [Math.floor(value / 3600), Math.floor(value % 3600 / 60), value % 60]
         .map((part) => String(part).padStart(2, "0")).join(":");
+}
+function formatCompactDuration(seconds) {
+    const parts = formatDuration(seconds).split(":");
+    return parts[0] === "00" ? parts.slice(1).join(":") : parts.join(":");
+}
+export function formatClock(timestamp, timezone = "Europe/Rome") {
+    return new Intl.DateTimeFormat("it-IT", { timeZone: timezone,
+        hour: "2-digit", minute: "2-digit", second: "2-digit",
+        hourCycle: "h23" }).format(new Date(timestamp));
 }
 function formatTime(timestamp, timezone) {
     return new Intl.DateTimeFormat("it-IT", { timeZone: timezone, hour: "2-digit",

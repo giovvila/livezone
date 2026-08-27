@@ -7,6 +7,7 @@ import StudioBootstrap from "../studio/StudioBootstrap.js";
 import ScheduleStore from "../scheduler/ScheduleStore.js";
 import ScheduleWorkspaceUI from "../ui/ScheduleWorkspaceUI.js";
 import StudioAssetsUI from "../ui/StudioAssetsUI.js";
+import StudioLiveSourcesUI from "../ui/StudioLiveSourcesUI.js";
 
 StudioStateManager.initialize();
 StudioSourceManager.initialize({});
@@ -33,13 +34,16 @@ assetLibrary.setReferenceGuard((asset) =>
         : null);
 
 const workspace = document.getElementById("schedule-workspace");
+const scheduleStore = new ScheduleStore();
 const scheduleUI = new ScheduleWorkspaceUI({
     root: workspace,
-    store: new ScheduleStore(),
+    store: scheduleStore,
     catalog,
     assetLibrary
 });
 const assetsUI = new StudioAssetsUI(workspace, assetLibrary);
+const liveSourcesUI = new StudioLiveSourcesUI(workspace, catalog, scheduleStore);
 
 scheduleUI.start();
 assetsUI.start();
+liveSourcesUI.start();

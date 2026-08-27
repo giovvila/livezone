@@ -7,12 +7,12 @@
     <link rel='preconnect' href='https://fonts.googleapis.com'>
     <link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
     <link href='https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap' rel='stylesheet'>
+    <link rel="stylesheet" href="../css/schedule-workspace.css">
     <link rel="stylesheet" href="../css/theme.css">
 <link rel="stylesheet" href="../css/app.css">
 <link rel="stylesheet" href="../css/layout.css">
 <link rel="stylesheet" href="../css/player.css">
 <link rel="stylesheet" href="../css/branding.css">
-<link rel="stylesheet" href="../css/status.css">
 <link rel="stylesheet" href="../css/components.css">
 <link rel="stylesheet" href="../css/overlay.css">
 <link rel="stylesheet" href="../css/notification.css">
@@ -39,11 +39,12 @@
 
         <main class='main'>
             <div class="control-room-console">
+                <div class="control-room-top">
                 <section class="control-room-monitor-wall" aria-label="Monitor wall">
                 <div class="monitor-wall-layout-controls" aria-label="Monitor Wall size controls">
                     <span>MONITOR WALL</span>
                     <button id="monitor-wall-width-decrease" type="button" aria-label="Decrease Monitor Wall width">−</button>
-                    <output id="monitor-wall-width-value" aria-live="polite">68%</output>
+                    <output id="monitor-wall-width-value" aria-live="polite">78%</output>
                     <button id="monitor-wall-width-increase" type="button" aria-label="Increase Monitor Wall width">+</button>
                 </div>
                 <section class="control-room-monitor control-room-program" aria-labelledby="control-room-program-title">
@@ -59,9 +60,8 @@
                         </div>
                     </header>
                     <div id="studio-program-renderer" class="studio-render-surface studio-render-surface--program" aria-label="Studio Program monitor"></div>
+                    <button class="monitor-wall-resize-handle" type="button" data-monitor-resize="program" aria-label="Resize Program monitor" tabindex="-1">↘</button>
                 </section>
-
-                <button class="monitor-wall-resize-handle monitor-wall-resize-handle--program-preview" type="button" data-monitor-separator="program-preview" aria-label="Resize Program and Preview monitors" tabindex="-1"></button>
 
                 <section class="control-room-monitor control-room-preview" aria-labelledby="control-room-preview-title">
                         <header class="control-room-monitor__header">
@@ -69,38 +69,27 @@
                             <span>Preparation</span>
                         </header>
                         <div id="studio-preview-renderer" class="studio-render-surface studio-render-surface--secondary" aria-label="Studio Preview monitor"></div>
+                        <button class="monitor-wall-resize-handle" type="button" data-monitor-resize="preview" aria-label="Resize Preview monitor" tabindex="-1">↘</button>
                 </section>
 
-                <button class="monitor-wall-resize-handle monitor-wall-resize-handle--preview-technical" type="button" data-monitor-separator="preview-technical" aria-label="Resize Preview and Technical monitors" tabindex="-1"></button>
-
-                <section class="control-room-monitor control-room-technical" aria-labelledby="control-room-technical-title">
-                        <header class="control-room-monitor__header">
-                            <h2 id="control-room-technical-title">TECHNICAL</h2>
-                            <span>Raw primary stream</span>
-                        </header>
-                        <div class="control-room-technical__viewport">
-                            <div class='player-wrapper'>
-                                <video id='video' autoplay muted controls playsinline></video>
-                                <div class="video-overlay">
-                                    <div class="lz-brand">
-                                        <img class="lz-watermark" src="../assets/logo/logo-lz.svg" alt="LIVEZONE">
-                                        <div class="lz-channel">LIVEZONE</div>
-                                    </div>
-                                </div>
-
-                                <div id="overlay" class="overlay">
-                                    <div class="overlay__panel">
-                                        <div class="overlay__logo">LZ</div>
-                                        <div id="overlay-message" class="overlay__title">Segnale assente</div>
-                                        <div class="overlay__subtitle">Riconnessione automatica</div>
-                                        <div id="overlay-countdown" class="overlay__countdown">00:05</div>
-                                        <div class="overlay__footer">LIVEZONE Broadcast Engine</div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
                 </section>
+
+                <section class="studio-schedule control-room-schedule-summary" aria-labelledby="studio-schedule-title">
+                    <header class="control-room-schedule-summary__header">
+                        <h2 id="studio-schedule-title">PALINSESTO</h2>
+                        <strong id="studio-schedule-status">OFF</strong>
+                    </header>
+                    <div class="studio-schedule__status" aria-live="polite">
+                        <span>ORA <strong id="studio-schedule-now">—</strong></span>
+                    </div>
+                    <button id="studio-schedule-toggle" type="button" aria-pressed="false">SCHEDULER ON</button>
+                    <div class="studio-schedule__now-next">
+                        <span>NOW <strong id="studio-schedule-current">—</strong></span>
+                        <span>NEXT <strong id="studio-schedule-next">—</strong></span>
+                    </div>
+                    <a class="studio-schedule__open" href="#control-schedule-view">DETTAGLI</a>
                 </section>
+                </div>
 
             <aside id="studio-panel" class="studio-panel" aria-labelledby="studio-title">
                 <div class="studio-panel__header">
@@ -112,34 +101,37 @@
                 </div>
 
                 <div id="control-desk-workspace" class="control-desk__workspace" aria-label="Customizable Control Desk modules">
-                <section class="studio-section control-desk__module control-desk__module--scenes" data-control-module="scenes" aria-labelledby="studio-scenes-title">
+                <section class="studio-section control-desk__module control-desk__module--scenes" data-control-module="scenes" data-control-desk-module="scenes" aria-labelledby="studio-scenes-title">
                     <h3 id="studio-scenes-title">SCENES</h3>
                     <div id="studio-scene-list" class="studio-scene-list"></div>
                     <p id="studio-empty-state" class="studio-empty-state">No scenes configured</p>
                 </section>
 
-                <section class="studio-sources control-desk__module" data-control-module="sources" aria-labelledby="studio-sources-title">
+                <section class="studio-sources control-desk__module" data-control-module="sources" data-control-desk-module="sources" aria-labelledby="studio-sources-title">
                     <h3 id="studio-sources-title">SOURCES</h3>
                     <p class="studio-sources__notice">Sorgenti disponibili per la selezione immediata tramite SCENES.</p>
                     <ul id="studio-source-list" class="studio-source-list" aria-label="Available Studio sources"></ul>
                 </section>
 
-                <section class="studio-schedule control-desk__module" data-control-module="schedule" aria-labelledby="studio-schedule-title">
-                    <h3 id="studio-schedule-title">PALINSESTO</h3>
-                    <p class="studio-schedule__notice">Controllo operativo. La configurazione completa vive nel workspace editoriale.</p>
-                    <div class="studio-schedule__status" aria-live="polite">
-                        <span>STATUS <strong id="studio-schedule-status">OFF</strong></span>
-                        <span>TIME <strong id="studio-schedule-now">—</strong></span>
+                <section class="control-room-technical control-desk__module" data-control-module="technical-monitor" data-control-desk-module="technical-monitor" aria-labelledby="control-room-technical-title">
+                    <h3 id="control-room-technical-title">TECHNICAL MONITOR</h3>
+                    <p class="technical-live__role">Independent live observation</p>
+                    <div class="control-room-technical__viewport">
+                        <label class="technical-live__selector" for="technical-live-source">MONITOR SOURCE
+                            <select id="technical-live-source"><option value="">SELECT LIVE SOURCE</option></select>
+                        </label>
+                        <div id="technical-live-surface" class="technical-live__surface" aria-label="Selected live source technical video"></div>
+                        <p id="technical-live-empty" class="technical-live__empty">NO LIVE SOURCES CONFIGURED · <a href="schedule/" target="_blank" rel="noopener">CONFIGURE LIVE SOURCES</a></p>
+                        <dl class="technical-live__metadata">
+                            <div><dt>STATUS</dt><dd id="technical-live-status">● IDLE</dd></div>
+                            <div><dt>LAST OK</dt><dd id="technical-live-last-ok">—</dd></div>
+                            <div><dt>VIDEO</dt><dd id="technical-live-resolution">—</dd></div>
+                            <div><dt>ENDPOINT</dt><dd id="technical-live-endpoint">—</dd></div>
+                        </dl>
                     </div>
-                    <button id="studio-schedule-toggle" type="button" aria-pressed="false">SCHEDULER ON</button>
-                    <div class="studio-schedule__now-next">
-                        <span>NOW <strong id="studio-schedule-current">—</strong></span>
-                        <span>NEXT <strong id="studio-schedule-next">—</strong></span>
-                    </div>
-                    <a class="studio-schedule__open" href="./schedule/">APRI PALINSESTO</a>
                 </section>
 
-                <section class="control-desk__module control-desk__module--transition" data-control-module="transition" aria-labelledby="studio-transition-title">
+                <section class="control-desk__module control-desk__module--transition" data-control-module="transition" data-control-desk-module="transition" aria-labelledby="studio-transition-title">
                     <label class="studio-transition-select" for="studio-transition-type">
                         <span id="studio-transition-title">TRANSITION</span>
                         <select id="studio-transition-type">
@@ -149,12 +141,12 @@
                     </label>
                 </section>
 
-                <section class="control-desk__module control-desk__module--take" data-control-module="take" aria-labelledby="studio-take-title">
+                <section class="control-desk__module control-desk__module--take" data-control-module="take" data-control-desk-module="take" aria-labelledby="studio-take-title">
                     <h3 id="studio-take-title">TAKE</h3>
                     <button id="studio-take" class="studio-take" type="button" disabled>TAKE</button>
                 </section>
 
-                <section class="control-desk__module control-desk__module--broadcast" data-control-module="broadcast" aria-labelledby="control-desk-broadcast-title">
+                <section class="control-desk__module control-desk__module--broadcast" data-control-module="broadcast" data-control-desk-module="broadcast" aria-labelledby="control-desk-broadcast-title">
                     <h3 id="control-desk-broadcast-title">BROADCAST</h3>
                     <div class="broadcast-controls" role="group" aria-label="Broadcast control">
                         <button class="broadcast-control" type="button" data-broadcast-state="LIVE" aria-pressed="false">LIVE</button>
@@ -179,7 +171,7 @@
                         </div>
                     </div>
                 </section>
-                <section id="studio-media-transport" class="studio-media-transport control-desk__module" data-control-module="media-preview" aria-labelledby="studio-media-title">
+                <section id="studio-media-transport" class="studio-media-transport control-desk__module" data-control-module="media-preview" data-control-desk-module="media-preview" aria-labelledby="studio-media-title">
                     <h3 id="studio-media-title">PREVIEW TRANSPORT <span id="studio-media-name">— No transport in Preview</span></h3>
                     <div class="studio-media-transport__actions">
                         <button id="studio-media-restart" type="button" disabled>RESTART</button>
@@ -192,7 +184,7 @@
                     </div>
                 </section>
 
-                <fieldset class="studio-graphics-controls control-desk__module control-desk__module--lower-third" data-control-module="lower-third">
+                <fieldset class="studio-graphics-controls control-desk__module control-desk__module--lower-third" data-control-module="lower-third" data-control-desk-module="lower-third">
                     <legend>LOWER THIRD</legend>
 
                     <div class="studio-graphics-controls__fields">
@@ -217,7 +209,7 @@
                     <p id="studio-lower-third-feedback" class="studio-graphics-controls__feedback"></p>
                 </fieldset>
 
-                <fieldset class="studio-graphics-controls control-desk__module control-desk__module--logo" data-control-module="channel-logo">
+                <fieldset class="studio-graphics-controls control-desk__module control-desk__module--logo" data-control-module="channel-logo" data-control-desk-module="channel-logo">
                     <legend>CHANNEL LOGO</legend>
 
                     <div class="studio-graphics-controls__fields">
@@ -256,17 +248,58 @@
                 </div>
 
             </aside>
+            <section id="control-schedule-view" class="schedule-workspace control-schedule-workspace" aria-labelledby="control-schedule-title">
+                <section class="schedule-card schedule-navigation">
+                    <div class="schedule-section-heading">
+                        <div><span class="schedule-kicker">PALINSESTO OPERATIVO</span><h1 id="control-schedule-title">GIORNATA <span id="schedule-selected-date-label"></span></h1></div>
+                        <div class="schedule-clock" aria-label="Ora editoriale corrente">
+                            <time id="schedule-live-clock" datetime="">--:--:--</time>
+                            <span id="schedule-clock-timezone">EUROPE/ROME</span>
+                        </div>
+                    </div>
+                    <div class="schedule-date-controls">
+                        <button id="schedule-previous-day" type="button">GIORNO PRECEDENTE</button>
+                        <button id="schedule-today" type="button">OGGI</button>
+                        <button id="schedule-next-day" type="button">GIORNO SUCCESSIVO</button>
+                        <label for="schedule-selected-date">Data</label>
+                        <input id="schedule-selected-date" type="date">
+                    </div>
+                </section>
+
+                <section class="schedule-summary" aria-label="Copertura giornaliera">
+                    <article><span>TOTALE PROGRAMMATO</span><strong id="schedule-covered">00:00:00</strong></article>
+                    <article><span>NON PROGRAMMATO</span><strong id="schedule-uncovered">24:00:00</strong></article>
+                    <article><span>COPERTURA</span><strong id="schedule-coverage">0.00%</strong></article>
+                    <article><span>STATO</span><strong id="schedule-day-status">EMPTY</strong></article>
+                </section>
+
+                <section class="schedule-card" aria-labelledby="schedule-items-title">
+                    <div class="schedule-section-heading">
+                        <div><span class="schedule-kicker">RUNNING ORDER</span><h2 id="schedule-items-title">PROGRAMMA DEL GIORNO</h2></div>
+                        <div class="control-schedule-workspace__actions"><div id="schedule-plan-now-next" class="schedule-plan-now-next" aria-live="polite"></div><a class="schedule-button" href="./schedule/">ADD / EDIT PALINSESTO</a></div>
+                    </div>
+                    <div class="schedule-running-order__header" aria-hidden="true">
+                        <span>START</span><span>DURATA</span><span>PROGRAMMA / SCENA</span><span>TIPO</span><span>TRANSIZIONE</span><span>POLICY</span><span>AZIONI</span>
+                    </div>
+                    <ol id="schedule-item-list" class="schedule-item-list"></ol>
+                    <p id="schedule-empty" class="schedule-empty">Nessun elemento interseca la giornata selezionata.</p>
+                </section>
+
+                <section class="schedule-card" aria-labelledby="schedule-timeline-title">
+                    <div class="schedule-section-heading"><div><span class="schedule-kicker">COPERTURA GIORNALIERA</span><h2 id="schedule-timeline-title">TIMELINE DELLA GIORNATA</h2></div></div>
+                    <div id="schedule-timeline" class="schedule-timeline" role="img" aria-label="Copertura temporale della giornata"></div>
+                    <div class="schedule-timeline-scale" aria-hidden="true"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>
+                    <ul id="schedule-gaps" class="schedule-gaps" aria-label="Intervalli non programmati"></ul>
+                </section>
+
+                <section class="schedule-card" aria-labelledby="schedule-week-title">
+                    <div class="schedule-section-heading"><div><span class="schedule-kicker">SETTIMANA</span><h2 id="schedule-week-title">MON–SUN</h2></div></div>
+                    <div id="schedule-week" class="schedule-week" role="group" aria-label="Settimana selezionata"></div>
+                </section>
+            </section>
             </div>
         </main>
 
-        <section class='status-bar'>
-            <div id='status'>● CONNECTING...</div>
-            <div>HLS</div>
-            <div>FULL HD</div>
-            <div class="operator-utilities" role="group" aria-label="Operator utilities">
-                <button id="engine-monitor-toggle" type="button">OPEN MON</button>
-            </div>
-        </section>
     </div>
 
     <div id="notification-center" class="notification-center"></div>

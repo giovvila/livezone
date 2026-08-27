@@ -66,6 +66,17 @@ class StudioSourceManager {
         return this.createSourceSnapshot(source);
     }
 
+    replaceSource(definition) {
+        const source = this.createCanonicalSource(definition);
+
+        if (!this.initialized || !source || !this.sources.has(source.id)) {
+            return null;
+        }
+
+        this.sources.set(source.id, source);
+        return this.createSourceSnapshot(source);
+    }
+
     createInstance(sourceId, { consumer, initialTime, initialPlayback,
         initialEnded } = {}) {
         const id = this.normalizeString(sourceId);

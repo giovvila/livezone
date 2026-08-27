@@ -27,6 +27,10 @@
             <div class="schedule-section-heading">
                 <div><span class="schedule-kicker">PIANO EDITORIALE</span><h1 id="schedule-date-title">GIORNATA</h1></div>
                 <p>Il piano salvato è condiviso con la Regia. Il drift runtime resta locale alla sessione Control attiva.</p>
+                <div class="schedule-clock" aria-label="Ora editoriale corrente">
+                    <time id="schedule-live-clock" datetime="">--:--:--</time>
+                    <span id="schedule-clock-timezone">EUROPE/ROME</span>
+                </div>
             </div>
             <div class="schedule-date-controls">
                 <button id="schedule-previous-day" type="button">GIORNO PRECEDENTE</button>
@@ -57,6 +61,9 @@
 
             <section class="schedule-card" aria-labelledby="schedule-items-title">
                 <div class="schedule-section-heading"><div><span class="schedule-kicker">ELEMENTI</span><h2 id="schedule-items-title">PROGRAMMA DEL GIORNO</h2></div></div>
+                <div class="schedule-running-order__header" aria-hidden="true">
+                    <span>START</span><span>DURATA</span><span>PROGRAMMA</span><span>TIPO</span><span>TRANS.</span><span>POLICY</span><span>AZIONI</span>
+                </div>
                 <ol id="schedule-item-list" class="schedule-item-list"></ol>
                 <p id="schedule-empty" class="schedule-empty">Nessun elemento interseca la giornata selezionata.</p>
             </section>
@@ -99,6 +106,18 @@
         <section class="schedule-card" aria-labelledby="schedule-sources-title">
             <div class="schedule-section-heading"><div><span class="schedule-kicker">METADATA</span><h2 id="schedule-sources-title">SORGENTI CONFIGURATE</h2></div><p>Vista read-only: le azioni operative e la rimozione sicura restano nella Regia.</p></div>
             <ul id="schedule-source-list" class="schedule-library-list"></ul>
+        </section>
+
+        <section class="schedule-card" aria-labelledby="live-sources-title">
+            <div class="schedule-section-heading"><div><span class="schedule-kicker">CONTRIBUTIONS</span><h2 id="live-sources-title">LIVE SOURCES</h2></div><p>Configurazione HLS. Le sorgenti abilitate diventano operative in Regia.</p></div>
+            <form id="live-source-form" class="schedule-form schedule-live-form">
+                <div><label for="live-source-name">Nome</label><input id="live-source-name" name="name" maxlength="120" required></div>
+                <div><label for="live-source-url">HLS URL</label><input id="live-source-url" name="url" maxlength="4096" type="url" spellcheck="false" required></div>
+                <label class="schedule-live-enabled"><input name="enabled" type="checkbox" checked> ENABLED</label>
+                <div class="schedule-form-actions"><button type="submit">SALVA LIVE SOURCE</button><button id="live-source-cancel" type="button" hidden>ANNULLA</button></div>
+            </form>
+            <p id="live-source-feedback" class="schedule-feedback" role="status" aria-live="polite"></p>
+            <ul id="live-source-list" class="schedule-library-list"></ul>
         </section>
 
         <section class="schedule-card studio-assets" aria-labelledby="studio-assets-title">

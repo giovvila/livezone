@@ -6,6 +6,7 @@
     "serve": "node server/program-output-server.js",
     "test:program-output": "node --test test/program-output-network.test.js",
     "test:scheduler": "node --test test/scheduler.test.js",
-    "test:schedule-workspace": "node --test test/schedule-workspace.test.js"
+    "test:schedule-workspace": "node --test test/schedule-workspace.test.js",
+    "test:live-sources": "node --test test/live-sources.test.js"
   }
 }

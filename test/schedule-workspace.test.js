@@ -7,6 +7,9 @@ import { calculateDayMetrics, getDayWindow } from
 import ScheduleStore from "../public/js/scheduler/ScheduleStore.js";
 import ControlDeskLayoutManager from "../public/js/ui/ControlDeskLayoutManager.js";
 import StudioScheduleSummaryUI from "../public/js/ui/StudioScheduleSummaryUI.js";
+import ScheduleWorkspaceUI, { formatClock } from "../public/js/ui/ScheduleWorkspaceUI.js";
+import MonitorWallLayoutManager from "../public/js/ui/MonitorWallLayoutManager.js";
+import ScheduleClock from "../public/js/ui/ScheduleClock.js";
 
 const createSchedule = (items) => validateSchedule({
     version: 1, timezone: "Europe/Rome", items
@@ -20,6 +23,75 @@ test("day window follows Europe/Rome DST day lengths", () => {
     assert.equal(getDayWindow("2026-03-29", "Europe/Rome").durationSeconds, 23 * 3600);
     assert.equal(getDayWindow("2026-10-25", "Europe/Rome").durationSeconds, 25 * 3600);
     assert.equal(getDayWindow("2026-08-23", "Europe/Rome").durationSeconds, 24 * 3600);
+});
+
+test("editorial clock preserves HH:MM:SS in Europe/Rome with one aligned timeout", () => {
+    const timestamp = Date.parse("2026-08-25T08:37:24.250Z");
+    assert.equal(formatClock(timestamp, "Europe/Rome"), "10:37:24");
+    const timers = [];
+    const ui = new ScheduleWorkspaceUI({ clock: () => timestamp,
+        setTimer: (callback, delay) => { timers.push({ callback, delay }); return 9; },
+        clearTimer() {} });
+    ui.started = true;
+    ui.liveClock = { textContent: "", dateTime: "" };
+    ui.clockTimezone = { textContent: "" };
+    ui.tickClock();
+    assert.equal(ui.liveClock.textContent, "10:37:24");
+    assert.equal(ui.clockTimezone.textContent, "EUROPE/ROME");
+    assert.deepEqual(timers.map(({ delay }) => delay), [750]);
+});
+
+test("Control schedule summary and day view share one aligned clock timeout", () => {
+    const timers = [];
+    const ticker = new ScheduleClock({ clock: () => 1250,
+        setTimer: (callback, delay) => { timers.push({ callback, delay }); return timers.length; },
+        clearTimer() {} });
+    const received = [[], []];
+    const first = ticker.subscribe((value) => received[0].push(value));
+    const second = ticker.subscribe((value) => received[1].push(value));
+    assert.equal(timers.length, 1);
+    assert.equal(timers[0].delay, 750);
+    assert.deepEqual(received, [[1250], [1250]]);
+    first(); second();
+});
+
+test("monitor geometry changes Program and Preview independently", () => {
+    const manager = new MonitorWallLayoutManager({ root: null, storage: null });
+    const initial = manager.getGeometry();
+    const program = manager.resizeMonitor(initial, "program",
+        { widthDelta: -20, heightDelta: -100 });
+    assert.equal(program.program.widthPercent, 29);
+    assert.equal(program.program.heightPx, 260);
+    assert.deepEqual(program.preview, initial.preview);
+    const preview = manager.resizeMonitor(program, "preview",
+        { widthDelta: 15, heightDelta: -80 });
+    assert.deepEqual(preview.program, program.program);
+    assert.equal(preview.preview.widthPercent, 64);
+    assert.equal(preview.preview.heightPx, 280);
+});
+
+test("monitor geometry migrates v1, persists v2, reloads and resets", () => {
+    let stored = JSON.stringify({ version: 1, monitorWall: {
+        widthPercent: 68, program: 60, preview: 30, technical: 10 } });
+    const storage = { getItem: () => stored,
+        setItem: (_key, value) => { stored = value; }, removeItem: () => { stored = null; } };
+    const manager = new MonitorWallLayoutManager({
+        root: { style: { setProperty() {} } }, storage
+    });
+    const migrated = manager.loadGeometry();
+    assert.equal(migrated.wallWidthPercent, 68);
+    assert.equal(Math.round(migrated.program.widthPercent), 65);
+    assert.equal(Math.round(migrated.preview.widthPercent), 33);
+    manager.geometry = manager.resizeMonitor(migrated, "preview", { heightDelta: 50 });
+    manager.persistGeometry();
+    assert.equal(JSON.parse(stored).version, 2);
+    assert.deepEqual(manager.loadGeometry(), manager.geometry);
+    manager.reset();
+    assert.equal(manager.getGeometry().wallWidthPercent, 78);
+    assert.equal(manager.getGeometry().program.widthPercent, 49);
+    assert.equal(manager.getGeometry().preview.widthPercent, 49);
+    assert.equal(manager.getGeometry().program.heightPx, 360);
+    assert.equal(manager.getGeometry().preview.heightPx, 360);
 });
 
 test("coverage union reports gaps without double-counting interrupt overlays", () => {
@@ -79,7 +151,7 @@ test("ScheduleStore notifies local saves and validated external storage updates"
     assert.equal(handlers.size, 0);
 });
 
-test("Control layout maps legacy schedule geometry without moving other modules", () => {
+test("Control layout drops legacy schedule geometry without moving other modules", () => {
     const stored = JSON.stringify({ version: 1, modules: [
         { id: "scenes", x: 0, y: 0, w: 6, h: 4 },
         { id: "sources", x: 0, y: 11, w: 6, h: 6 },
@@ -97,9 +169,123 @@ test("Control layout maps legacy schedule geometry without moving other modules"
     const layout = manager.loadLayout();
     assert.deepEqual(layout.find(({ id }) => id === "sources"),
         { id: "sources", x: 0, y: 11, w: 6, h: 6 });
-    assert.deepEqual(layout.find(({ id }) => id === "schedule"),
-        { id: "schedule", x: 0, y: 18, w: 12, h: 8 });
-    assert.equal(manager.collapsedIds.has("schedule"), true);
+    assert.deepEqual(layout.find(({ id }) => id === "technical-monitor"),
+        { id: "technical-monitor", x: 0, y: 17, w: 6, h: 7 });
+    assert.equal(layout.some(({ id }) => id === "schedule"), false);
+    assert.equal(manager.collapsedIds.has("schedule"), false);
+    assert.equal(manager.collapsedIds.has("assets"), false);
+});
+
+test("Control DOM registers one Technical Monitor and one unified operational schedule", async () => {
+    const html = await readFile(new URL("../public/control/index.html", import.meta.url), "utf8");
+    const moduleIds = Array.from(html.matchAll(/data-control-module="([^"]+)"/g),
+        (match) => match[1]);
+    assert.equal(new Set(moduleIds).size, moduleIds.length);
+    assert.equal(moduleIds.filter((id) => id === "technical-monitor").length, 1);
+    assert.equal(moduleIds.includes("schedule"), false);
+    ["studio-schedule-status", "studio-schedule-now", "studio-schedule-current",
+        "studio-schedule-next", "studio-schedule-toggle"].forEach((id) =>
+        assert.match(html, new RegExp(`id="${id}"`)));
+    ["control-schedule-view", "schedule-live-clock", "schedule-item-list",
+        "schedule-timeline", "schedule-week"].forEach((id) =>
+        assert.match(html, new RegExp(`id="${id}"`)));
+    assert.match(html, /href="\.\/schedule\/">ADD \/ EDIT PALINSESTO/);
+    const deskEnd = html.indexOf("</aside>", html.indexOf('id="studio-panel"'));
+    const scheduleStart = html.indexOf('id="control-schedule-view"');
+    assert.ok(deskEnd > 0 && scheduleStart > deskEnd,
+        "the unified schedule must be a sibling after the complete ControlDesk");
+    const workspaceStart = html.indexOf('id="control-desk-workspace"');
+    const workspaceEnd = deskEnd;
+    const workspaceMarkup = html.slice(workspaceStart, workspaceEnd);
+    const deskMarkers = Array.from(workspaceMarkup.matchAll(
+        /data-control-desk-module="([^"]+)"/g), (match) => match[1]);
+    assert.equal(deskMarkers.length, 9);
+    assert.deepEqual(new Set(deskMarkers), new Set([
+        "scenes", "sources", "transition", "take", "broadcast",
+        "media-preview", "lower-third", "channel-logo", "technical-monitor"
+    ]));
+    assert.equal(workspaceMarkup.includes("control-schedule-view"), false);
+    assert.match(html, /<\/aside>\s*<section id="control-schedule-view"/);
+    ["scenes", "sources", "transition", "take", "broadcast", "media-preview",
+        "lower-third", "channel-logo", "technical-monitor"].forEach((id) =>
+        assert.equal(moduleIds.filter((moduleId) => moduleId === id).length, 1));
+    assert.equal((html.match(/id="studio-take"/g) || []).length, 1);
+});
+
+test("Control three-row flow gives ControlDesk intrinsic height before schedule", async () => {
+    const css = await readFile(new URL("../public/css/studio.css", import.meta.url), "utf8");
+    assert.match(css, /\.control-room-console\s*\{[^}]*grid-template-rows:\s*max-content max-content max-content/s);
+    assert.doesNotMatch(css, /\.control-room-console\s*\{[^}]*grid-template-rows:\s*auto auto auto/s);
+    assert.match(css, /\.studio-panel\s*\{[^}]*min-height:\s*min-content;[^}]*overflow:\s*visible;/s);
+    assert.doesNotMatch(css, /\.control-room-console\s*\{[^}]*grid-template-rows:\s*auto minmax\(0, 1fr\)/s);
+});
+
+test("ControlDesk materializes the active module bottom boundary as workspace height", () => {
+    const manager = new ControlDeskLayoutManager({ root: null, storage: null });
+    const clean = manager.createResponsiveLayout(manager.createDefaultLayout(), 12);
+    assert.ok(manager.calculateWorkspaceHeight(clean) > 0);
+    assert.equal(manager.calculateWorkspaceHeight([{ id: "take", x: 0, y: 2, w: 2, h: 1 }]),
+        132);
+    manager.collapsedIds = new Set(clean.map(({ id }) => id));
+    const collapsed = manager.createResponsiveLayout(manager.createDefaultLayout(), 12);
+    assert.ok(collapsed.every(({ h }) => h === 1));
+    assert.ok(manager.calculateWorkspaceHeight(collapsed) > 0);
+    assert.equal(manager.calculateCompactWorkspaceHeight(9), 84);
+    assert.equal(manager.calculateCompactWorkspaceHeight(5), 176);
+    assert.equal(manager.calculateCompactWorkspaceHeight(3), 268);
+    assert.equal(manager.calculateCompactWorkspaceHeight(2), 452);
+    assert.equal(manager.calculateCompactWorkspaceHeight(1), 820);
+    assert.equal(manager.calculateWorkspaceHeight([
+        { id: "take", x: 0, y: 6, w: 2, h: 4 }
+    ]), 468);
+});
+
+test("clean and reset ControlDesk use a visible one-row compact module strip", () => {
+    const manager = new ControlDeskLayoutManager({ root: null,
+        storage: { getItem: () => null, removeItem() {} } });
+    const layout = manager.loadLayout();
+    assert.equal(manager.collapsedIds.size, 9);
+    const compact = manager.createResponsiveLayout(layout, 12);
+    assert.equal(new Set(compact.map(({ y }) => y)).size, 1);
+    assert.equal(compact.reduce((total, { w }) => total + w, 0), 12);
+    assert.equal(manager.calculateWorkspaceHeight(compact), 36);
+    assert.equal(manager.getCompactColumnCount(1600), 9);
+    assert.equal(manager.getCompactColumnCount(1000), 5);
+    assert.equal(manager.getCompactColumnCount(700), 3);
+    assert.equal(manager.getCompactColumnCount(440), 2);
+    assert.equal(manager.getCompactColumnCount(300), 1);
+    assert.equal(manager.calculateCompactWorkspaceHeight(
+        manager.getCompactColumnCount(1600)
+    ), 84);
+});
+
+test("normal ControlDesk expansion keeps sibling cards in the intrinsic grid", async () => {
+    const css = await readFile(new URL("../public/css/studio.css", import.meta.url), "utf8");
+    const managerSource = await readFile(new URL(
+        "../public/js/ui/ControlDeskLayoutManager.js", import.meta.url), "utf8");
+
+    assert.match(css,
+        /\.studio-panel:not\(\.is-layout-editing\) \.control-desk__workspace\s*\{[^}]*grid-auto-rows:\s*max-content;[^}]*align-items:\s*start;[^}]*height:\s*max-content !important;/s);
+    assert.match(css,
+        /@media \(max-width: 760px\)\s*\{[\s\S]*?\.control-room-console\s*\{[^}]*grid-template-rows:\s*max-content max-content max-content;[^}]*grid-auto-rows:\s*max-content;/s);
+    assert.match(css,
+        /\.studio-panel:not\(\.is-layout-editing\) \.control-desk__module\.is-collapsed\s*\{[^}]*height:\s*84px;/s);
+    assert.match(css,
+        /\.studio-panel:not\(\.is-layout-editing\) \.control-desk__module\s*\{[^}]*align-self:\s*start;[^}]*height:\s*auto;/s);
+    assert.match(managerSource,
+        /if \(this\.editMode\) \{[\s\S]*element\.style\.gridColumn[\s\S]*else \{\s*element\.style\.gridColumn = "";\s*element\.style\.gridRow = "";/);
+    assert.match(managerSource,
+        /if \(this\.editMode\) \{[\s\S]*this\.workspace\.style\.height = `\$\{height\}px`;[\s\S]*else \{\s*this\.workspace\.style\.height = "";\s*this\.workspace\.style\.minHeight = "";/);
+});
+
+test("Control entry reuses one store and clock without duplicate runtime authorities", async () => {
+    const source = await readFile(new URL("../public/js/entries/control-room-app.js",
+        import.meta.url), "utf8");
+    assert.equal((source.match(/new SchedulerEngine\(/g) || []).length, 1);
+    assert.equal((source.match(/new ScheduleStore\(/g) || []).length, 1);
+    assert.equal((source.match(/new ScheduleClock\(/g) || []).length, 1);
+    assert.equal((source.match(/new TechnicalLiveMonitorUI\(/g) || []).length, 1);
+    assert.equal((source.match(/new StudioRenderer\(/g) || []).length, 1);
 });
 
 test("Schedule Workspace entry cannot instantiate a second scheduler authority", async () => {

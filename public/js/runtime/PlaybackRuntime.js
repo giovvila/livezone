@@ -15,16 +15,16 @@ export default class PlaybackRuntime {
         this.handleStreamReady = this.handleStreamReady.bind(this);
     }
 
-    start({ beforePlayerStart } = {}) {
+    start({ beforePlayerStart, startPlayer = true } = {}) {
         if (this.startPromise) {
             return this.startPromise;
         }
 
-        this.startPromise = this.startInternal(beforePlayerStart);
+        this.startPromise = this.startInternal(beforePlayerStart, startPlayer);
         return this.startPromise;
     }
 
-    async startInternal(beforePlayerStart) {
+    async startInternal(beforePlayerStart, startPlayer) {
         try {
             Logger.info("");
             Logger.info("══════════════════════════════");
@@ -44,8 +44,10 @@ export default class PlaybackRuntime {
             EventBus.emit(Events.UI_READY);
             EventBus.on(Events.STREAM_READY, this.handleStreamReady);
 
-            this.player = new Player(this.config);
-            await this.player.init();
+            if (startPlayer) {
+                this.player = new Player(this.config);
+                await this.player.init();
+            }
 
             return Object.freeze({
                 config: this.config,

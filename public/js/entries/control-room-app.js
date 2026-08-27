@@ -1,5 +1,4 @@
 import PlaybackRuntime from "../runtime/PlaybackRuntime.js";
-import AdaptivePlayer from "../core/AdaptivePlayer.js";
 import BroadcastStateManager from "../core/BroadcastStateManager.js";
 import StudioStateManager from "../core/StudioStateManager.js";
 import BroadcastUI from "../ui/BroadcastUI.js";
@@ -23,19 +22,16 @@ import StudioTransitionCoordinator from "../studio/StudioTransitionCoordinator.j
 import ProgramOutputManager from "../program-output/ProgramOutputManager.js";
 import ProgramOutputSetupUI from "../ui/ProgramOutputSetupUI.js";
 import StudioScheduleSummaryUI from "../ui/StudioScheduleSummaryUI.js";
+import ScheduleWorkspaceUI from "../ui/ScheduleWorkspaceUI.js";
+import ScheduleClock from "../ui/ScheduleClock.js";
 import ProgramRemainingTimeUI from "../ui/ProgramRemainingTimeUI.js";
 import ScheduleStore from "../scheduler/ScheduleStore.js";
 import SchedulerEngine from "../scheduler/SchedulerEngine.js";
 import StudioProgramCommand from "../scheduler/StudioProgramCommand.js";
 import { createProgramOutputTransport } from
     "../program-output/ProgramOutputTransportFactory.js";
-
-const adaptivePlayer = new AdaptivePlayer(
-    document.querySelector(".player-wrapper"),
-    document.getElementById("video")
-);
-
-adaptivePlayer.start();
+import LiveSourceMonitor from "../studio/LiveSourceMonitor.js";
+import TechnicalLiveMonitorUI from "../ui/TechnicalLiveMonitorUI.js";
 
 BroadcastStateManager.initialize();
 StudioStateManager.initialize();
@@ -64,10 +60,13 @@ let programFullscreenUI = null;
 let programOutputManager = null;
 let programOutputSetupUI = null;
 let studioScheduleUI = null;
+let scheduleWorkspaceUI = null;
 let schedulerEngine = null;
 let programRemainingTimeUI = null;
+let technicalLiveMonitorUI = null;
 
 runtime.start({
+    startPlayer: false,
     async beforePlayerStart(config) {
         broadcastUI = new BroadcastUI();
         broadcastUI.start(config);
@@ -141,13 +140,25 @@ runtime.start({
             catalog: studioCatalogManager,
             programTransportProvider: () => studioRenderer.getProgramTransport()
         });
+        const scheduleStore = new ScheduleStore();
+        const scheduleClock = new ScheduleClock();
         studioScheduleUI = new StudioScheduleSummaryUI({
-            root: document.getElementById("studio-panel"),
+            root: document,
             engine: schedulerEngine,
-            store: new ScheduleStore(),
-            catalog: studioCatalogManager
+            store: scheduleStore,
+            catalog: studioCatalogManager,
+            clockTicker: scheduleClock
         });
         studioScheduleUI.start();
+        scheduleWorkspaceUI = new ScheduleWorkspaceUI({
+            root: document.getElementById("control-schedule-view"),
+            store: scheduleStore,
+            catalog: studioCatalogManager,
+            clockTicker: scheduleClock,
+            readOnly: true,
+            editorUrl: "./schedule/"
+        });
+        scheduleWorkspaceUI.start();
         programRemainingTimeUI = new ProgramRemainingTimeUI({
             root: document,
             schedulerEngine,
@@ -167,6 +178,18 @@ runtime.start({
             studioCatalogManager
         );
         studioSourcesUI.start();
+
+        const technicalRoot = document.querySelector(".control-room-technical");
+        const liveSourceMonitor = new LiveSourceMonitor({
+            consumerFactory: TechnicalLiveMonitorUI.createConsumerFactory(
+                technicalRoot.querySelector("#technical-live-surface")
+            )
+        });
+        technicalLiveMonitorUI = new TechnicalLiveMonitorUI({
+            root: technicalRoot, catalog: studioCatalogManager,
+            monitor: liveSourceMonitor
+        });
+        technicalLiveMonitorUI.start();
 
         studioGraphicsUI = new StudioGraphicsUI(
             document.getElementById("studio-panel"),
@@ -207,7 +230,7 @@ runtime.start({
 }).then(({ player }) => {
     const debugContainer = document.getElementById("debug-panel");
 
-    if (!debugContainer) {
+    if (!debugContainer || !player) {
         return;
     }
 

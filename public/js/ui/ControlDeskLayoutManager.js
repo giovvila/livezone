@@ -3,17 +3,19 @@ const SCHEMA_VERSION = 1;
 const BASE_COLUMNS = 12;
 const GRID_GAP = 12;
 const GRID_ROW_STEP = 48;
+const COMPACT_CARD_HEIGHT = 84;
+const COMPACT_GRID_GAP = 8;
 
 const MODULE_DEFINITIONS = Object.freeze([
-    Object.freeze({ id: "scenes", label: "Scenes", x: 0, y: 0, w: 6, h: 4, minW: 4, minH: 3 }),
-    Object.freeze({ id: "sources", label: "Sources", x: 0, y: 11, w: 6, h: 6, minW: 4, minH: 4 }),
-    Object.freeze({ id: "transition", label: "Transition", x: 6, y: 0, w: 2, h: 3, minW: 2, minH: 2 }),
-    Object.freeze({ id: "take", label: "Take", x: 8, y: 0, w: 2, h: 3, minW: 2, minH: 2 }),
-    Object.freeze({ id: "broadcast", label: "Broadcast", x: 10, y: 0, w: 2, h: 3, minW: 2, minH: 3 }),
-    Object.freeze({ id: "media-preview", label: "Preview Transport", x: 0, y: 4, w: 3, h: 4, minW: 3, minH: 3 }),
-    Object.freeze({ id: "lower-third", label: "Lower Third", x: 3, y: 4, w: 3, h: 7, minW: 3, minH: 6 }),
-    Object.freeze({ id: "channel-logo", label: "Channel Logo", x: 6, y: 4, w: 4, h: 7, minW: 3, minH: 6 }),
-    Object.freeze({ id: "schedule", label: "Palinsesto", x: 0, y: 18, w: 6, h: 4, minW: 4, minH: 3 })
+    Object.freeze({ id: "scenes", label: "Scenes", x: 0, y: 0, w: 6, h: 4, minW: 4, minH: 3, compactW: 2 }),
+    Object.freeze({ id: "sources", label: "Sources", x: 2, y: 0, w: 6, h: 6, minW: 4, minH: 4, compactW: 2 }),
+    Object.freeze({ id: "transition", label: "Transition", x: 4, y: 0, w: 2, h: 3, minW: 2, minH: 2, compactW: 1 }),
+    Object.freeze({ id: "take", label: "Take", x: 5, y: 0, w: 2, h: 3, minW: 2, minH: 2, compactW: 2 }),
+    Object.freeze({ id: "broadcast", label: "Broadcast", x: 7, y: 0, w: 2, h: 3, minW: 2, minH: 3, compactW: 1 }),
+    Object.freeze({ id: "media-preview", label: "Preview Transport", x: 8, y: 0, w: 3, h: 4, minW: 3, minH: 3, compactW: 1 }),
+    Object.freeze({ id: "lower-third", label: "Lower Third", x: 9, y: 0, w: 3, h: 7, minW: 3, minH: 6, compactW: 1 }),
+    Object.freeze({ id: "channel-logo", label: "Channel Logo", x: 10, y: 0, w: 4, h: 7, minW: 3, minH: 6, compactW: 1 }),
+    Object.freeze({ id: "technical-monitor", label: "Technical Monitor", x: 11, y: 0, w: 6, h: 7, minW: 4, minH: 5, compactW: 1 })
 ]);
 
 const MODULE_BY_ID = new Map(
@@ -142,6 +144,9 @@ export default class ControlDeskLayoutManager {
             element.classList.remove("is-collapsed");
         });
         this.modules.clear();
+        this.workspace.style.minHeight = "";
+        this.workspace.style.height = "";
+        this.workspace.style.removeProperty("--control-desk-compact-columns");
         this.started = false;
         this.workspace = null;
         this.editButton = null;
@@ -152,7 +157,7 @@ export default class ControlDeskLayoutManager {
         this.cancelOperation({ revert: false });
         this.removePersistedLayout();
         this.baseLayout = this.createDefaultLayout();
-        this.collapsedIds.clear();
+        this.collapsedIds = this.createDefaultCollapsedIds();
         this.applyLayout();
         this.onReset();
         return this.getLayout();
@@ -175,7 +180,7 @@ export default class ControlDeskLayoutManager {
         this.editButton?.setAttribute("aria-pressed", String(this.editMode));
         if (this.editButton) {
             this.editButton.textContent = this.editMode
-                ? "FINISH LAYOUT"
+                ? "FINE MODIFICA"
                 : "EDIT LAYOUT";
         }
 
@@ -184,11 +189,15 @@ export default class ControlDeskLayoutManager {
         }
 
         this.onEditModeChange(this.editMode);
+
+        if (this.started) {
+            this.applyLayout();
+        }
     }
 
     registerModules() {
         const elements = Array.from(
-            this.workspace.querySelectorAll("[data-control-module]")
+            this.workspace.querySelectorAll(":scope > [data-control-desk-module]")
         );
 
         if (elements.length !== MODULE_DEFINITIONS.length) {
@@ -196,7 +205,7 @@ export default class ControlDeskLayoutManager {
         }
 
         for (const element of elements) {
-            const id = element.dataset.controlModule;
+            const id = element.dataset.controlDeskModule;
 
             if (!MODULE_BY_ID.has(id) || this.modules.has(id)) {
                 return false;
@@ -538,10 +547,55 @@ export default class ControlDeskLayoutManager {
                 return;
             }
 
-            element.style.gridColumn = `${item.x + 1} / span ${item.w}`;
-            element.style.gridRow = `${item.y + 1} / span ${item.h}`;
+            if (this.editMode) {
+                element.style.gridColumn = `${item.x + 1} / span ${item.w}`;
+                element.style.gridRow = `${item.y + 1} / span ${item.h}`;
+            }
+            else {
+                element.style.gridColumn = "";
+                element.style.gridRow = "";
+            }
             this.renderModuleState(item.id);
         });
+        const compactColumns = this.getCompactColumnCount(
+            this.workspace.clientWidth
+        );
+        this.workspace.style.setProperty(
+            "--control-desk-compact-columns",
+            String(compactColumns)
+        );
+        if (this.editMode) {
+            const height = this.calculateWorkspaceHeight(this.activeLayout);
+            this.workspace.style.height = `${height}px`;
+            this.workspace.style.minHeight = `${height}px`;
+        }
+        else {
+            this.workspace.style.height = "";
+            this.workspace.style.minHeight = "";
+        }
+    }
+
+    calculateWorkspaceHeight(layout = this.activeLayout) {
+        const rows = Math.max(1, ...layout.map(({ y, h }) => y + h));
+        return rows * GRID_ROW_STEP - GRID_GAP;
+    }
+
+    calculateCompactWorkspaceHeight(columns, moduleCount = MODULE_DEFINITIONS.length) {
+        const rows = Math.max(1, Math.ceil(moduleCount / columns));
+        return rows * COMPACT_CARD_HEIGHT + (rows - 1) * COMPACT_GRID_GAP;
+    }
+
+    getCompactColumnCount(width) {
+        if (width >= 1320) return 9;
+        if (width >= 760) return 5;
+        if (width >= 480) return 3;
+        if (width >= 320) return 2;
+        return 1;
+    }
+
+    isCompactPresentation() {
+        return !this.editMode &&
+            this.collapsedIds.size === MODULE_DEFINITIONS.length;
     }
 
     renderModuleState(id) {
@@ -562,11 +616,14 @@ export default class ControlDeskLayoutManager {
         const scale = columns / BASE_COLUMNS;
         const requested = baseLayout.map((item) => {
             const definition = MODULE_BY_ID.get(item.id);
+            const collapsed = this.collapsedIds.has(item.id);
             const minWidth = Math.min(
                 columns,
                 Math.max(1, Math.ceil(definition.minW * scale))
             );
-            const width = columns === 1
+            const width = collapsed
+                ? Math.max(1, Math.round(definition.compactW * scale))
+                : columns === 1
                 ? 1
                 : this.clamp(Math.round(item.w * scale), minWidth, columns);
 
@@ -713,6 +770,7 @@ export default class ControlDeskLayoutManager {
             const value = this.storage?.getItem(STORAGE_KEY);
 
             if (!value) {
+                this.collapsedIds = this.createDefaultCollapsedIds();
                 return this.createDefaultLayout();
             }
 
@@ -775,9 +833,7 @@ export default class ControlDeskLayoutManager {
             return geometry;
         });
 
-        return known.size === MODULE_DEFINITIONS.length
-            ? merged
-            : this.normalizeBaseLayout(merged);
+        return merged;
     }
 
     parseCollapsedIds(value) {
@@ -830,6 +886,10 @@ export default class ControlDeskLayoutManager {
         return MODULE_DEFINITIONS.map((definition) =>
             this.createGeometry(definition)
         );
+    }
+
+    createDefaultCollapsedIds() {
+        return new Set(MODULE_DEFINITIONS.map(({ id }) => id));
     }
 
     createGeometry({ id, x, y, w, h }) {

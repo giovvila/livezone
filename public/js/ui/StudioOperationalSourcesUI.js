@@ -23,7 +23,7 @@ export default class StudioOperationalSourcesUI {
 
     render(sources) {
         if (!this.started) return;
-        const rows = sources.map((source) => {
+        const rows = sources.filter((source) => source.enabled !== false).map((source) => {
             const row = document.createElement("li");
             const header = document.createElement("div");
             const name = document.createElement("strong");

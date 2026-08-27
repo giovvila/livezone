@@ -1,16 +1,13 @@
 import { DEFAULT_TIMEZONE } from "../scheduler/ScheduleContract.js";
 
 export default class StudioScheduleSummaryUI {
-    constructor({ root, engine, store, catalog, setTimer = globalThis.setTimeout,
-        clearTimer = globalThis.clearTimeout } = {}) {
+    constructor({ root, engine, store, catalog, clockTicker } = {}) {
         this.root = root;
         this.engine = engine;
         this.store = store;
         this.catalog = catalog;
-        this.setTimer = (callback, delay) => setTimer(callback, delay);
-        this.clearTimer = (id) => clearTimer(id);
+        this.clockTicker = clockTicker;
         this.started = false;
-        this.timerId = null;
         this.handleToggle = this.handleToggle.bind(this);
         this.handleSchedule = this.handleSchedule.bind(this);
         this.render = this.render.bind(this);
@@ -31,7 +28,8 @@ export default class StudioScheduleSummaryUI {
         this.toggle.addEventListener("click", this.handleToggle);
         this.unsubscribeStore = this.store.subscribe(this.handleSchedule);
         this.unsubscribeEngine = this.engine.subscribe(this.render);
-        this.tick();
+        this.unsubscribeClock = this.clockTicker?.subscribe(this.tick);
+        if (!this.unsubscribeClock) this.tick(Date.now());
         return true;
     }
 
@@ -40,8 +38,7 @@ export default class StudioScheduleSummaryUI {
         this.toggle.removeEventListener("click", this.handleToggle);
         this.unsubscribeStore?.();
         this.unsubscribeEngine?.();
-        if (this.timerId !== null) this.clearTimer(this.timerId);
-        this.timerId = null;
+        this.unsubscribeClock?.();
         this.started = false;
     }
 
@@ -60,7 +57,7 @@ export default class StudioScheduleSummaryUI {
     render() {
         if (!this.started) return;
         const snapshot = this.engine.getSnapshot();
-        this.status.textContent = snapshot.status;
+        this.status.textContent = snapshot.enabled ? "ON" : "OFF";
         this.toggle.textContent = snapshot.enabled ? "SCHEDULER OFF" : "SCHEDULER ON";
         this.toggle.setAttribute("aria-pressed", String(snapshot.enabled));
         this.current.textContent = describe(snapshot.activeItem, this.catalog,
@@ -69,14 +66,14 @@ export default class StudioScheduleSummaryUI {
             this.schedule?.timezone || DEFAULT_TIMEZONE);
     }
 
-    tick() {
+    tick(timestamp = Date.now()) {
         if (!this.started) return;
         this.now.textContent = new Intl.DateTimeFormat("it-IT", {
             timeZone: this.schedule?.timezone || DEFAULT_TIMEZONE,
-            dateStyle: "short", timeStyle: "medium"
-        }).format(new Date());
+            hour: "2-digit", minute: "2-digit", second: "2-digit",
+            hourCycle: "h23"
+        }).format(new Date(timestamp));
         this.render();
-        this.timerId = this.setTimer(this.tick, 1000);
     }
 }
 
