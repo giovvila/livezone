@@ -74,6 +74,15 @@ let technicalLiveMonitorUI = null;
 let dominantLiveController = null;
 let dominantLiveUI = null;
 
+function destroyControlRoom() {
+    studioSourcesUI?.destroy();
+    studioSourcesUI = null;
+    studioUI?.destroy();
+    studioUI = null;
+}
+
+EventBus.on(Events.ENGINE_STOP, destroyControlRoom);
+
 runtime.start({
     startPlayer: false,
     async beforePlayerStart(config) {
@@ -128,14 +137,20 @@ runtime.start({
             transport: programOutputTransport
         });
         programOutputSetupUI.start();
-        studioCatalogManager.setRemovalGuard(({ sceneId }) =>
+        const scheduleStore = new ScheduleStore();
+        studioCatalogManager.setRemovalGuard(({ sourceId, sceneId }) =>
+            dominantLiveConfig.getSnapshot().authorizedSourceId === sourceId ||
             studioTransitionCoordinator.isBusy() ||
-            studioRenderer.isSceneInUse(sceneId)
+            Boolean(sceneId && (studioRenderer.isSceneInUse(sceneId) ||
+                scheduleStore.getSnapshot().schedule.items.some(
+                    (item) => item.sceneId === sceneId
+                )))
         );
 
         studioUI = new StudioUI(
             document.getElementById("studio-panel"),
-            studioTransitionCoordinator
+            studioTransitionCoordinator,
+            studioCatalogManager
         );
         studioUI.start();
 
@@ -150,7 +165,6 @@ runtime.start({
             programTransportProvider: () => studioRenderer.getProgramTransport(),
             runtimeState: new SchedulerRuntimeState()
         });
-        const scheduleStore = new ScheduleStore();
         const scheduleClock = new ScheduleClock();
         studioScheduleUI = new StudioScheduleSummaryUI({
             root: document,

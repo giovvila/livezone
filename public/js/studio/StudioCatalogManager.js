@@ -1,5 +1,5 @@
 const STORAGE_KEY = "livezone.studio.mediaCatalog.overlay.v1";
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 const MAX_NAME_LENGTH = 120;
 const MAX_ID_LENGTH = 120;
 const MAX_URL_LENGTH = 4096;
@@ -44,6 +44,12 @@ export default class StudioCatalogManager {
         this.definitions = new Map();
         this.operatorSourceIds = new Set();
         this.operatorSceneIds = new Set();
+        this.baseSourceIds = new Set();
+        this.baseSceneIds = new Set();
+        this.sourceOverrides = new Map();
+        this.sceneOverrides = new Map();
+        this.deletedBootstrapSourceIds = new Set();
+        this.deletedBootstrapSceneIds = new Set();
         this.listeners = new Set();
         this.removalGuard = null;
         this.initialized = false;
@@ -72,10 +78,20 @@ export default class StudioCatalogManager {
             }
         });
 
+        const overlay = this.loadOverlay();
+        issues.push(...overlay.issues);
+        this.sourceOverrides = new Map(overlay.sourceOverrides.map((item) => [item.id, item]));
+        this.sceneOverrides = new Map(overlay.sceneOverrides.map((item) => [item.id, item]));
+        this.deletedBootstrapSourceIds = new Set(overlay.deletedBootstrapSourceIds);
+        this.deletedBootstrapSceneIds = new Set(overlay.deletedBootstrapSceneIds);
+
         sources.forEach((source, index) => {
+            this.baseSourceIds.add(source?.id);
+            if (this.deletedBootstrapSourceIds.has(source?.id)) return;
             const record = this.createSourceRecord({
-                ...source,
-                name: source.name || sceneNamesBySource.get(source.id) || source.id
+                ...source, ...this.sourceOverrides.get(source?.id),
+                name: this.sourceOverrides.get(source?.id)?.name || source.name ||
+                    sceneNamesBySource.get(source.id) || source.id
             }, "base");
 
             if (!record || !this.registerSourceRecord(record)) {
@@ -87,7 +103,13 @@ export default class StudioCatalogManager {
         });
 
         scenes.forEach((scene, index) => {
-            const definition = this.createSceneDefinition(scene, "base");
+            this.baseSceneIds.add(scene?.id);
+            if (this.deletedBootstrapSceneIds.has(scene?.id)) return;
+            const override = this.sceneOverrides.get(scene?.id);
+            const definition = this.createSceneDefinition({
+                ...scene, ...override,
+                renderer: override?.renderer || scene.renderer
+            }, "base");
 
             const missingSource = definition?.renderer?.kind === "source" &&
                 !this.sources.has(definition.renderer.sourceId);
@@ -100,27 +122,23 @@ export default class StudioCatalogManager {
             registeredSceneCount += 1;
         });
 
-        const overlay = this.loadOverlay();
-        issues.push(...overlay.issues);
-
-        overlay.pairs.forEach(({ source, scene }, index) => {
-            if (this.sources.has(source.id) || this.definitions.has(scene.id) ||
-                !this.registerSourceRecord(source)) {
+        overlay.sources.forEach((source, index) => {
+            if (this.sources.has(source.id) || !this.registerSourceRecord(source)) {
                 issues.push({ reason: "overlay-registration-rejected", index });
                 return;
             }
-
-            if (source.enabled !== false && !this.registerSceneDefinition(scene)) {
-                this.studioSourceManager.unregisterSource(source.id);
-                this.sources.delete(source.id);
+            this.operatorSourceIds.add(source.id);
+            overlaySourceCount += 1;
+        });
+        overlay.scenes.forEach((scene, index) => {
+            const source = this.sources.get(scene.renderer.sourceId);
+            if (!source || this.definitions.has(scene.id) ||
+                source.enabled !== false && !this.registerSceneDefinition(scene)) {
                 issues.push({ reason: "overlay-registration-rejected", index });
                 return;
             }
             if (source.enabled === false) this.definitions.set(scene.id, scene);
-
-            this.operatorSourceIds.add(source.id);
             this.operatorSceneIds.add(scene.id);
-            overlaySourceCount += 1;
             overlaySceneCount += 1;
         });
 
@@ -158,7 +176,7 @@ export default class StudioCatalogManager {
 
     getSources() {
         return Object.freeze(Array.from(this.sources.values())
-            .filter((source) => ["media", "audio", "hls"].includes(source.kind))
+            .filter((source) => ["media", "audio", "hls", "image"].includes(source.kind))
             .map((source) => {
                 const scenes = Array.from(this.definitions.values()).filter(
                     (definition) => definition.renderer.kind === "source" &&
@@ -168,6 +186,7 @@ export default class StudioCatalogManager {
                     id: source.id,
                     name: source.name,
                     kind: source.kind,
+                    category: this.getSourceCategory(source.kind),
                     url: source.url || this.studioSourceManager.getSource(source.id)?.url || null,
                     assetId: source.assetId || null,
                     audioAssetId: source.audioAssetId || null,
@@ -177,7 +196,7 @@ export default class StudioCatalogManager {
                     configRef: source.configRef || null,
                     origin: source.origin,
                     enabled: source.enabled !== false,
-                    removable: source.origin === "operator",
+                    removable: true,
                     sceneIds: Object.freeze(scenes.map((scene) => scene.id))
                 });
             }));
@@ -347,11 +366,153 @@ export default class StudioCatalogManager {
         return this.addOperatorPair(source, scene);
     }
 
+    addSource({ kind, name, url, stillUrl } = {}) {
+        const normalizedKind = this.normalizeString(kind, 20)?.toLowerCase();
+        const runtimeKind = ({ live: "hls", video: "media", audio: "audio", image: "image" })[normalizedKind];
+        if (!runtimeKind) return this.failure("invalid-kind");
+        if (!this.initialized || this.mutating) return this.failure("catalog-unavailable");
+        const normalizedName = this.normalizeString(name, MAX_NAME_LENGTH);
+        const canonicalUrl = this.createHttpUrl(url, this.baseUrl);
+        const canonicalStillUrl = runtimeKind === "audio" &&
+            this.normalizeString(stillUrl, MAX_URL_LENGTH)
+            ? this.createHttpUrl(stillUrl, this.baseUrl)
+            : null;
+        const uuid = this.createUuid();
+        if (!normalizedName) return this.failure("invalid-name");
+        if (!canonicalUrl) return this.failure("invalid-url");
+        if (runtimeKind === "audio" &&
+            this.normalizeString(stillUrl, MAX_URL_LENGTH) && !canonicalStillUrl) {
+            return this.failure("invalid-still-url");
+        }
+        if (!uuid) return this.failure("id-generation-failed");
+        const source = this.createSourceRecord({
+            id: `${normalizedKind}-${uuid}`, name: normalizedName, kind: runtimeKind,
+            ...(runtimeKind === "audio"
+                ? { audioUrl: canonicalUrl, ...(canonicalStillUrl ? { stillUrl: canonicalStillUrl } : {}) }
+                : { url: canonicalUrl }),
+            ...(runtimeKind === "hls" ? { enabled: true } : {})
+        }, "operator");
+        if (!source || !this.registerSourceRecord(source)) return this.failure("source-registration-rejected");
+        this.operatorSourceIds.add(source.id);
+        if (!this.persistOverlay()) {
+            this.operatorSourceIds.delete(source.id);
+            this.sources.delete(source.id);
+            this.studioSourceManager.unregisterSource(source.id);
+            return this.failure("persistence-failed");
+        }
+        this.notify();
+        return Object.freeze({ ok: true, source });
+    }
+
+    addUrlAudio({ name, url } = {}) {
+        return this.addUrlSourcePair({ name, url, kind: "audio", prefix: "audio", type: "AUDIO" });
+    }
+
+    addImage({ name, url } = {}) {
+        return this.addUrlSourcePair({ name, url, kind: "image", prefix: "image", type: "IMAGE" });
+    }
+
+    addUrlSourcePair({ name, url, kind, prefix, type }) {
+        if (!this.initialized || this.mutating) return this.failure("catalog-unavailable");
+        const normalizedName = this.normalizeString(name, MAX_NAME_LENGTH);
+        const canonicalUrl = this.createHttpUrl(url, this.baseUrl);
+        const uuid = this.createUuid();
+        if (!normalizedName) return this.failure("invalid-name");
+        if (!canonicalUrl) return this.failure("invalid-url");
+        if (!uuid) return this.failure("id-generation-failed");
+        const source = this.createSourceRecord({
+            id: `${prefix}-${uuid}`, name: normalizedName, kind,
+            ...(kind === "audio" ? { audioUrl: canonicalUrl } : { url: canonicalUrl })
+        }, "operator");
+        const scene = this.createSceneDefinition({
+            id: `${prefix}-scene-${uuid}`, name: normalizedName, type,
+            renderer: { kind: "source", sourceId: source?.id }
+        }, "operator");
+        return this.addOperatorPair(source, scene);
+    }
+
+    createSceneForSource(sourceId, { name } = {}) {
+        if (!this.initialized || this.mutating) return this.failure("catalog-unavailable");
+        const id = this.normalizeString(sourceId, MAX_ID_LENGTH);
+        const source = id ? this.sources.get(id) : null;
+        const sceneName = this.normalizeString(name, MAX_NAME_LENGTH) || source?.name;
+        const uuid = this.createUuid();
+        if (!source) return this.failure("source-not-found");
+        if (!sceneName) return this.failure("invalid-name");
+        if (!uuid) return this.failure("id-generation-failed");
+        const category = this.getSourceCategory(source.kind);
+        const prefix = source.kind === "hls" ? "live" : source.kind === "media" ? "media" : source.kind;
+        const scene = this.createSceneDefinition({
+            id: `${prefix}-scene-${uuid}`,
+            name: sceneName,
+            type: category.toUpperCase(),
+            renderer: { kind: "source", sourceId: id }
+        }, "operator");
+        if (!scene || !this.registerSceneDefinition(scene)) return this.failure("scene-registration-rejected");
+        this.operatorSceneIds.add(scene.id);
+        if (!this.persistOverlay()) {
+            this.operatorSceneIds.delete(scene.id);
+            this.definitions.delete(scene.id);
+            this.studioStateManager.unregisterScene(scene.id);
+            return this.failure("persistence-failed");
+        }
+        this.notify();
+        return Object.freeze({ ok: true, source, scene });
+    }
+
+    updateSource(sourceId, { name, url, stillUrl, enabled } = {}) {
+        const id = this.normalizeString(sourceId, MAX_ID_LENGTH);
+        const current = id ? this.sources.get(id) : null;
+        if (!current) return this.failure("source-not-editable");
+        const linkedScene = Array.from(this.definitions.values()).find(
+            (scene) => scene.renderer.kind === "source" && scene.renderer.sourceId === id
+        );
+        if (current.kind === "hls" && linkedScene) {
+            return this.updateLiveSource(id, { name, url, enabled: enabled !== false });
+        }
+        if (this.studioSourceManager.getActiveInstances().some((item) => item.sourceId === id)) {
+            return this.failure("source-has-active-instances");
+        }
+        const normalizedName = this.normalizeString(name, MAX_NAME_LENGTH);
+        const canonicalUrl = this.createHttpUrl(url, this.baseUrl);
+        const normalizedStillUrl = this.normalizeString(stillUrl, MAX_URL_LENGTH);
+        const canonicalStillUrl = current.kind === "audio" && normalizedStillUrl
+            ? this.createHttpUrl(normalizedStillUrl, this.baseUrl)
+            : null;
+        if (!normalizedName) return this.failure("invalid-name");
+        if (!canonicalUrl) return this.failure("invalid-url");
+        if (current.kind === "audio" && normalizedStillUrl && !canonicalStillUrl) {
+            return this.failure("invalid-still-url");
+        }
+        const candidate = current.kind === "audio"
+            ? { id, name: normalizedName, kind: "audio", audioUrl: canonicalUrl,
+                ...(canonicalStillUrl ? { stillUrl: canonicalStillUrl } : {}) }
+            : current.kind === "hls"
+            ? { id, name: normalizedName, kind: "hls", url: canonicalUrl, enabled: enabled !== false }
+            : { id, name: normalizedName, kind: current.kind, url: canonicalUrl };
+        const next = this.createSourceRecord(candidate, current.origin);
+        if (!next || !this.studioSourceManager.replaceSource(next)) return this.failure("source-update-rejected");
+        const previousOverride = this.sourceOverrides.get(id);
+        this.sources.set(id, next);
+        if (this.baseSourceIds.has(id)) this.sourceOverrides.set(id, next);
+        if (!this.persistOverlay()) {
+            this.studioSourceManager.replaceSource(current);
+            this.sources.set(id, current);
+            if (this.baseSourceIds.has(id)) {
+                if (previousOverride) this.sourceOverrides.set(id, previousOverride);
+                else this.sourceOverrides.delete(id);
+            }
+            return this.failure("persistence-failed");
+        }
+        this.notify();
+        return Object.freeze({ ok: true, source: next });
+    }
+
     updateLiveSource(sourceId, { name, url, enabled } = {}) {
         if (!this.initialized || this.mutating) return this.failure("catalog-unavailable");
         const id = this.normalizeString(sourceId, MAX_ID_LENGTH);
         const current = id ? this.sources.get(id) : null;
-        if (!current || current.kind !== "hls" || !this.operatorSourceIds.has(id)) {
+        if (!current || current.kind !== "hls") {
             return this.failure("source-not-editable");
         }
         const normalizedName = this.normalizeString(name, MAX_NAME_LENGTH);
@@ -360,32 +521,40 @@ export default class StudioCatalogManager {
         if (!canonicalUrl) return this.failure("invalid-url");
         const scene = Array.from(this.definitions.values()).find(
             (item) => item.renderer.kind === "source" && item.renderer.sourceId === id);
-        if (!scene) return this.failure("scene-not-found");
         if (enabled !== true && current.enabled !== false &&
-            ([this.studioStateManager.getPreviewSceneId(),
+            (scene && [this.studioStateManager.getPreviewSceneId(),
                 this.studioStateManager.getProgramSceneId()].includes(scene.id) ||
                 this.studioSourceManager.getActiveInstances().some(
                     (instance) => instance.sourceId === id))) {
             return this.failure("source-in-use");
         }
         const next = this.createSourceRecord({ id, name: normalizedName, kind: "hls",
-            url: canonicalUrl, enabled: enabled === true }, "operator");
-        const nextScene = this.createSceneDefinition({ ...scene, name: normalizedName }, "operator");
+            url: canonicalUrl, enabled: enabled === true }, current.origin);
+        const nextScene = scene;
         this.mutating = true;
         try {
+            const previousOverride = this.sourceOverrides.get(id);
             if (!this.studioSourceManager.replaceSource?.(next)) {
                 return this.failure("source-update-rejected");
             }
             const wasEnabled = current.enabled !== false;
-            if (wasEnabled && !next.enabled) {
+            if (scene && wasEnabled && !next.enabled) {
                 this.studioStateManager.unregisterScene(scene.id);
             }
-            if (!wasEnabled && next.enabled) this.studioStateManager.registerScene(nextScene);
+            if (scene && !wasEnabled && next.enabled) {
+                this.studioStateManager.registerScene(nextScene);
+            }
             this.sources.set(id, next);
-            this.definitions.set(scene.id, nextScene);
+            if (this.baseSourceIds.has(id)) this.sourceOverrides.set(id, next);
+            if (scene) this.definitions.set(scene.id, nextScene);
             if (!this.persistOverlay()) {
                 this.studioSourceManager.replaceSource(current);
-                this.sources.set(id, current); this.definitions.set(scene.id, scene);
+                this.sources.set(id, current);
+                if (this.baseSourceIds.has(id)) {
+                    if (previousOverride) this.sourceOverrides.set(id, previousOverride);
+                    else this.sourceOverrides.delete(id);
+                }
+                if (scene) this.definitions.set(scene.id, scene);
                 return this.failure("persistence-failed");
             }
             this.notify();
@@ -435,6 +604,74 @@ export default class StudioCatalogManager {
         return this.removeSource(sourceId);
     }
 
+    updateScene(sceneId, { name, sourceId } = {}) {
+        if (!this.initialized || this.mutating) return this.failure("catalog-unavailable");
+        const id = this.normalizeString(sceneId, MAX_ID_LENGTH);
+        const current = id ? this.definitions.get(id) : null;
+        if (!current) return this.failure("scene-not-found");
+        if ([this.studioStateManager.getPreviewSceneId(),
+            this.studioStateManager.getProgramSceneId()].includes(id)) {
+            return this.failure("scene-in-use");
+        }
+        const normalizedName = this.normalizeString(name, MAX_NAME_LENGTH);
+        const selectedSourceId = this.normalizeString(sourceId, MAX_ID_LENGTH);
+        const source = selectedSourceId ? this.sources.get(selectedSourceId) : null;
+        if (!normalizedName) return this.failure("invalid-name");
+        if (!source) return this.failure("source-not-found");
+        const next = this.createSceneDefinition({ id, name: normalizedName,
+            type: this.getSourceCategory(source.kind).toUpperCase(),
+            renderer: { kind: "source", sourceId: source.id } }, current.origin);
+        if (!next || !this.studioStateManager.replaceScene?.(next)) {
+            return this.failure("scene-update-rejected");
+        }
+        const previousOverride = this.sceneOverrides.get(id);
+        this.definitions.set(id, next);
+        if (this.baseSceneIds.has(id)) this.sceneOverrides.set(id, next);
+        if (!this.persistOverlay()) {
+            this.definitions.set(id, current);
+            this.studioStateManager.replaceScene(current);
+            if (this.baseSceneIds.has(id)) {
+                if (previousOverride) this.sceneOverrides.set(id, previousOverride);
+                else this.sceneOverrides.delete(id);
+            }
+            return this.failure("persistence-failed");
+        }
+        this.notify();
+        return Object.freeze({ ok: true, scene: next });
+    }
+
+    removeScene(sceneId) {
+        if (!this.initialized || this.mutating) return this.failure("catalog-unavailable");
+        const id = this.normalizeString(sceneId, MAX_ID_LENGTH);
+        const scene = id ? this.definitions.get(id) : null;
+        if (!scene) return this.failure("scene-not-found");
+        if (id === this.studioStateManager.getPreviewSceneId()) return this.failure("scene-in-preview");
+        if (id === this.studioStateManager.getProgramSceneId()) return this.failure("scene-in-program");
+        if (this.removalGuard?.({ sourceId: null, sceneId: id })) {
+            return this.failure("scene-authorized");
+        }
+        const previousOverlay = this.serializeOverlay();
+        const previousOverride = this.sceneOverrides.get(id);
+        if (!this.studioStateManager.unregisterScene(id)) return this.failure("scene-unregister-rejected");
+        this.definitions.delete(id);
+        this.operatorSceneIds.delete(id);
+        if (this.baseSceneIds.has(id)) {
+            this.sceneOverrides.delete(id);
+            this.deletedBootstrapSceneIds.add(id);
+        }
+        if (!this.persistOverlay()) {
+            this.definitions.set(id, scene);
+            this.studioStateManager.registerScene(scene);
+            if (scene.origin === "operator") this.operatorSceneIds.add(id);
+            this.deletedBootstrapSceneIds.delete(id);
+            if (previousOverride) this.sceneOverrides.set(id, previousOverride);
+            this.writeOverlay(previousOverlay);
+            return this.failure("persistence-failed");
+        }
+        this.notify();
+        return Object.freeze({ ok: true, scene });
+    }
+
     removeSource(sourceId) {
         if (!this.initialized || this.mutating) {
             return this.failure("catalog-unavailable");
@@ -446,29 +683,24 @@ export default class StudioCatalogManager {
         if (!source) {
             return this.failure("source-not-found");
         }
-        if (!this.operatorSourceIds.has(id)) {
-            return this.failure("base-source-protected");
-        }
-        if (source.kind === "hls" && source.enabled !== false) {
-            return this.failure("live-source-must-be-disabled");
-        }
-
         const references = Array.from(this.definitions.values()).filter(
             (definition) => definition.renderer.kind === "source" &&
                 definition.renderer.sourceId === id
         );
-        if (references.length !== 1 ||
-            !this.operatorSceneIds.has(references[0].id)) {
+        if (references.some(({ id: sceneId }) =>
+            sceneId === this.studioStateManager.getPreviewSceneId())) {
+            return this.failure("source-in-preview");
+        }
+        if (references.some(({ id: sceneId }) =>
+            sceneId === this.studioStateManager.getProgramSceneId())) {
+            return this.failure("source-in-program");
+        }
+        if (references.length > 0) {
             return this.failure("source-still-referenced");
         }
 
-        const scene = references[0];
-        if (scene.id === this.studioStateManager.getPreviewSceneId() ||
-            scene.id === this.studioStateManager.getProgramSceneId()) {
-            return this.failure("scene-on-air");
-        }
-        if (this.removalGuard?.({ sourceId: id, sceneId: scene.id })) {
-            return this.failure("scene-in-transition");
+        if (this.removalGuard?.({ sourceId: id, sceneId: null })) {
+            return this.failure("source-authorized");
         }
         if (this.studioSourceManager.getActiveInstances().some(
             (instance) => instance.sourceId === id
@@ -479,31 +711,34 @@ export default class StudioCatalogManager {
         this.mutating = true;
         try {
             const previousOverlay = this.serializeOverlay();
-            const runtimeScene = this.studioStateManager.getScene(scene.id);
-            const unregisteredScene = runtimeScene
-                ? this.studioStateManager.unregisterScene(scene.id) : true;
-            if (!unregisteredScene) {
-                return this.failure("scene-unregister-rejected");
-            }
-
-            this.definitions.delete(scene.id);
-            this.operatorSceneIds.delete(scene.id);
+            const previousOverride = this.sourceOverrides.get(id);
             this.sources.delete(id);
             this.operatorSourceIds.delete(id);
+            if (this.baseSourceIds.has(id)) {
+                this.sourceOverrides.delete(id);
+                this.deletedBootstrapSourceIds.add(id);
+            }
 
             if (!this.studioSourceManager.unregisterSource(id)) {
-                this.restoreRuntimePair(source, scene);
+                this.sources.set(id, source);
+                if (source.origin === "operator") this.operatorSourceIds.add(id);
+                this.deletedBootstrapSourceIds.delete(id);
+                if (previousOverride) this.sourceOverrides.set(id, previousOverride);
                 return this.failure("source-unregister-rejected");
             }
 
             if (!this.persistOverlay()) {
-                this.restoreRuntimePair(source, scene);
+                this.studioSourceManager.registerSource(source);
+                this.sources.set(id, source);
+                if (source.origin === "operator") this.operatorSourceIds.add(id);
+                this.deletedBootstrapSourceIds.delete(id);
+                if (previousOverride) this.sourceOverrides.set(id, previousOverride);
                 this.writeOverlay(previousOverlay);
                 return this.failure("persistence-failed");
             }
 
             this.notify();
-            return Object.freeze({ ok: true, source, scene });
+            return Object.freeze({ ok: true, source });
         }
         finally {
             this.mutating = false;
@@ -557,11 +792,11 @@ export default class StudioCatalogManager {
             value = this.storage?.getItem(STORAGE_KEY);
         }
         catch {
-            return { pairs: [], issues: [{ reason: "overlay-read-failed" }] };
+            return this.emptyOverlay([{ reason: "overlay-read-failed" }]);
         }
 
         if (!value) {
-            return { pairs: [], issues: [] };
+            return this.emptyOverlay();
         }
 
         let parsed;
@@ -569,15 +804,17 @@ export default class StudioCatalogManager {
             parsed = JSON.parse(value);
         }
         catch {
-            return { pairs: [], issues: [{ reason: "overlay-invalid-json" }] };
+            return this.emptyOverlay([{ reason: "overlay-invalid-json" }]);
         }
 
-        if (!this.hasExactKeys(parsed, ["version", "sources", "scenes"]) ||
-            parsed.version !== SCHEMA_VERSION ||
+        const v1 = this.hasExactKeys(parsed, ["version", "sources", "scenes"]) && parsed.version === 1;
+        const v2 = this.hasExactKeys(parsed, ["version", "sources", "scenes", "sourceOverrides",
+            "sceneOverrides", "deletedBootstrapSourceIds", "deletedBootstrapSceneIds"]) &&
+            parsed.version === SCHEMA_VERSION;
+        if ((!v1 && !v2) ||
             !Array.isArray(parsed.sources) || !Array.isArray(parsed.scenes) ||
-            parsed.sources.length !== parsed.scenes.length ||
             parsed.sources.length > 500) {
-            return { pairs: [], issues: [{ reason: "overlay-invalid-schema" }] };
+            return this.emptyOverlay([{ reason: "overlay-invalid-schema" }]);
         }
 
         const sources = parsed.sources.map((item) =>
@@ -587,35 +824,47 @@ export default class StudioCatalogManager {
             this.createOverlayScene(item)
         );
         if (sources.some((item) => !item) || scenes.some((item) => !item)) {
-            return { pairs: [], issues: [{ reason: "overlay-invalid-record" }] };
+            return this.emptyOverlay([{ reason: "overlay-invalid-record" }]);
         }
 
         const sourceById = new Map();
         for (const source of sources) {
             if (sourceById.has(source.id)) {
-                return { pairs: [], issues: [{ reason: "overlay-duplicate-id" }] };
+                return this.emptyOverlay([{ reason: "overlay-duplicate-id" }]);
             }
             sourceById.set(source.id, source);
         }
 
         const sceneIds = new Set();
-        const referencedSourceIds = new Set();
-        const pairs = [];
         for (const scene of scenes) {
-            const source = sourceById.get(scene.renderer.sourceId);
-            if (!source || sceneIds.has(scene.id) ||
-                referencedSourceIds.has(source.id)) {
-                return { pairs: [], issues: [{ reason: "overlay-invalid-reference" }] };
+            if (sceneIds.has(scene.id)) {
+                return this.emptyOverlay([{ reason: "overlay-invalid-reference" }]);
             }
             sceneIds.add(scene.id);
-            referencedSourceIds.add(source.id);
-            pairs.push({ source, scene });
         }
+        const sourceOverrides = v2 ? parsed.sourceOverrides.map((item) =>
+            this.createSourceRecord(item, "base")) : [];
+        const sceneOverrides = v2 ? parsed.sceneOverrides.map((item) =>
+            this.createSceneDefinition(item, "base")) : [];
+        const deletedBootstrapSourceIds = v2 ? parsed.deletedBootstrapSourceIds : [];
+        const deletedBootstrapSceneIds = v2 ? parsed.deletedBootstrapSceneIds : [];
+        if (sourceOverrides.some((item) => !item) || sceneOverrides.some((item) => !item) ||
+            !this.validIdList(deletedBootstrapSourceIds) || !this.validIdList(deletedBootstrapSceneIds)) {
+            return this.emptyOverlay([{ reason: "overlay-invalid-record" }]);
+        }
+        return { sources, scenes, sourceOverrides, sceneOverrides,
+            deletedBootstrapSourceIds, deletedBootstrapSceneIds, issues: [] };
+    }
 
-        if (referencedSourceIds.size !== sourceById.size) {
-            return { pairs: [], issues: [{ reason: "overlay-orphan-source" }] };
-        }
-        return { pairs, issues: [] };
+    emptyOverlay(issues = []) {
+        return { sources: [], scenes: [], sourceOverrides: [], sceneOverrides: [],
+            deletedBootstrapSourceIds: [], deletedBootstrapSceneIds: [], issues };
+    }
+
+    validIdList(value) {
+        return Array.isArray(value) && value.length <= 500 &&
+            value.every((id, index) => this.normalizeString(id, MAX_ID_LENGTH) === id &&
+                value.indexOf(id) === index);
     }
 
     createOverlaySource(candidate) {
@@ -631,16 +880,33 @@ export default class StudioCatalogManager {
             candidate,
             ["id", "name", "kind", "audioAssetId", "stillAssetId"]
         );
+        const audioUrl = this.hasExactKeys(
+            candidate,
+            ["id", "name", "kind", "audioUrl"]
+        );
+        const audioUrlWithStill = this.hasExactKeys(
+            candidate,
+            ["id", "name", "kind", "audioUrl", "stillUrl"]
+        );
+        const image = this.hasExactKeys(
+            candidate,
+            ["id", "name", "kind", "url"]
+        );
         if (candidate.kind === "media") {
             if ((!directUrl && !assetBacked) ||
-                !this.isGeneratedSourceId(candidate.id, "media")) {
+                !this.isGeneratedSourceId(candidate.id, "media") &&
+                !this.isGeneratedSourceId(candidate.id, "video")) {
                 return null;
             }
         }
         else if (candidate.kind === "audio") {
-            if (!audio || !this.isGeneratedSourceId(candidate.id, "audio")) {
+            if ((!audio && !audioUrl && !audioUrlWithStill) ||
+                !this.isGeneratedSourceId(candidate.id, "audio")) {
                 return null;
             }
+        }
+        else if (candidate.kind === "image") {
+            if (!image || !this.isGeneratedSourceId(candidate.id, "image")) return null;
         }
         else if (candidate.kind === "hls") {
             const live = this.hasExactKeys(candidate,
@@ -656,17 +922,12 @@ export default class StudioCatalogManager {
 
     createOverlayScene(candidate) {
         if (!this.hasExactKeys(candidate, ["id", "name", "type", "renderer"]) ||
-            !["MEDIA", "AUDIO", "LIVE"].includes(candidate.type) ||
-            !this.isGeneratedSceneId(
-                candidate.id,
-                candidate.type === "AUDIO" ? "audio" : candidate.type === "LIVE" ? "live" : "media"
-            ) ||
+            !["MEDIA", "AUDIO", "LIVE", "IMAGE"].includes(candidate.type) ||
+            !["media", "live", "audio", "image"].some((kind) =>
+                this.isGeneratedSceneId(candidate.id, kind)) ||
             !this.hasExactKeys(candidate.renderer, ["kind", "sourceId"]) ||
             candidate.renderer.kind !== "source" ||
-            !this.isGeneratedSourceId(
-                candidate.renderer.sourceId,
-                candidate.type === "AUDIO" ? "audio" : candidate.type === "LIVE" ? "live" : "media"
-            )) {
+            !this.normalizeString(candidate.renderer.sourceId, MAX_ID_LENGTH)) {
             return null;
         }
         return this.createSceneDefinition(candidate, "operator");
@@ -718,24 +979,31 @@ export default class StudioCatalogManager {
                 : null;
             const audioUrl = audioAsset
                 ? this.createHttpUrl(audioAsset.url)
-                : null;
+                : this.createHttpUrl(candidate.audioUrl);
             const stillUrl = stillAsset
                 ? this.createHttpUrl(stillAsset.url)
-                : null;
-            if (!audioAsset || audioAsset.kind !== "audio" || !audioUrl ||
-                !stillAsset || stillAsset.kind !== "still" || !stillUrl) {
+                : this.createHttpUrl(candidate.stillUrl);
+            if (audioAssetId && (!audioAsset || audioAsset.kind !== "audio")) {
+                return null;
+            }
+            if (!audioUrl || candidate.stillUrl && !stillUrl || stillAssetId &&
+                (!stillAsset || stillAsset.kind !== "still" || !stillUrl)) {
                 return null;
             }
             return Object.freeze({
                 id,
                 name,
                 kind,
-                audioAssetId,
-                stillAssetId,
                 audioUrl,
-                stillUrl,
+                ...(audioAssetId ? { audioAssetId } : {}),
+                ...(stillAssetId ? { stillAssetId, stillUrl } :
+                    stillUrl ? { stillUrl } : {}),
                 origin
             });
+        }
+        if (kind === "image") {
+            const url = this.createHttpUrl(candidate.url);
+            return url ? Object.freeze({ id, name, kind, url, origin }) : null;
         }
         if (kind === "hls") {
             const configRef = this.normalizeString(candidate.configRef, 200);
@@ -781,7 +1049,7 @@ export default class StudioCatalogManager {
         else if (rendererKind === "slate") {
             const title = this.normalizeString(candidate.renderer.title, 200);
             const message = this.normalizeString(candidate.renderer.message, 500);
-            const logo = this.createHttpUrl(candidate.renderer.logo);
+            const logo = this.createHttpUrl(candidate.renderer.logo, this.baseUrl);
             if (!title || !message || !logo) {
                 return null;
             }
@@ -811,7 +1079,10 @@ export default class StudioCatalogManager {
                 stillAssetId
             } = source;
             if (kind === "audio") {
-                return { id: sourceId, name, kind, audioAssetId, stillAssetId };
+                return audioAssetId
+                    ? { id: sourceId, name, kind, audioAssetId, stillAssetId }
+                    : { id: sourceId, name, kind, audioUrl: source.audioUrl,
+                        ...(source.stillUrl ? { stillUrl: source.stillUrl } : {}) };
             }
             if (kind === "hls") {
                 return { id: sourceId, name, kind, url, enabled: source.enabled !== false };
@@ -829,7 +1100,25 @@ export default class StudioCatalogManager {
                 renderer: { ...scene.renderer }
             };
         });
-        return JSON.stringify({ version: SCHEMA_VERSION, sources, scenes });
+        const sourceOverrides = Array.from(this.sourceOverrides.values(), (source) =>
+            this.serializeSource(source));
+        const sceneOverrides = Array.from(this.sceneOverrides.values(), (scene) => ({
+            id: scene.id, name: scene.name, type: scene.type, renderer: { ...scene.renderer }
+        }));
+        return JSON.stringify({ version: SCHEMA_VERSION, sources, scenes,
+            sourceOverrides, sceneOverrides,
+            deletedBootstrapSourceIds: Array.from(this.deletedBootstrapSourceIds),
+            deletedBootstrapSceneIds: Array.from(this.deletedBootstrapSceneIds) });
+    }
+
+    serializeSource(source) {
+        if (source.kind === "audio") return { id: source.id, name: source.name,
+            kind: source.kind, audioUrl: source.audioUrl,
+            ...(source.stillUrl ? { stillUrl: source.stillUrl } : {}) };
+        if (source.kind === "hls") return { id: source.id, name: source.name,
+            kind: source.kind, ...(source.configRef ? { configRef: source.configRef } : { url: source.url }),
+            enabled: source.enabled !== false };
+        return { id: source.id, name: source.name, kind: source.kind, url: source.url };
     }
 
     writeOverlay(value) {
@@ -854,13 +1143,17 @@ export default class StudioCatalogManager {
         if (!this.initialized || this.mutating || event?.key !== STORAGE_KEY) return;
         const overlay = this.loadOverlay();
         if (overlay.issues.length) return;
-        const incoming = new Map(overlay.pairs.map((pair) => [pair.source.id, pair]));
+        const incomingPairs = overlay.sources.map((source) => ({
+            source,
+            scene: overlay.scenes.find((scene) => scene.renderer.sourceId === source.id)
+        })).filter((pair) => pair.scene);
+        const incoming = new Map(incomingPairs.map((pair) => [pair.source.id, pair]));
         const currentLiveIds = Array.from(this.operatorSourceIds).filter(
             (id) => this.sources.get(id)?.kind === "hls");
         currentLiveIds.forEach((id) => {
             if (!incoming.has(id)) this.removeRuntimePairFromExternal(id);
         });
-        overlay.pairs.filter(({ source }) => source.kind === "hls").forEach(({ source, scene }) => {
+        incomingPairs.filter(({ source }) => source.kind === "hls").forEach(({ source, scene }) => {
             const current = this.sources.get(source.id);
             if (!current) {
                 if (this.registerSourceRecord(source)) {
@@ -1010,5 +1303,9 @@ export default class StudioCatalogManager {
         catch {
             return null;
         }
+    }
+
+    getSourceCategory(kind) {
+        return ({ hls: "live", media: "video", audio: "audio", image: "image" })[kind] || kind;
     }
 }

@@ -30,7 +30,8 @@ export default class StudioAudioSurface {
         this.destroyed = false;
         this.metadataReady = false;
         this.audioReady = false;
-        this.imageReady = false;
+        this.imageReady = !stillUrl;
+        this.artworkFailed = false;
         this.transportError = false;
         this.transportEnded = false;
         this.readinessState = "pending";
@@ -55,16 +56,18 @@ export default class StudioAudioSurface {
 
     async start(root) {
         this.root = root;
-        this.image = document.createElement("img");
+        this.image = this.stillUrl ? document.createElement("img") : null;
         this.audio = document.createElement("audio");
         this.audioSource = document.createElement("source");
-        this.image.className = "studio-render-audio-still";
-        this.image.alt = "";
-        this.image.hidden = true;
+        if (this.image) {
+            this.image.className = "studio-render-audio-still";
+            this.image.alt = "";
+            this.image.hidden = true;
+        }
         this.audio.preload = "auto";
         this.audio.autoplay = this.initialPlayback === "playing";
-        this.image.addEventListener("load", this.handleImageLoad);
-        this.image.addEventListener("error", this.handleImageError);
+        this.image?.addEventListener("load", this.handleImageLoad);
+        this.image?.addEventListener("error", this.handleImageError);
         this.audio.addEventListener("loadedmetadata", this.handleLoadedMetadata);
         this.audio.addEventListener("loadeddata", this.handleAudioReady);
         this.audio.addEventListener("canplay", this.handleAudioReady);
@@ -83,10 +86,14 @@ export default class StudioAudioSurface {
             this.audioSource.type = audioType;
         }
         this.audio.appendChild(this.audioSource);
-        root.replaceChildren(this.image, this.audio);
+        const placeholder = document.createElement("div");
+        placeholder.className = "studio-render-audio-placeholder";
+        placeholder.textContent = "AUDIO";
+        this.placeholder = placeholder;
+        root.replaceChildren(placeholder, ...(this.image ? [this.image] : []), this.audio);
         this.showStatus("Loading audio…", "loading");
         this.setHealth("connecting", null);
-        this.image.src = this.stillUrl;
+        if (this.image) this.image.src = this.stillUrl;
         this.audio.load();
         this.notifyTransport();
         this.checkCurrentReadiness();
@@ -101,15 +108,16 @@ export default class StudioAudioSurface {
     handleImageLoad() {
         this.imageReady = true;
         this.image.hidden = false;
+        this.placeholder.hidden = true;
         this.checkCurrentReadiness();
     }
 
     handleImageError() {
-        this.transportError = true;
-        this.showStatus("Audio artwork unavailable", "error");
-        this.setHealth("error", "still");
-        this.failReadiness("fatal-still-error");
-        this.notifyTransport();
+        this.artworkFailed = true;
+        this.imageReady = true;
+        this.image.hidden = true;
+        this.placeholder.hidden = false;
+        this.checkCurrentReadiness();
     }
 
     handleLoadedMetadata() {
@@ -357,7 +365,7 @@ export default class StudioAudioSurface {
     }
 
     checkCurrentReadiness() {
-        if (!this.audio || !this.image || this.destroyed) {
+        if (!this.audio || this.destroyed) {
             return;
         }
 
@@ -366,12 +374,12 @@ export default class StudioAudioSurface {
             return;
         }
 
-        if (this.image.complete) {
+        if (this.image?.complete) {
             if (this.image.naturalWidth > 0) {
                 this.imageReady = true;
                 this.image.hidden = false;
             }
-            else if (this.image.src) {
+            else if (this.image.src && !this.artworkFailed) {
                 this.handleImageError();
                 return;
             }
@@ -394,6 +402,7 @@ export default class StudioAudioSurface {
         this.readinessState = "ready";
         this.status?.remove();
         this.status = null;
+        this.placeholder = null;
         this.setHealth("ready", null);
         this.settleReadinessWaiters("resolve");
         this.notifyTransport();

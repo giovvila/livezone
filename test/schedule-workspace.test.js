@@ -278,6 +278,61 @@ test("normal ControlDesk expansion keeps sibling cards in the intrinsic grid", a
         /if \(this\.editMode\) \{[\s\S]*this\.workspace\.style\.height = `\$\{height\}px`;[\s\S]*else \{\s*this\.workspace\.style\.height = "";\s*this\.workspace\.style\.minHeight = "";/);
 });
 
+test("ControlDesk management expansion consumes one stable track per open manager", async () => {
+    const css = await readFile(new URL("../public/css/studio.css", import.meta.url), "utf8");
+    const html = await readFile(new URL("../public/control/index.html", import.meta.url), "utf8");
+    const dynamicCss = css.slice(css.indexOf("/* 6R-A dynamic expansion:"));
+    const moduleIds = Array.from(html.matchAll(/data-control-module="([^"]+)"/g),
+        (match) => match[1]);
+
+    assert.equal(moduleIds.length, 9);
+    assert.match(css,
+        /grid-template-columns:\s*repeat\(\s*var\(--control-desk-compact-columns, 9\),\s*minmax\(0, 1fr\)\s*\)/s);
+    assert.match(dynamicCss,
+        /\.control-desk__module:not\(\.is-collapsed\):is\([\s\S]*?scenes[\s\S]*?sources[\s\S]*?\)\s*\{\s*grid-column:\s*span 2 !important;/s);
+    assert.doesNotMatch(dynamicCss,
+        /data-control-module="technical-monitor"[^}]*grid-column:\s*span/s);
+
+    const occupiedTracks = (scenesExpanded, sourcesExpanded) =>
+        moduleIds.length + Number(scenesExpanded) + Number(sourcesExpanded);
+    assert.equal(occupiedTracks(false, false), 9);
+    assert.equal(occupiedTracks(true, false) - 9, 1);
+    assert.equal(occupiedTracks(false, true) - 9, 1);
+    assert.equal(occupiedTracks(true, true) - 9, 2);
+    assert.match(dynamicCss,
+        /@media \(max-width: 759px\)[\s\S]*?data-control-module="scenes"[\s\S]*?data-control-module="sources"[\s\S]*?grid-column:\s*1 \/ -1 !important;/s);
+    assert.match(css, /\.studio-take\s*\{[^}]*min-height:\s*44px;/s);
+});
+
+test("expanded management lists keep ControlDesk rows content-sized and bounded", async () => {
+    const css = await readFile(new URL("../public/css/studio.css", import.meta.url), "utf8");
+    const rendererCss = await readFile(new URL(
+        "../public/css/studio-renderer.css", import.meta.url), "utf8");
+    const dynamicCss = css.slice(css.indexOf("/* 6R-A dynamic expansion:"));
+
+    for (const [selector, maxHeight] of [
+        ["studio-scene-list", 456], ["studio-source-list", 340]
+    ]) {
+        const rule = dynamicCss.match(new RegExp(
+            `\\.${selector}\\s*\\{([^}]*)\\}`, "s"));
+        assert.ok(rule, `${selector} rule must exist`);
+        assert.match(rule[1], /height:\s*auto;/);
+        assert.match(rule[1], new RegExp(`max-height:\\s*${maxHeight}px;`));
+        assert.doesNotMatch(rule[1], /\b(?:vh|dvh|svh|lvh)\b/);
+    }
+
+    assert.match(css,
+        /\.studio-panel:not\(\.is-layout-editing\) \.control-desk__workspace\s*\{[^}]*grid-auto-rows:\s*max-content;[^}]*align-items:\s*start;/s);
+    assert.match(dynamicCss,
+        /\.control-desk__module:not\(\.is-collapsed\):is\([\s\S]*?scenes[\s\S]*?sources[\s\S]*?\)\s*\{\s*grid-column:\s*span 2 !important;/s);
+    assert.doesNotMatch(dynamicCss, /repeat\(10,/);
+    assert.doesNotMatch(rendererCss,
+        /\.studio-scene-list\s*\{[^}]*max-height:/s,
+        "later renderer CSS must not reduce the effective SCENES list height");
+    assert.equal(Math.floor((456 + 5) / (52 + 5)), 8,
+        "the effective bound must expose eight ordinary scene rows");
+});
+
 test("Control entry reuses one store and clock without duplicate runtime authorities", async () => {
     const source = await readFile(new URL("../public/js/entries/control-room-app.js",
         import.meta.url), "utf8");

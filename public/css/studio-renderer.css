@@ -7,10 +7,6 @@
     min-height: 112px;
 }
 
-.studio-scene-list {
-    max-height: 180px;
-}
-
 .studio-render-surface {
     position: relative;
     width: 100%;
@@ -42,6 +38,35 @@
 .studio-render-slate {
     width: 100%;
     height: 100%;
+}
+
+.studio-render-image-source {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.studio-render-audio-still {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.studio-render-audio-placeholder {
+    display: grid;
+    width: 100%;
+    height: 100%;
+    place-items: center;
+    color: #b8c0cc;
+    background: #080a0d;
+    font-weight: 800;
+    letter-spacing: 0.18em;
+}
+
+.studio-render-audio-placeholder[hidden] {
+    display: none;
 }
 
 .studio-composition {
@@ -204,10 +229,6 @@
 }
 
 @media (max-width: 760px) {
-    .studio-scene-list {
-        max-height: 120px;
-    }
-
     .studio-render-surface {
         min-height: 92px;
     }

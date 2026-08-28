@@ -213,11 +213,11 @@ test("disabled LIVE remains configured but is removed from operational definitio
     assert.equal(runtimeScenes.has(added.scene.id), false);
 });
 
-test("LIVE validation rejects unsafe protocols and removal requires disabled", () => {
+test("LIVE validation rejects unsafe protocols and referenced removal", () => {
     const { catalog } = createCatalog();
     assert.equal(catalog.addLiveSource({ name: "X", url: "javascript:alert(1)" }).reason, "invalid-url");
     const added = catalog.addLiveSource({ name: "X", url: "https://example.test/x.m3u8", enabled: true });
-    assert.equal(catalog.removeSource(added.source.id).reason, "live-source-must-be-disabled");
+    assert.equal(catalog.removeSource(added.source.id).reason, "source-still-referenced");
 });
 
 test("monitor core has no Program, Preview, scheduler or StateManager dependency", async () => {

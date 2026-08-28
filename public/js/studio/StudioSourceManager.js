@@ -1,6 +1,7 @@
 import StudioHlsSurface from "./renderers/StudioHlsSurface.js";
 import StudioMediaSurface from "./renderers/StudioMediaSurface.js";
 import StudioAudioSurface from "./renderers/StudioAudioSurface.js";
+import StudioImageSurface from "./renderers/StudioImageSurface.js";
 
 class StudioSourceManager {
 
@@ -13,7 +14,8 @@ class StudioSourceManager {
         this.sourceFactories = new Map([
             ["hls", (options) => new StudioHlsSurface(options)],
             ["media", (options) => new StudioMediaSurface(options)],
-            ["audio", (options) => new StudioAudioSurface(options)]
+            ["audio", (options) => new StudioAudioSurface(options)],
+            ["image", (options) => new StudioImageSurface(options)]
         ]);
     }
 
@@ -243,12 +245,17 @@ class StudioSourceManager {
                 : null;
         }
 
+        if (kind === "image") {
+            const url = this.createHttpUrl(definition.url);
+            return url ? Object.freeze({ id, kind, url }) : null;
+        }
+
         if (kind === "audio") {
             const audioUrl = this.createHttpUrl(definition.audioUrl);
             const stillUrl = this.createHttpUrl(definition.stillUrl);
 
-            return audioUrl && stillUrl
-                ? Object.freeze({ id, kind, audioUrl, stillUrl })
+            return audioUrl
+                ? Object.freeze({ id, kind, audioUrl, ...(stillUrl ? { stillUrl } : {}) })
                 : null;
         }
 
@@ -261,7 +268,7 @@ class StudioSourceManager {
                 id: source.id,
                 kind: source.kind,
                 audioUrl: source.audioUrl,
-                stillUrl: source.stillUrl
+                stillUrl: source.stillUrl || null
             });
         }
 

@@ -66,6 +66,18 @@ class StudioStateManager {
         return this.createSceneSnapshot(scene);
     }
 
+    replaceScene(scene) {
+        const canonicalScene = this.createCanonicalScene(scene);
+        if (!canonicalScene || !this.scenes.has(canonicalScene.id)) return null;
+        const previous = this.scenes.get(canonicalScene.id);
+        this.scenes.set(canonicalScene.id, canonicalScene);
+        EventBus.emit(Events.STUDIO_SCENE_UPDATED, Object.freeze({
+            previousScene: this.createSceneSnapshot(previous),
+            scene: this.createSceneSnapshot(canonicalScene)
+        }));
+        return this.createSceneSnapshot(canonicalScene);
+    }
+
     getScene(sceneId) {
         const normalizedSceneId = this.normalizeRequiredString(sceneId);
         const scene = normalizedSceneId
