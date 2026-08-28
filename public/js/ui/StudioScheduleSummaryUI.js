@@ -58,7 +58,7 @@ export default class StudioScheduleSummaryUI {
         if (!this.started) return;
         const snapshot = this.engine.getSnapshot();
         this.status.textContent = snapshot.enabled ? "ON" : "OFF";
-        this.toggle.textContent = snapshot.enabled ? "SCHEDULER OFF" : "SCHEDULER ON";
+        this.toggle.textContent = snapshot.enabled ? "SCHEDULER ON" : "SCHEDULER OFF";
         this.toggle.setAttribute("aria-pressed", String(snapshot.enabled));
         this.current.textContent = describe(snapshot.activeItem, this.catalog,
             this.schedule?.timezone || DEFAULT_TIMEZONE);

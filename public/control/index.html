@@ -82,7 +82,7 @@
                     <div class="studio-schedule__status" aria-live="polite">
                         <span>ORA <strong id="studio-schedule-now">—</strong></span>
                     </div>
-                    <button id="studio-schedule-toggle" type="button" aria-pressed="false">SCHEDULER ON</button>
+                    <button id="studio-schedule-toggle" type="button" aria-pressed="false">SCHEDULER OFF</button>
                     <div class="studio-schedule__now-next">
                         <span>NOW <strong id="studio-schedule-current">—</strong></span>
                         <span>NEXT <strong id="studio-schedule-next">—</strong></span>
@@ -94,6 +94,12 @@
             <aside id="studio-panel" class="studio-panel" aria-labelledby="studio-title">
                 <div class="studio-panel__header">
                     <h2 id="studio-title">CONTROL DESK</h2>
+                    <div id="dominant-live-control" class="dominant-live-control" aria-live="polite">
+                        <label><input id="dominant-live-armed" type="checkbox" role="switch"> AUTO LIVE</label>
+                        <strong id="dominant-live-status">DISARMED</strong>
+                        <span id="dominant-live-source">NO AUTHORIZED SOURCE</span>
+                        <small id="dominant-live-diagnostics">DEV · HEALTH IDLE · READY 0 · PAUSED · 0×0 · RVFC NO · GEN 0 · STABLE TIMER OFF</small>
+                    </div>
                     <div class="studio-panel__header-actions">
                         <button id="control-desk-edit" type="button" aria-pressed="false">EDIT LAYOUT</button>
                         <button id="control-desk-reset" type="button">RESET LAYOUT</button>

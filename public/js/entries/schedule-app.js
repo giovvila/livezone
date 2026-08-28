@@ -8,6 +8,8 @@ import ScheduleStore from "../scheduler/ScheduleStore.js";
 import ScheduleWorkspaceUI from "../ui/ScheduleWorkspaceUI.js";
 import StudioAssetsUI from "../ui/StudioAssetsUI.js";
 import StudioLiveSourcesUI from "../ui/StudioLiveSourcesUI.js";
+import DominantLiveConfig from "../studio/DominantLiveConfig.js";
+import SchedulerRuntimeState from "../scheduler/SchedulerRuntimeState.js";
 
 StudioStateManager.initialize();
 StudioSourceManager.initialize({});
@@ -35,6 +37,9 @@ assetLibrary.setReferenceGuard((asset) =>
 
 const workspace = document.getElementById("schedule-workspace");
 const scheduleStore = new ScheduleStore();
+const dominantLiveConfig = new DominantLiveConfig();
+const schedulerRuntimeState = new SchedulerRuntimeState();
+document.body.dataset.schedulerEnabled = String(schedulerRuntimeState.load().enabled);
 const scheduleUI = new ScheduleWorkspaceUI({
     root: workspace,
     store: scheduleStore,
@@ -42,7 +47,9 @@ const scheduleUI = new ScheduleWorkspaceUI({
     assetLibrary
 });
 const assetsUI = new StudioAssetsUI(workspace, assetLibrary);
-const liveSourcesUI = new StudioLiveSourcesUI(workspace, catalog, scheduleStore);
+const liveSourcesUI = new StudioLiveSourcesUI(
+    workspace, catalog, scheduleStore, dominantLiveConfig
+);
 
 scheduleUI.start();
 assetsUI.start();

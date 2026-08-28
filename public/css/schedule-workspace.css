@@ -271,6 +271,7 @@ button:hover, button:focus-visible, input:focus-visible, select:focus-visible, a
 #live-source-list li > .live-source-card__actions { grid-area: actions; display: grid; grid-template-columns: minmax(74px, auto); align-self: stretch; align-content: center; gap: 5px; }
 #live-source-list li > .live-source-card__actions button { width: 100%; min-width: 74px; min-height: 30px; padding: 4px 8px; border-color: #354156; background: #172130; font-size: 8px; white-space: nowrap; }
 #live-source-list li > .live-source-card__actions button:last-child { border-color: rgba(229, 9, 20, .36); color: #ff9ba1; }
+#live-source-list li > .live-source-card__actions button[aria-pressed="true"] { border-color: #45bb7a; color: #8ee4b2; }
 #live-source-list li[data-state="disabled"] > span:first-of-type { color: #9aa3b2; }
 #live-source-list li[data-state="disabled"]::before { border-color: #4a5361; background: rgba(104, 113, 128, .1); color: #a5adba; }
 

@@ -169,7 +169,7 @@ export default class StudioScheduleUI {
         if (scenes.some(({ id }) => id === selected)) this.sceneSelect.value = selected;
 
         this.status.textContent = snapshot.status;
-        this.toggle.textContent = snapshot.enabled ? "SCHEDULER OFF" : "SCHEDULER ON";
+        this.toggle.textContent = snapshot.enabled ? "SCHEDULER ON" : "SCHEDULER OFF";
         this.toggle.setAttribute("aria-pressed", String(snapshot.enabled));
         this.current.textContent = describeItem(snapshot.activeItem, this.catalog,
             this.schedule.timezone);

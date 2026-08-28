@@ -8,7 +8,7 @@ import { applyInterruptionShift, calculateEffectiveSchedule,
 export default class SchedulerEngine {
     constructor({ command, catalog, eventBus = EventBus, clock = () => Date.now(),
         setTimer = globalThis.setTimeout, clearTimer = globalThis.clearTimeout,
-        programTransportProvider = null } = {}) {
+        programTransportProvider = null, runtimeState = null } = {}) {
         this.command = command;
         this.catalog = catalog;
         this.eventBus = eventBus;
@@ -17,6 +17,7 @@ export default class SchedulerEngine {
         this.clearTimer = (timerId) => clearTimer(timerId);
         this.programTransportProvider = typeof programTransportProvider === "function"
             ? programTransportProvider : () => null;
+        this.runtimeState = runtimeState;
         this.schedule = createEmptySchedule();
         this.listeners = new Set();
         this.enabled = false;
@@ -28,6 +29,7 @@ export default class SchedulerEngine {
         this.reconciling = false;
         this.pendingReconcile = false;
         this.pendingActivation = false;
+        this.pendingReleaseWhenEmpty = false;
         this.runtimeShiftMs = new Map();
         this.interruptionContext = null;
         this.resumeCues = new Map();
@@ -38,33 +40,44 @@ export default class SchedulerEngine {
     }
 
     setSchedule(schedule) {
+        const emptySlotContext = this.interruptionContext?.kind === "empty-slot"
+            ? this.interruptionContext : null;
         this.schedule = schedule;
         this.attemptedKey = null;
         this.overrideItemId = null;
         this.failure = null;
         this.runtimeShiftMs.clear();
-        this.interruptionContext = null;
+        this.interruptionContext = emptySlotContext;
         this.resumeCues.clear();
         this.resumingItemId = null;
         if (this.enabled) void this.reconcile(false);
         else this.emit();
     }
 
-    start() {
+    restoreEnabledState() {
+        return this.runtimeState?.load?.().enabled === true
+            ? this.start({ persist: false })
+            : false;
+    }
+
+    start({ persist = true } = {}) {
         if (this.destroyed || this.enabled) return false;
         this.enabled = true;
+        if (persist) this.runtimeState?.save?.(true);
         void this.reconcile(true);
         return true;
     }
 
-    stop() {
+    stop({ persist = true } = {}) {
         if (!this.enabled) return false;
         this.enabled = false;
+        if (persist) this.runtimeState?.save?.(false);
         this.clearBoundaryTimer();
         this.overrideItemId = null;
         this.failure = null;
         this.pendingReconcile = false;
         this.pendingActivation = false;
+        this.pendingReleaseWhenEmpty = false;
         this.interruptionContext = null;
         this.resumeCues.clear();
         this.resumingItemId = null;
@@ -74,7 +87,7 @@ export default class SchedulerEngine {
 
     destroy() {
         if (this.destroyed) return;
-        this.stop();
+        this.stop({ persist: false });
         this.eventBus.off(Events.STUDIO_PROGRAM_CHANGED, this.handleProgramChanged);
         this.listeners.clear();
         this.destroyed = true;
@@ -125,11 +138,36 @@ export default class SchedulerEngine {
             effectiveEnd: active.endMs });
     }
 
-    beginInterruption({ now = this.clock(), interruptionItem = null } = {}) {
+    getInterruptionEligibility({ now = this.clock(), allowEmptySlot = false } = {}) {
+        const snapshot = this.getSnapshot(now);
+        if (this.interruptionContext) return Object.freeze({ allowed: false,
+            reason: "EXISTING_INTERRUPTION", activeItemId: snapshot.activeItem?.id || null,
+            status: snapshot.status });
+        const interruptedItem = getActiveNormalItem(this.getEffectiveSchedule(), now);
+        if (!interruptedItem) return allowEmptySlot
+            ? Object.freeze({ allowed: true, reason: null, mode: "EMPTY_SLOT",
+                activeItemId: null, status: snapshot.status })
+            : Object.freeze({ allowed: false, reason: "NO_ACTIVE_ITEM",
+                activeItemId: snapshot.activeItem?.id || null, status: snapshot.status });
+        return Object.freeze({ allowed: true, reason: null,
+            mode: "SCHEDULED_ITEM", activeItemId: interruptedItem.id, status: snapshot.status });
+    }
+
+    beginInterruption({ now = this.clock(), interruptionItem = null,
+        origin = interruptionItem ? "scheduler" : "external", sessionId = null,
+        allowEmptySlot = false } = {}) {
         if (this.interruptionContext) return null;
         const effectiveSchedule = this.getEffectiveSchedule();
         const interruptedItem = getActiveNormalItem(effectiveSchedule, now);
-        if (!interruptedItem) return null;
+        if (!interruptedItem && !allowEmptySlot) return null;
+        if (!interruptedItem) {
+            this.interruptionContext = Object.freeze({ interruptedItemId: null,
+                sceneId: null, sourceId: null, sourceKind: null, interruptionItemId: null,
+                kind: "empty-slot", origin, sessionId, interruptedAt: Number(now),
+                cueAtInterruption: null, scheduledStart: null, scheduledEnd: null,
+                resumePolicy: null });
+            this.emit(); return this.interruptionContext;
+        }
         const transport = this.programTransportProvider() || null;
         const definition = this.catalog?.getDefinition(interruptedItem.sceneId);
         const sourceId = definition?.renderer?.kind === "source"
@@ -146,6 +184,8 @@ export default class SchedulerEngine {
             sourceKind,
             interruptionItemId: interruptionItem?.id || null,
             kind: interruptionItem ? "scheduled" : "external",
+            origin,
+            sessionId,
             interruptedAt: Number(now),
             cueAtInterruption: cue,
             scheduledStart: interruptedItem.startMs,
@@ -165,21 +205,27 @@ export default class SchedulerEngine {
             this.runtimeShiftMs = applyInterruptionShift(
                 this.runtimeShiftMs, context.interruptedItemId, durationMs);
         }
-        if (Number.isFinite(context.cueAtInterruption)) {
+        const recoveryActive = getActiveItem(this.getEffectiveSchedule(), endedAt);
+        if (Number.isFinite(context.cueAtInterruption) &&
+            recoveryActive?.id === context.interruptedItemId) {
             this.resumeCues.set(context.interruptedItemId, context.cueAtInterruption);
+        }
+        else if (context.interruptedItemId) {
+            this.resumeCues.delete(context.interruptedItemId);
         }
         this.interruptionContext = null;
         this.attemptedKey = null;
-        if (reconcile && this.enabled) void this.reconcile(true);
+        if (reconcile && this.enabled) void this.reconcile(true, { releaseWhenEmpty: true });
         else this.emit();
         return Object.freeze({ ...context, endedAt, durationMs });
     }
 
-    async reconcile(allowActivateCurrent = true) {
+    async reconcile(allowActivateCurrent = true, { releaseWhenEmpty = false } = {}) {
         if (!this.enabled || this.destroyed) return;
         if (this.reconciling) {
             this.pendingReconcile = true;
             this.pendingActivation ||= allowActivateCurrent;
+            this.pendingReleaseWhenEmpty ||= releaseWhenEmpty;
             return;
         }
 
@@ -203,10 +249,16 @@ export default class SchedulerEngine {
                 this.resumeCues.delete(endedInterruption.interruptedItemId);
             }
 
-            if (this.interruptionContext?.kind === "external") return;
+            if (["external", "empty-slot"].includes(this.interruptionContext?.kind)) return;
 
             if (this.overrideItemId && this.overrideItemId !== active?.id) this.overrideItemId = null;
             const key = active ? `${active.id}:${active.startMs}` : null;
+            if (allowActivateCurrent && !active && releaseWhenEmpty) {
+                const result = this.command.release?.({ origin: "scheduler",
+                    reason: "interruption-ended-empty-slot" });
+                this.failure = result?.ok ? null : Object.freeze({ itemId: null,
+                    reason: result?.reason || "program-release-failed" });
+            }
             if (allowActivateCurrent && active && this.overrideItemId !== active.id &&
                 this.attemptedKey !== key) {
                 this.attemptedKey = key;
@@ -243,9 +295,11 @@ export default class SchedulerEngine {
             if (!this.enabled || this.destroyed) return;
             if (this.pendingReconcile) {
                 const activate = this.pendingActivation;
+                const release = this.pendingReleaseWhenEmpty;
                 this.pendingReconcile = false;
                 this.pendingActivation = false;
-                void this.reconcile(activate);
+                this.pendingReleaseWhenEmpty = false;
+                void this.reconcile(activate, { releaseWhenEmpty: release });
             }
             else {
                 this.scheduleBoundary();
@@ -254,7 +308,8 @@ export default class SchedulerEngine {
     }
 
     handleProgramChanged(record) {
-        if (!this.enabled || record?.source === "scheduler") return;
+        if (!this.enabled || record?.source === "scheduler" ||
+            record?.source === this.interruptionContext?.origin) return;
         const active = getActiveItem(this.getEffectiveSchedule(), this.clock());
         if (active) {
             this.overrideItemId = active.id;

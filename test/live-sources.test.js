@@ -4,6 +4,29 @@ import LiveSourceMonitor from "../public/js/studio/LiveSourceMonitor.js";
 import StudioCatalogManager from "../public/js/studio/StudioCatalogManager.js";
 import { readFile } from "node:fs/promises";
 
+function controlledTimers() {
+    let nextId = 1; const entries = new Map();
+    return {
+        set(callback, delay) { const id = nextId++; entries.set(id, { callback, delay }); return id; },
+        clear(id) { entries.delete(id); },
+        run(delay) { const found = [...entries].find(([, entry]) => entry.delay === delay);
+            if (!found) return false; entries.delete(found[0]); found[1].callback(); return true; },
+        count(delay) { return [...entries.values()].filter((entry) => entry.delay === delay).length; }
+    };
+}
+
+function recoveryHarness() {
+    const timers = controlledTimers(); const attempts = []; let active = 0; let maxActive = 0;
+    const monitor = new LiveSourceMonitor({ retryDelayMs: 5000, readinessTimeoutMs: 12000,
+        setTimer: timers.set, clearTimer: timers.clear, consumerFactory: (source, handlers) => {
+            const attempt = { source, handlers, destroyed: false }; attempts.push(attempt);
+            return { start() { active += 1; maxActive = Math.max(maxActive, active); },
+                destroy() { if (!attempt.destroyed) { attempt.destroyed = true; active -= 1; } } };
+        } });
+    return { monitor, timers, attempts, get active() { return active; },
+        get maxActive() { return maxActive; } };
+}
+
 test("monitor publishes deterministic checking and online snapshots", () => {
     let handlers;
     const monitor = new LiveSourceMonitor({ consumerFactory: (_source, next) => {
@@ -60,6 +83,83 @@ test("browser timer functions are invoked without the monitor as receiver", () =
         url: "https://example.test/a.m3u8", enabled: true });
     monitor.stop();
     assert.equal(cleared, true);
+});
+
+test("OFFLINE schedules one slow retry and the next attempt can become ONLINE", () => {
+    const h = recoveryHarness(); const source = { id: "live-a", kind: "hls",
+        url: "https://example.test/a.m3u8", enabled: true };
+    h.monitor.selectSource(source); h.attempts[0].handlers.offline();
+    assert.equal(h.monitor.getSnapshot().state, "OFFLINE");
+    assert.equal(h.timers.count(5000), 1); assert.equal(h.active, 0);
+    assert.equal(h.timers.run(5000), true); assert.equal(h.monitor.getSnapshot().state, "CHECKING");
+    assert.equal(h.attempts.length, 2); h.attempts[1].handlers.online({ width: 1280, height: 720 });
+    assert.equal(h.monitor.getSnapshot().state, "ONLINE"); assert.equal(h.maxActive, 1);
+});
+
+test("repeated failures retain exactly one attempt and one retry timer", () => {
+    const h = recoveryHarness(); h.monitor.selectSource({ id: "live-a", kind: "hls",
+        url: "https://example.test/a.m3u8", enabled: true });
+    for (let index = 0; index < 3; index += 1) {
+        h.attempts[index].handlers.error("network");
+        h.attempts[index].handlers.offline();
+        assert.equal(h.timers.count(5000), 1); assert.equal(h.active, 0);
+        h.timers.run(5000); assert.equal(h.active, 1);
+    }
+    assert.equal(h.maxActive, 1);
+});
+
+test("ONLINE loss rebuilds one consumer and recovers without reselection", () => {
+    const h = recoveryHarness(); h.monitor.selectSource({ id: "live-a", kind: "hls",
+        url: "https://example.test/a.m3u8", enabled: true });
+    h.attempts[0].handlers.online(); h.attempts[0].handlers.error("media");
+    assert.equal(h.monitor.getSnapshot().state, "OFFLINE"); assert.equal(h.timers.run(5000), true);
+    h.attempts[1].handlers.online(); assert.equal(h.monitor.getSnapshot().state, "ONLINE");
+    assert.equal(h.attempts[0].destroyed, true); assert.equal(h.maxActive, 1);
+});
+
+test("post-readiness transient stall recovers in place before retry", () => {
+    const h = recoveryHarness(); h.monitor.selectSource({ id: "live-a", kind: "hls",
+        url: "https://example.test/a.m3u8", enabled: true });
+    const first = h.attempts[0]; first.handlers.online({ width: 1920, height: 1080 });
+    const generation = h.monitor.getSnapshot().generation;
+    first.handlers.offline({ recoverInPlace: true });
+    assert.equal(h.monitor.getSnapshot().state, "OFFLINE");
+    assert.equal(h.monitor.getSnapshot().retryActive, true);
+    assert.equal(first.destroyed, false);
+    assert.equal(h.timers.count(5000), 1);
+    first.handlers.online({ width: 1920, height: 1080 });
+    assert.equal(h.monitor.getSnapshot().state, "ONLINE");
+    assert.equal(h.monitor.getSnapshot().generation, generation);
+    assert.equal(h.monitor.getSnapshot().retryActive, false);
+    assert.equal(h.timers.count(5000), 0);
+    assert.equal(first.destroyed, false);
+    assert.equal(h.attempts.length, 1);
+});
+
+test("persistent in-place stall reconstructs consumer at the approved retry boundary", () => {
+    const h = recoveryHarness(); h.monitor.selectSource({ id: "live-a", kind: "hls",
+        url: "https://example.test/a.m3u8", enabled: true });
+    const first = h.attempts[0]; first.handlers.online();
+    first.handlers.offline({ recoverInPlace: true });
+    assert.equal(h.timers.run(5000), true);
+    assert.equal(first.destroyed, true);
+    assert.equal(h.attempts.length, 2);
+    assert.equal(h.monitor.getSnapshot().state, "CHECKING");
+    h.attempts[1].handlers.online();
+    assert.equal(h.monitor.getSnapshot().state, "ONLINE");
+});
+
+test("source change, endpoint edit and destroy cancel stale recovery work", () => {
+    const h = recoveryHarness(); const a = { id: "live-a", kind: "hls",
+        url: "https://example.test/a.m3u8", enabled: true };
+    h.monitor.selectSource(a); const old = h.attempts[0]; old.handlers.offline();
+    h.monitor.selectSource({ ...a, url: "https://example.test/a-v2.m3u8" });
+    old.handlers.online(); assert.equal(h.monitor.getSnapshot().endpoint,
+        "https://example.test/a-v2.m3u8");
+    assert.equal(h.monitor.getSnapshot().state, "CHECKING"); assert.equal(h.timers.count(5000), 0);
+    h.attempts[1].handlers.offline(); h.monitor.destroy();
+    assert.equal(h.timers.count(5000), 0); assert.equal(h.timers.run(5000), false);
+    assert.equal(h.monitor.getSnapshot().state, "IDLE");
 });
 
 function createCatalog() {
@@ -123,4 +223,13 @@ test("LIVE validation rejects unsafe protocols and removal requires disabled", (
 test("monitor core has no Program, Preview, scheduler or StateManager dependency", async () => {
     const source = await readFile(new URL("../public/js/studio/LiveSourceMonitor.js", import.meta.url), "utf8");
     assert.doesNotMatch(source, /StudioProgramCommand|StudioTransitionCoordinator|StudioStateManager|SchedulerEngine|ProgramOutputManager/);
+    assert.doesNotMatch(source, /setInterval|\.click\(/);
+});
+
+test("Technical Monitor uses first-frame readiness and delegates retry ownership", async () => {
+    const source = await readFile(new URL(
+        "../public/js/ui/TechnicalLiveMonitorUI.js", import.meta.url), "utf8");
+    assert.match(source, /waitUntilReady\(\{ timeoutMs: 12000 \}\)/);
+    assert.doesNotMatch(source, /onMetadata|loadedmetadata[\s\S]*handlers\.online/);
+    assert.doesNotMatch(source, /setTimeout|setInterval/);
 });

@@ -14,6 +14,7 @@ export default class StudioTransitionCoordinator {
         this.started = false;
         this.busy = false;
         this.generation = 0;
+        this.lastTransitionResult = null;
     }
 
     start() {
@@ -73,6 +74,8 @@ export default class StudioTransitionCoordinator {
                 normalizedDuration >= 200 && normalizedDuration <= 1500;
 
         if (!this.started || this.busy || !supported) {
+            this.recordTransitionFailure(!this.started ? "coordinator-not-started"
+                : this.busy ? "transition-busy" : "transition-unsupported");
             return null;
         }
 
@@ -81,6 +84,9 @@ export default class StudioTransitionCoordinator {
 
         if (!toSceneId || !this.studioStateManager.getScene(toSceneId) ||
             toSceneId === fromSceneId) {
+            this.recordTransitionFailure(!toSceneId ? "preview-missing"
+                : toSceneId === fromSceneId ? "preview-already-program" : "preview-scene-invalid",
+            { fromSceneId, toSceneId });
             return null;
         }
 
@@ -98,6 +104,7 @@ export default class StudioTransitionCoordinator {
             durationMs: normalizedDuration
         }));
 
+        let stage = "program-prepare";
         try {
             const prepared = await this.studioRenderer.prepareProgramScene(
                 toSceneId,
@@ -111,11 +118,17 @@ export default class StudioTransitionCoordinator {
 
             if (!this.isCurrent(generation) || !prepared) {
                 this.studioRenderer.discardPreparedProgram({ generation });
+                this.recordTransitionFailure(!prepared ? "program-prepare-rejected"
+                    : "transition-generation-stale", { fromSceneId, toSceneId,
+                    previewReady: false, programCommitted: false });
                 return null;
             }
 
+            stage = "preview-revalidation";
             if (this.studioStateManager.getPreviewSceneId() !== toSceneId) {
                 this.studioRenderer.discardPreparedProgram({ generation });
+                this.recordTransitionFailure("preview-race", { fromSceneId, toSceneId,
+                    previewReady: true, programCommitted: false });
                 return null;
             }
 
@@ -124,32 +137,48 @@ export default class StudioTransitionCoordinator {
                 { generation }
             );
 
+            stage = "program-commit";
             const record = this.studioStateManager.take({ source, reason });
 
             if (!record || this.studioStateManager.getProgramSceneId() !== toSceneId) {
                 this.studioRenderer.discardPreviewHandoff?.({ generation });
                 this.studioRenderer.discardPreparedProgram({ generation });
+                this.recordTransitionFailure("program-state-commit-rejected", {
+                    fromSceneId, toSceneId, previewReady: true, programCommitted: false });
                 return null;
             }
 
+            stage = "program-activation";
             const completed = await this.studioRenderer
                 .waitForProgramTransition({ toSceneId, generation });
 
             if (!completed || !this.isCurrent(generation)) {
+                this.recordTransitionFailure(!completed ? "program-activation-failed"
+                    : "transition-generation-stale", { fromSceneId, toSceneId,
+                    previewReady: true, programCommitted: true });
                 return null;
             }
 
-            return Object.freeze({
+            const result = Object.freeze({
                 type,
                 fromSceneId,
                 toSceneId,
-                timestamp: record.timestamp
+                timestamp: record.timestamp,
+                previewReady: true,
+                programCommitted: true
             });
+            this.lastTransitionResult = Object.freeze({ ok: true, ...result });
+            return result;
         }
-        catch {
+        catch (error) {
             this.studioRenderer.discardPreviewHandoff?.({ generation });
             this.studioRenderer.discardPreparedProgram({ generation });
             this.studioRenderer.cancelProgramTransition({ generation });
+            const errorCode = error?.code || null;
+            this.recordTransitionFailure(errorCode ? `${stage}-${errorCode}` : `${stage}-threw`,
+            { fromSceneId, toSceneId,
+                previewReady: stage !== "program-prepare", programCommitted:
+                    stage === "program-activation", errorCode });
             return null;
         }
         finally {
@@ -166,6 +195,14 @@ export default class StudioTransitionCoordinator {
 
     isBusy() {
         return this.busy;
+    }
+
+    getLastTransitionResult() {
+        return this.lastTransitionResult;
+    }
+
+    recordTransitionFailure(reason, fields = {}) {
+        this.lastTransitionResult = Object.freeze({ ok: false, reason, ...fields });
     }
 
     subscribe(listener) {

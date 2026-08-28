@@ -17,6 +17,7 @@ export default class StudioHlsSurface {
         this.mediaDataReady = false;
         this.firstFramePresented = false;
         this.videoFrameCallbackId = null;
+        this.recoveryFramePending = false;
         this.usesVideoFrameCallback = false;
         this.handleLoadedData = this.handleLoadedData.bind(this);
         this.handleCanPlay = this.handleCanPlay.bind(this);
@@ -103,6 +104,10 @@ export default class StudioHlsSurface {
 
     handleWaiting() {
         this.setHealth("stalled", null);
+        if (this.readinessState === "ready") {
+            this.recoveryFramePending = true;
+            this.requestRecoveryVideoFrame();
+        }
     }
 
     handleEnded() {
@@ -144,6 +149,10 @@ export default class StudioHlsSurface {
             return;
         }
 
+        if (this.recoveryFramePending) {
+            this.requestRecoveryVideoFrame();
+        }
+
         this.mediaDataReady = true;
 
         if (this.usesVideoFrameCallback) {
@@ -182,6 +191,31 @@ export default class StudioHlsSurface {
                 this.markFirstFramePresented();
             }
         }
+    }
+
+    requestRecoveryVideoFrame() {
+        if (this.destroyed || !this.recoveryFramePending ||
+            this.videoFrameCallbackId !== null || !this.video) return;
+        if (!this.usesVideoFrameCallback) {
+            if (this.video.readyState >= 2) this.completeRecoveryFrame();
+            return;
+        }
+        try {
+            this.videoFrameCallbackId = this.video.requestVideoFrameCallback(() => {
+                this.videoFrameCallbackId = null;
+                if (!this.destroyed) this.completeRecoveryFrame();
+            });
+        }
+        catch {
+            this.usesVideoFrameCallback = false;
+            if (this.video.readyState >= 2) this.completeRecoveryFrame();
+        }
+    }
+
+    completeRecoveryFrame() {
+        if (!this.recoveryFramePending) return;
+        this.recoveryFramePending = false;
+        this.setHealth("ready", null);
     }
 
     markFirstFramePresented() {

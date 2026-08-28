@@ -7,6 +7,8 @@ import {
 } from "../public/js/scheduler/ScheduleContract.js";
 import ScheduleStore from "../public/js/scheduler/ScheduleStore.js";
 import SchedulerEngine from "../public/js/scheduler/SchedulerEngine.js";
+import SchedulerRuntimeState, { SCHEDULER_RUNTIME_STORAGE_KEY } from
+    "../public/js/scheduler/SchedulerRuntimeState.js";
 import StudioProgramCommand from "../public/js/scheduler/StudioProgramCommand.js";
 import { calculateEffectiveSchedule, isHardClock,
     RESUME_POLICIES } from "../public/js/scheduler/ScheduleClock.js";
@@ -21,6 +23,57 @@ const item = (id, start, durationSeconds = 1800, sceneId = id) => ({
 const schedule = (...items) => validateSchedule({
     version: 1, timezone: "Europe/Rome", items
 }).schedule;
+
+test("Scheduler runtime persistence defaults safely and validates its versioned schema", () => {
+    const values = new Map();
+    const storage = { getItem: (key) => values.get(key) ?? null,
+        setItem: (key, value) => values.set(key, value) };
+    const state = new SchedulerRuntimeState({ storage });
+    assert.deepEqual(state.load(), { version: 1, enabled: false });
+    values.set(SCHEDULER_RUNTIME_STORAGE_KEY, "{");
+    assert.deepEqual(state.load(), { version: 1, enabled: false });
+    values.set(SCHEDULER_RUNTIME_STORAGE_KEY, JSON.stringify({ version: 2, enabled: true }));
+    assert.deepEqual(state.load(), { version: 1, enabled: false });
+    values.set(SCHEDULER_RUNTIME_STORAGE_KEY, JSON.stringify({ version: 1, enabled: "true" }));
+    assert.deepEqual(state.load(), { version: 1, enabled: false });
+    const unavailable = new SchedulerRuntimeState({ storage: {
+        getItem() { throw new Error("denied"); }, setItem() { throw new Error("denied"); }
+    } });
+    assert.deepEqual(unavailable.load(), { version: 1, enabled: false });
+    assert.doesNotThrow(() => unavailable.save(true));
+});
+
+test("Scheduler ON and OFF persist across runtime reconstruction without persisting transients", () => {
+    const values = new Map();
+    const storage = { getItem: (key) => values.get(key) ?? null,
+        setItem: (key, value) => values.set(key, value) };
+    const create = () => new SchedulerEngine({ command: {}, catalog: {},
+        eventBus: { on() {}, off() {} }, runtimeState: new SchedulerRuntimeState({ storage }),
+        setTimer: () => 1, clearTimer: () => {} });
+    const first = create();
+    assert.equal(first.getSnapshot().enabled, false);
+    first.start();
+    assert.deepEqual(JSON.parse(values.get(SCHEDULER_RUNTIME_STORAGE_KEY)), {
+        version: 1, enabled: true });
+    first.destroy();
+    assert.equal(JSON.parse(values.get(SCHEDULER_RUNTIME_STORAGE_KEY)).enabled, true);
+
+    const second = create();
+    const observed = [];
+    second.subscribe((snapshot) => observed.push(snapshot.enabled));
+    assert.equal(second.restoreEnabledState(), true);
+    assert.equal(second.getSnapshot().enabled, true);
+    assert.equal(observed.at(-1), true);
+    second.stop();
+    assert.deepEqual(JSON.parse(values.get(SCHEDULER_RUNTIME_STORAGE_KEY)), {
+        version: 1, enabled: false });
+    second.destroy();
+
+    const third = create();
+    assert.equal(third.restoreEnabledState(), false);
+    assert.equal(third.getSnapshot().enabled, false);
+    third.destroy();
+});
 
 test("validation sorts items and derives deterministic windows", () => {
     const result = validateSchedule({ version: 1, timezone: "Europe/Rome", items: [
@@ -636,6 +689,45 @@ test("RESUME_FIXED resumes cue without moving next hard clock", async () => {
     harness.engine.destroy();
 });
 
+test("FILLER recovery resumes captured cue without shifting its hard boundary", async () => {
+    const harness = boundaryHarness("2026-08-23T20:45:00+02:00", null, {
+        transport: { sourceId: "source-f", currentTime: 37 }, sourceKind: "media"
+    });
+    harness.engine.setSchedule(validateSchedule({ version: 1, timezone: "Europe/Rome", items: [
+        { ...item("f", "2026-08-23T20:40:00+02:00", 1200), resumePolicy: "FILLER" },
+        item("hard", "2026-08-23T21:00:00+02:00", 600)
+    ] }).schedule);
+    harness.engine.start(); await flushTwice();
+    const context = harness.engine.beginInterruption({ origin: "dominant-live" });
+    assert.equal(context.cueAtInterruption, 37);
+    assert.equal(context.resumePolicy, "FILLER");
+    harness.timer.setNow(Date.parse("2026-08-23T20:47:00+02:00"));
+    harness.engine.endInterruption(); await flushTwice();
+    assert.equal(harness.requests.at(-1).sceneId, "f");
+    assert.equal(harness.requests.at(-1).initialCueSeconds, 37);
+    assert.equal(harness.engine.getEffectiveSchedule().items.find(({ id }) => id === "f").endMs,
+        Date.parse("2026-08-23T21:00:00+02:00"));
+    harness.engine.destroy();
+});
+
+test("expired FIXED interruption discards stale cue and activates current authority", async () => {
+    const harness = boundaryHarness("2026-08-23T20:20:00+02:00", null, {
+        transport: { sourceId: "source-a", currentTime: 37 }, sourceKind: "media"
+    });
+    harness.engine.setSchedule(schedule(
+        item("a", "2026-08-23T20:00:00+02:00", 1800),
+        item("b", "2026-08-23T20:30:00+02:00", 1800)
+    ));
+    harness.engine.start(); await flushTwice();
+    assert.equal(harness.engine.beginInterruption({ origin: "dominant-live" }).cueAtInterruption, 37);
+    harness.timer.setNow(Date.parse("2026-08-23T20:35:00+02:00"));
+    harness.engine.endInterruption(); await flushTwice();
+    assert.equal(harness.requests.at(-1).sceneId, "b");
+    assert.equal(harness.requests.at(-1).initialCueSeconds, 300);
+    assert.equal(harness.engine.resumeCues.has("a"), false);
+    harness.engine.destroy();
+});
+
 test("HLS and BREAK interruption contexts carry no cue and nested begin is rejected", async () => {
     const harness = boundaryHarness("2026-08-23T20:00:00+02:00", null, {
         transport: { sourceId: "source-a", currentTime: 80 }, sourceKind: "hls"
@@ -643,12 +735,83 @@ test("HLS and BREAK interruption contexts carry no cue and nested begin is rejec
     harness.engine.setSchedule(schedule(item("a", "2026-08-23T20:00:00+02:00", 1800)));
     harness.engine.start();
     await flushTwice();
+    assert.deepEqual(harness.engine.getInterruptionEligibility(), {
+        allowed: true, reason: null, mode: "SCHEDULED_ITEM", activeItemId: "a", status: "ACTIVE"
+    });
     const context = harness.engine.beginInterruption();
     assert.equal(context.cueAtInterruption, null);
+    assert.deepEqual(harness.engine.getInterruptionEligibility(), {
+        allowed: false, reason: "EXISTING_INTERRUPTION", activeItemId: "a", status: "INTERRUPTED"
+    });
     assert.equal(harness.engine.beginInterruption(), null);
     harness.engine.endInterruption(Date.parse("2026-08-23T20:01:00+02:00"));
     await flushTwice();
     assert.equal(harness.engine.getSnapshot().interruptionContext, null);
+    harness.engine.destroy();
+});
+
+test("empty-slot acquisition is opt-in and reconciles current authority on end", async () => {
+    const harness = boundaryHarness("2026-08-23T20:00:00+02:00");
+    harness.engine.setSchedule(schedule(item("a", "2026-08-23T20:05:00+02:00", 1800)));
+    harness.engine.start(); await flushTwice();
+    assert.deepEqual(harness.engine.getInterruptionEligibility(), {
+        allowed: false, reason: "NO_ACTIVE_ITEM", activeItemId: null, status: "ARMED"
+    });
+    assert.deepEqual(harness.engine.getInterruptionEligibility({ allowEmptySlot: true }), {
+        allowed: true, reason: null, mode: "EMPTY_SLOT", activeItemId: null, status: "ARMED"
+    });
+    assert.equal(harness.engine.beginInterruption(), null);
+    const context = harness.engine.beginInterruption({ origin: "dominant-live",
+        sessionId: "dominant-gap", allowEmptySlot: true });
+    assert.deepEqual(context, { interruptedItemId: null, sceneId: null, sourceId: null,
+        sourceKind: null, interruptionItemId: null, kind: "empty-slot", origin: "dominant-live",
+        sessionId: "dominant-gap", interruptedAt: Date.parse("2026-08-23T20:00:00+02:00"),
+        cueAtInterruption: null, scheduledStart: null, scheduledEnd: null, resumePolicy: null });
+    await harness.timer.advanceTo(Date.parse("2026-08-23T20:05:00+02:00"));
+    assert.deepEqual(harness.calls, []);
+    harness.engine.endInterruption(); await flushTwice();
+    assert.deepEqual(harness.calls, ["a"]);
+    harness.engine.destroy();
+});
+
+test("empty-slot context survives schedule edits and recovers against the latest timeline", async () => {
+    const harness = boundaryHarness("2026-08-23T20:00:00+02:00");
+    harness.engine.setSchedule(schedule(item("old", "2026-08-23T20:05:00+02:00", 1800)));
+    harness.engine.start(); await flushTwice();
+    harness.engine.beginInterruption({ origin: "dominant-live", sessionId: "dominant-gap",
+        allowEmptySlot: true });
+    harness.engine.setSchedule(schedule(item("latest", "2026-08-23T20:02:00+02:00", 1800)));
+    await harness.timer.advanceTo(Date.parse("2026-08-23T20:03:00+02:00"));
+    assert.equal(harness.engine.getSnapshot().interruptionContext.kind, "empty-slot");
+    assert.deepEqual(harness.calls, []);
+    harness.engine.endInterruption(); await flushTwice();
+    assert.deepEqual(harness.calls, ["latest"]);
+    harness.engine.destroy();
+});
+
+test("empty-slot interruption end releases Program when wall-clock authority is empty", async () => {
+    const harness = boundaryHarness("2026-08-23T20:00:00+02:00");
+    harness.engine.setSchedule(schedule(item("future", "2026-08-23T20:05:00+02:00", 1800)));
+    harness.engine.start(); await flushTwice();
+    harness.engine.beginInterruption({ origin: "dominant-live", sessionId: "dominant-gap",
+        allowEmptySlot: true });
+    harness.engine.endInterruption(); await flushTwice();
+    assert.equal(harness.engine.getSnapshot().interruptionContext, null);
+    assert.deepEqual(harness.releases, [{ origin: "scheduler",
+        reason: "interruption-ended-empty-slot" }]);
+    assert.deepEqual(harness.calls, []);
+    harness.engine.destroy();
+});
+
+test("empty-slot Program release failure is explicit Scheduler recovery failure", async () => {
+    const harness = boundaryHarness("2026-08-23T20:00:00+02:00", null,
+        { releaseFails: true });
+    harness.engine.start(); await flushTwice();
+    harness.engine.beginInterruption({ origin: "dominant-live", sessionId: "dominant-gap",
+        allowEmptySlot: true });
+    harness.engine.endInterruption(); await flushTwice();
+    assert.deepEqual(harness.engine.getSnapshot().failure,
+        { itemId: null, reason: "release-failed" });
     harness.engine.destroy();
 });
 
@@ -665,6 +828,21 @@ test("external interruption API explicitly ends and reissues recorded resume com
     await flushTwice();
     assert.deepEqual(harness.calls, ["a", "a"]);
     assert.equal(harness.requests.at(-1).initialCueSeconds, 75);
+    harness.engine.destroy();
+});
+
+test("dominant-live interruption origin does not become a manual scheduler override", async () => {
+    const harness = boundaryHarness("2026-08-23T20:00:00+02:00");
+    harness.engine.setSchedule(schedule(item("a", "2026-08-23T20:00:00+02:00", 1800)));
+    harness.engine.start();
+    await flushTwice();
+    const context = harness.engine.beginInterruption({
+        origin: "dominant-live", sessionId: "dominant-session-1"
+    });
+    assert.equal(context.origin, "dominant-live");
+    assert.equal(context.sessionId, "dominant-session-1");
+    harness.bus.emit(Events.STUDIO_PROGRAM_CHANGED, { source: "dominant-live" });
+    assert.equal(harness.engine.getSnapshot().status, "INTERRUPTED");
     harness.engine.destroy();
 });
 
@@ -703,16 +881,18 @@ function boundaryHarness(isoNow, failScene = null, options = {}) {
     };
     const calls = [];
     const requests = [];
+    const releases = [];
     const engine = new SchedulerEngine({
         command: { execute: async (request) => {
             const { sceneId } = request;
             calls.push(sceneId);
             requests.push(request);
             return sceneId === failScene ? { ok: false, reason: "prepare-failed" } : { ok: true };
-        } },
+        }, release: (request) => { releases.push(request); return options.releaseFails
+                ? { ok: false, reason: "release-failed" } : { ok: true, changed: true }; } },
         catalog: {
             getDefinition: (id) => ({ id, renderer: { kind: "source", sourceId: `source-${id}` } }),
-            getSources: () => ["a", "b", "x", "hard"].map((id) => ({
+            getSources: () => ["a", "b", "f", "x", "hard"].map((id) => ({
                 id: `source-${id}`, kind: id === "a" ? options.sourceKind || "media" : "media"
             }))
         },
@@ -722,7 +902,7 @@ function boundaryHarness(isoNow, failScene = null, options = {}) {
         clearTimer: timer.clear,
         programTransportProvider: () => options.transport || null
     });
-    return { engine, calls, requests, bus, timer };
+    return { engine, calls, requests, releases, bus, timer };
 }
 
 function fakeTimer(initialNow) {

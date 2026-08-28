@@ -27,11 +27,17 @@ import ScheduleClock from "../ui/ScheduleClock.js";
 import ProgramRemainingTimeUI from "../ui/ProgramRemainingTimeUI.js";
 import ScheduleStore from "../scheduler/ScheduleStore.js";
 import SchedulerEngine from "../scheduler/SchedulerEngine.js";
+import SchedulerRuntimeState from "../scheduler/SchedulerRuntimeState.js";
 import StudioProgramCommand from "../scheduler/StudioProgramCommand.js";
 import { createProgramOutputTransport } from
     "../program-output/ProgramOutputTransportFactory.js";
 import LiveSourceMonitor from "../studio/LiveSourceMonitor.js";
 import TechnicalLiveMonitorUI from "../ui/TechnicalLiveMonitorUI.js";
+import DominantLiveConfig from "../studio/DominantLiveConfig.js";
+import DominantLiveController from "../studio/DominantLiveController.js";
+import DominantLiveUI from "../ui/DominantLiveUI.js";
+import { createDominantLiveConsumerFactory } from
+    "../studio/DominantLiveHealthConsumer.js";
 
 BroadcastStateManager.initialize();
 StudioStateManager.initialize();
@@ -47,6 +53,7 @@ const studioBootstrap = new StudioBootstrap({
     studioCatalogManager,
     studioGraphicsManager: StudioGraphicsManager
 });
+const dominantLiveConfig = new DominantLiveConfig();
 let broadcastUI = null;
 let studioUI = null;
 let studioGraphicsUI = null;
@@ -64,6 +71,8 @@ let scheduleWorkspaceUI = null;
 let schedulerEngine = null;
 let programRemainingTimeUI = null;
 let technicalLiveMonitorUI = null;
+let dominantLiveController = null;
+let dominantLiveUI = null;
 
 runtime.start({
     startPlayer: false,
@@ -138,7 +147,8 @@ runtime.start({
         schedulerEngine = new SchedulerEngine({
             command: studioProgramCommand,
             catalog: studioCatalogManager,
-            programTransportProvider: () => studioRenderer.getProgramTransport()
+            programTransportProvider: () => studioRenderer.getProgramTransport(),
+            runtimeState: new SchedulerRuntimeState()
         });
         const scheduleStore = new ScheduleStore();
         const scheduleClock = new ScheduleClock();
@@ -150,6 +160,7 @@ runtime.start({
             clockTicker: scheduleClock
         });
         studioScheduleUI.start();
+        schedulerEngine.restoreEnabledState();
         scheduleWorkspaceUI = new ScheduleWorkspaceUI({
             root: document.getElementById("control-schedule-view"),
             store: scheduleStore,
@@ -190,6 +201,36 @@ runtime.start({
             monitor: liveSourceMonitor
         });
         technicalLiveMonitorUI.start();
+
+        const dominantHealthSurface = document.createElement("div");
+        dominantHealthSurface.className = "dominant-live-health-surface";
+        dominantHealthSurface.setAttribute("aria-hidden", "true");
+        document.body.append(dominantHealthSurface);
+        let dominantProbeDiagnostics = Object.freeze({});
+        const dominantHealthMonitor = new LiveSourceMonitor({
+            consumerFactory: createDominantLiveConsumerFactory(
+                dominantHealthSurface,
+                (diagnostics) => {
+                    dominantProbeDiagnostics = diagnostics;
+                    dominantLiveController?.refreshDiagnostics();
+                }
+            )
+        });
+        dominantLiveController = new DominantLiveController({
+            config: dominantLiveConfig,
+            catalog: studioCatalogManager,
+            monitor: dominantHealthMonitor,
+            scheduler: schedulerEngine,
+            command: studioProgramCommand,
+            probeDiagnosticsProvider: () => dominantProbeDiagnostics
+        });
+        dominantLiveController.start();
+        dominantLiveUI = new DominantLiveUI({
+            root: document.getElementById("dominant-live-control"),
+            config: dominantLiveConfig,
+            controller: dominantLiveController
+        });
+        dominantLiveUI.start();
 
         studioGraphicsUI = new StudioGraphicsUI(
             document.getElementById("studio-panel"),

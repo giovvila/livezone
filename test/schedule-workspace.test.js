@@ -286,6 +286,8 @@ test("Control entry reuses one store and clock without duplicate runtime authori
     assert.equal((source.match(/new ScheduleClock\(/g) || []).length, 1);
     assert.equal((source.match(/new TechnicalLiveMonitorUI\(/g) || []).length, 1);
     assert.equal((source.match(/new StudioRenderer\(/g) || []).length, 1);
+    assert.match(source,
+        /studioScheduleUI\.start\(\);\s*schedulerEngine\.restoreEnabledState\(\);/);
 });
 
 test("Schedule Workspace entry cannot instantiate a second scheduler authority", async () => {
@@ -293,6 +295,7 @@ test("Schedule Workspace entry cannot instantiate a second scheduler authority",
     assert.doesNotMatch(source, /SchedulerEngine|StudioRenderer|ProgramOutputManager|AdaptivePlayer/);
     assert.match(source, /\["logo", "still"\]\.includes\(asset\.kind\)/,
         "workspace must reject removal when live graphics usage cannot be verified");
+    assert.match(source, /dataset\.schedulerEnabled\s*=\s*String\(schedulerRuntimeState\.load\(\)\.enabled\)/);
 });
 
 test("Control summary applies external store snapshots to its scheduler authority", () => {
@@ -316,5 +319,28 @@ test("Control summary applies external store snapshots to its scheduler authorit
     const external = createSchedule([item("external", "2026-08-23T10:00:00+02:00", 60)]);
     storeListener({ schedule: external, issues: [] });
     assert.equal(applied.at(-1), external);
+    ui.destroy();
+});
+
+test("Scheduler label reflects enabled state instead of the inverse action", () => {
+    const toggle = { textContent: "", addEventListener() {}, removeEventListener() {},
+        setAttribute() {} };
+    const nodes = new Map([
+        ["#studio-schedule-toggle", toggle],
+        ["#studio-schedule-status", { textContent: "" }],
+        ["#studio-schedule-now", { textContent: "" }],
+        ["#studio-schedule-current", { textContent: "" }],
+        ["#studio-schedule-next", { textContent: "" }]
+    ]);
+    let enabled = false;
+    const ui = new StudioScheduleSummaryUI({
+        root: { querySelector: (selector) => nodes.get(selector) },
+        engine: { getSnapshot: () => ({ enabled, activeItem: null, nextItem: null }),
+            subscribe: () => () => {}, setSchedule() {} },
+        store: { subscribe: () => () => {} }, catalog: { getDefinition: () => null }
+    });
+    assert.equal(ui.start(), true);
+    ui.render(); assert.equal(toggle.textContent, "SCHEDULER OFF");
+    enabled = true; ui.render(); assert.equal(toggle.textContent, "SCHEDULER ON");
     ui.destroy();
 });

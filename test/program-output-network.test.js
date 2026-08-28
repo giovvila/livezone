@@ -524,7 +524,7 @@ test("server provides byte ranges required for seekable MP4 preparation", async 
     assert.equal(response.headers.get("content-length"), "1000");
     assert.equal((await response.arrayBuffer()).byteLength, 1000);
     const invalid = await fetch(`${base}/media/demo2.mp4`, {
-        headers: { Range: "bytes=999999999-1000000000" }
+        headers: { Range: "bytes=999999999999-1000000000000" }
     });
     assert.equal(invalid.status, 416);
     assert.match(invalid.headers.get("content-range"), /^bytes \*\/\d+$/);

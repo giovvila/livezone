@@ -92,6 +92,25 @@ class StudioStateManager {
         return this.programSceneId;
     }
 
+    releaseProgram({ source = null, reason = null } = {}) {
+        if (this.programSceneId === null) {
+            return null;
+        }
+
+        const record = Object.freeze({
+            previousSceneId: this.programSceneId,
+            currentSceneId: null,
+            source,
+            reason,
+            timestamp: new Date().toISOString()
+        });
+
+        this.programSceneId = null;
+        EventBus.emit(Events.STUDIO_PROGRAM_CHANGED, record);
+
+        return record;
+    }
+
     setPreviewScene(
         sceneId,
         { source = null, reason = null } = {}

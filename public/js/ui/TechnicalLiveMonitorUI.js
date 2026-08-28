@@ -74,14 +74,12 @@ export default class TechnicalLiveMonitorUI {
             const surface = new StudioHlsSurface({ sourceId: source.id, sourceUrl: source.url,
                 instanceId: `technical-live-${nextId++}`, consumer: "technical" });
             let unsubscribe = null; let video = null;
-            const onMetadata = () => handlers.online({ width: video.videoWidth, height: video.videoHeight });
             return {
                 async start() {
                     unsubscribe = surface.subscribeHealth((health) => {
                         if (health.state === "error") handlers.error(health.reason);
                     });
                     await surface.start(root); video = surface.video;
-                    video?.addEventListener("loadedmetadata", onMetadata);
                     surface.waitUntilReady({ timeoutMs: 12000 }).then(() => {
                         video = surface.video; handlers.online({ width: video?.videoWidth,
                             height: video?.videoHeight });
@@ -90,8 +88,7 @@ export default class TechnicalLiveMonitorUI {
                         else handlers.error(surface.getHealth()?.reason);
                     });
                 },
-                destroy() { video?.removeEventListener("loadedmetadata", onMetadata);
-                    unsubscribe?.(); surface.destroy(); }
+                destroy() { unsubscribe?.(); surface.destroy(); }
             };
         };
     }

@@ -37,12 +37,26 @@ export default class StudioProgramCommand {
                 transportInitialEnded: false
             })
         });
+        const diagnostics = result || this.transitionCoordinator?.getLastTransitionResult?.() || null;
         return result
-            ? Object.freeze({ ok: true, changed: true, transition: type })
-            : this.failure("program-commit-failed");
+            ? Object.freeze({ ok: true, changed: true, transition: type, diagnostics })
+            : this.failure(diagnostics?.reason || "program-commit-failed", diagnostics);
     }
 
-    failure(reason) { return Object.freeze({ ok: false, changed: false, reason }); }
+    release({ origin = "scheduler", reason = "no-current-authority" } = {}) {
+        const previousSceneId = this.stateManager?.getProgramSceneId?.() || null;
+        if (previousSceneId === null) {
+            return Object.freeze({ ok: true, changed: false, reason: "already-empty" });
+        }
+        const record = this.stateManager?.releaseProgram?.({ source: origin, reason });
+        return record
+            ? Object.freeze({ ok: true, changed: true, previousSceneId })
+            : this.failure("program-release-failed");
+    }
+
+    failure(reason, diagnostics = null) {
+        return Object.freeze({ ok: false, changed: false, reason, diagnostics });
+    }
 
     getTransportKind(definition) {
         if (definition?.renderer?.kind !== "source") return null;

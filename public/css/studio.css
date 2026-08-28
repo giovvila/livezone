@@ -684,6 +684,32 @@
     margin-top: 8px;
 }
 
+.dominant-live-control {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 10px;
+    align-items: center;
+    min-width: 210px;
+    border-inline: 1px solid var(--lz-border);
+    padding-inline: 12px;
+    font-size: 9px;
+}
+.dominant-live-control label { display: flex; align-items: center; gap: 6px; font-weight: 700; }
+.dominant-live-control strong { color: var(--studio-preview); text-align: right; }
+.dominant-live-control span { grid-column: 1 / -1; overflow: hidden; color: var(--lz-text-soft); text-overflow: ellipsis; white-space: nowrap; }
+.dominant-live-control small { grid-column: 1 / -1; color: var(--lz-text-muted); font-size: 7px; white-space: nowrap; }
+.dominant-live-health-surface {
+    position: fixed;
+    left: 0;
+    bottom: 0;
+    z-index: 0;
+    width: 2px;
+    height: 2px;
+    overflow: hidden;
+    opacity: .001;
+    pointer-events: none;
+}
+
 .control-desk__module--broadcast .broadcast-control {
     min-width: 0;
 }
