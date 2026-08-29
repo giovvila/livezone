@@ -122,6 +122,7 @@ class StudioSourceManager {
             sourceUrl,
             audioUrl: definition.audioUrl,
             stillUrl: definition.stillUrl,
+            motionUrl: definition.motionUrl,
             instanceId,
             consumer,
             initialTime,
@@ -262,9 +263,12 @@ class StudioSourceManager {
         if (kind === "audio") {
             const audioUrl = this.createHttpUrl(definition.audioUrl);
             const stillUrl = this.createHttpUrl(definition.stillUrl);
+            const motionUrl = this.createHttpUrl(definition.motionUrl);
 
             return audioUrl
-                ? Object.freeze({ id, kind, audioUrl, ...(stillUrl ? { stillUrl } : {}) })
+                ? Object.freeze({ id, kind, audioUrl,
+                    ...(stillUrl ? { stillUrl } : {}),
+                    ...(motionUrl ? { motionUrl } : {}) })
                 : null;
         }
 
@@ -277,7 +281,8 @@ class StudioSourceManager {
                 id: source.id,
                 kind: source.kind,
                 audioUrl: source.audioUrl,
-                stillUrl: source.stillUrl || null
+                stillUrl: source.stillUrl || null,
+                motionUrl: source.motionUrl || null
             });
         }
 

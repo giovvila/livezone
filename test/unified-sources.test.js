@@ -233,6 +233,119 @@ test("active AUDIO source propagates artwork replacement and clear without chang
     assert.equal(clearedSelections.artwork, null);
 });
 
+test("AUDIO motion artwork persists, resolves, references and clears on the same source", () => {
+    const assets = new Map([
+        ["A1", { id: "A1", kind: "audio", url: "https://studio.test/audio.mp3" }],
+        ["I1", { id: "I1", kind: "image", url: "https://studio.test/still.png" }],
+        ["M1", { id: "M1", kind: "video", url: "https://studio.test/motion.mp4" }]
+    ]);
+    const resolver = { resolve(id, { expectedKind }) { const asset = assets.get(id);
+        return asset?.kind === expectedKind ? { ok: true, asset }
+            : { ok: false, reason: asset ? "asset-kind-mismatch" : "asset-not-found" }; } };
+    const first = harness(null, resolver); first.catalog.initialize();
+    const source = first.catalog.addSource({ kind: "audio", name: "Motion radio",
+        audioAssetId: "A1", stillAssetId: "I1", motionAssetId: "M1" }).source;
+    assert.equal(source.motionAssetId, "M1");
+    assert.equal(source.motionUrl, "https://studio.test/motion.mp4");
+    assert.deepEqual(first.catalog.getAssetReferences("M1")[0].fields,
+        Object.freeze(["motionAssetId"]));
+    assert.equal(first.catalog.isAssetReferenced("M1"), true);
+    const stored = JSON.parse(first.values.get(KEY)).sources[0];
+    assert.equal(stored.motionAssetId, "M1");
+    assert.equal(Object.hasOwn(stored, "motionUrl"), false);
+    const second = harness(first.values.get(KEY), resolver); second.catalog.initialize();
+    assert.equal(second.catalog.getSources()[0].motionUrl,
+        "https://studio.test/motion.mp4");
+    assert.equal(second.catalog.updateSource(source.id, { name: source.name,
+        audioAssetId: "A1", stillAssetId: "I1" }).ok, true);
+    const cleared = second.catalog.getSources()[0];
+    assert.equal(cleared.motionAssetId, null);
+    assert.equal(cleared.motionUrl, null);
+    assert.equal(cleared.stillAssetId, "I1");
+});
+
+test("missing optional AUDIO motion falls back without disabling audio authority", () => {
+    const resolver = { resolve(id, { expectedKind }) {
+        if (id === "A1" && expectedKind === "audio") return { ok: true,
+            asset: { id, kind: "audio", url: "https://studio.test/audio.mp3" } };
+        return { ok: false, reason: "asset-not-found" };
+    } };
+    const seed = JSON.stringify({ version: 3, sources: [{
+        id: "audio-00000000-0000-4000-8000-000000000001", name: "Radio",
+        kind: "audio", audioAssetId: "A1", motionAssetId: "MISSING"
+    }], scenes: [], sourceOverrides: [], sceneOverrides: [],
+    deletedBootstrapSourceIds: [], deletedBootstrapSceneIds: [] });
+    const h = harness(seed, resolver); h.catalog.initialize();
+    const source = h.catalog.getSources()[0];
+    assert.equal(source.available, true);
+    assert.equal(source.motionUrl, null);
+    assert.equal(source.motionUnavailableReason, "asset-not-found");
+    assert.equal(h.sources.has(source.id), true);
+});
+
+test("AUDIO motion kind mismatch and ID ambiguity remain optional diagnostics", () => {
+    const makeSeed = () => JSON.stringify({ version: 3, sources: [{
+        id: "audio-00000000-0000-4000-8000-000000000001", name: "Radio",
+        kind: "audio", audioAssetId: "A1", motionAssetId: "M1"
+    }], scenes: [], sourceOverrides: [], sceneOverrides: [],
+    deletedBootstrapSourceIds: [], deletedBootstrapSceneIds: [] });
+    for (const reason of ["asset-kind-mismatch", "asset-id-ambiguous"]) {
+        const resolver = { resolve(id, { expectedKind }) {
+            return id === "A1" && expectedKind === "audio" ? { ok: true,
+                asset: { id, kind: "audio", url: "https://studio.test/audio.mp3" } }
+                : { ok: false, reason };
+        } };
+        const h = harness(makeSeed(), resolver); h.catalog.initialize();
+        const source = h.catalog.getSources()[0];
+        assert.equal(source.available, true);
+        assert.equal(source.motionUnavailableReason, reason);
+    }
+});
+
+test("AUDIO editor keeps motion selection explicit until SAVE", () => {
+    const manager = { getAsset: (id) => ({ id, kind: id.startsWith("M") ? "video" :
+        id.startsWith("I") ? "image" : "audio", originalName: `${id}.asset` }) };
+    const ui = new StudioOperationalSourcesUI(null, null, { mediaLibraryManager: manager });
+    ui.selectedAssets = ui.createSelectedAssets({ category: "audio",
+        audioAssetId: "A1", stillAssetId: "I1", motionAssetId: "M1" });
+    assert.equal(ui.selectedAssets.motion.id, "M1");
+    let payload = ui.applyManagedSelections({ kind: "audio", name: "Radio" });
+    assert.equal(payload.motionAssetId, "M1");
+    ui.selectedAssets.motion = manager.getAsset("M2");
+    payload = ui.applyManagedSelections({ kind: "audio", name: "Radio" });
+    assert.equal(payload.motionAssetId, "M2");
+    ui.selectedAssets.motion = null;
+    payload = ui.applyManagedSelections({ kind: "audio", name: "Radio" });
+    assert.equal(Object.hasOwn(payload, "motionAssetId"), false);
+});
+
+test("AUDIO motion picker and import are VIDEO-only and remain pending until SAVE", async () => {
+    const imported = { id: "M2", kind: "video", originalName: "motion.mp4" };
+    const manager = { async importAsset() { return imported; } };
+    const pickerCalls = [];
+    const picker = { async choose(options) { pickerCalls.push(options); return {
+        id: "M1", kind: "video", originalName: "library.mp4" }; } };
+    const ui = new StudioOperationalSourcesUI(null, null, {
+        mediaLibraryManager: manager, mediaLibraryPicker: picker });
+    ui.selectedAssets = { primary: { id: "A1", kind: "audio",
+        originalName: "audio.mp3" }, artwork: null, motion: null };
+    ui.renderSelections = () => {};
+    ui.setFeedback = () => {};
+    ui.form = { elements: { kind: { value: "audio" } } };
+    const library = { dataset: { sourceLibrary: "motion" } };
+    await ui.handleFormClick({ target: { closest(selector) {
+        return selector === "[data-source-library]" ? library : null;
+    } } });
+    assert.equal(pickerCalls[0].kind, "video");
+    assert.equal(ui.selectedAssets.motion.id, "M1");
+    const input = { dataset: { sourceFile: "motion" }, files: [{}], value: "selected",
+        closest() { return this; } };
+    await ui.handleFileChange({ target: input });
+    assert.equal(ui.selectedAssets.motion, imported);
+    assert.equal(input.value, "");
+    assert.equal(ui.applyManagedSelections({ kind: "audio" }).motionAssetId, "M2");
+});
+
 test("EDIT payload preserves managed AUDIO IDs when disabled kind is absent from FormData", () => {
     const ui = new StudioOperationalSourcesUI(null, null);
     ui.selectedAssets = {
@@ -735,6 +848,83 @@ test("Control Room Preview and Program receive independent AUDIO artwork surface
     assert.equal(preview.stillUrl, "https://example.test/art.jpg");
     assert.equal(program.stillUrl, "https://example.test/art.jpg");
     StudioSourceManager.destroy();
+});
+
+test("Preview and Program receive independent AUDIO motion surfaces", () => {
+    StudioSourceManager.destroy();
+    StudioSourceManager.initialize({});
+    assert.ok(StudioSourceManager.registerSource({ id: "motion-a", kind: "audio",
+        audioUrl: "https://example.test/audio.mp3",
+        stillUrl: "https://example.test/still.jpg",
+        motionUrl: "https://example.test/motion.mp4" }));
+    const preview = StudioSourceManager.createInstance("motion-a", { consumer: "preview" });
+    const program = StudioSourceManager.createInstance("motion-a", { consumer: "program" });
+    assert.notEqual(preview, program);
+    assert.equal(preview.motionUrl, "https://example.test/motion.mp4");
+    assert.equal(program.motionUrl, preview.motionUrl);
+    const previousDocument = globalThis.document;
+    globalThis.document = { createElement: () => ({ addEventListener() {} }) };
+    try {
+        const previewVideo = preview.createMotionElement();
+        const programVideo = program.createMotionElement();
+        assert.notEqual(previewVideo, programVideo);
+    } finally { globalThis.document = previousDocument; }
+    StudioSourceManager.destroy();
+});
+
+test("AudioSurface prioritizes motion and updates it without replacing audio", async () => {
+    const surface = new StudioAudioSurface({ sourceId: "audio-motion",
+        audioUrl: "https://example.test/audio.mp3",
+        stillUrl: "https://example.test/still.jpg",
+        motionUrl: "https://example.test/old.mp4", instanceId: "instance-motion",
+        consumer: "preview" });
+    const audio = {};
+    const still = { hidden: true };
+    const placeholder = { hidden: false };
+    const oldMotion = { hidden: true, pause() {}, removeEventListener() {},
+        removeAttribute() {}, load() {}, remove() {}, play: async () => {} };
+    surface.audio = audio;
+    surface.image = still;
+    surface.imageReady = true;
+    surface.placeholder = placeholder;
+    surface.motion = oldMotion;
+    surface.motionReady = true;
+    surface.refreshArtworkVisibility();
+    assert.equal(oldMotion.hidden, false);
+    assert.equal(still.hidden, true);
+    assert.equal(placeholder.hidden, true);
+
+    const previousDocument = globalThis.document;
+    const events = new Map();
+    const nextMotion = { hidden: true, pause() {}, load() {}, remove() {},
+        removeAttribute() {}, play: async () => {},
+        addEventListener(type, listener) { events.set(type, listener); },
+        removeEventListener() {} };
+    globalThis.document = { createElement: (tag) => {
+        assert.equal(tag, "video"); return nextMotion;
+    } };
+    try {
+        surface.root = { insertBefore(node, before) {
+            assert.equal(node, nextMotion); assert.equal(before, audio); } };
+        surface.checkCurrentReadiness = () => {};
+        assert.equal(surface.updateSourceDefinition({ audioUrl: surface.audioUrl,
+            stillUrl: surface.stillUrl, motionUrl: "https://example.test/new.mp4" }), true);
+        assert.equal(surface.audio, audio);
+        assert.equal(surface.motion, nextMotion);
+        assert.equal(nextMotion.muted, true);
+        assert.equal(nextMotion.loop, true);
+        assert.equal(nextMotion.autoplay, true);
+        assert.equal(nextMotion.playsInline, true);
+        assert.equal(nextMotion.controls, false);
+        events.get("loadeddata")();
+        await Promise.resolve();
+        assert.equal(nextMotion.hidden, false);
+        assert.equal(surface.updateSourceDefinition({ audioUrl: surface.audioUrl,
+            stillUrl: surface.stillUrl }), true);
+        assert.equal(surface.motion, null);
+        assert.equal(surface.audio, audio);
+        assert.equal(still.hidden, false);
+    } finally { globalThis.document = previousDocument; }
 });
 
 test("Control Room AUDIO artwork CSS contains the image and honors fallback hiding", async () => {

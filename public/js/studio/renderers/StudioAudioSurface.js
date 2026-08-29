@@ -4,6 +4,7 @@ export default class StudioAudioSurface {
         sourceId,
         audioUrl,
         stillUrl,
+        motionUrl,
         instanceId,
         consumer,
         initialTime = 0,
@@ -13,6 +14,7 @@ export default class StudioAudioSurface {
         this.sourceId = sourceId;
         this.audioUrl = audioUrl;
         this.stillUrl = stillUrl;
+        this.motionUrl = motionUrl;
         this.instanceId = instanceId;
         this.consumer = consumer;
         this.initialTime = Number.isFinite(initialTime) && initialTime >= 0
@@ -26,12 +28,16 @@ export default class StudioAudioSurface {
         this.audio = null;
         this.audioSource = null;
         this.image = null;
+        this.motion = null;
+        this.placeholder = null;
         this.root = null;
         this.destroyed = false;
         this.metadataReady = false;
         this.audioReady = false;
         this.imageReady = !stillUrl;
         this.artworkFailed = false;
+        this.motionReady = false;
+        this.motionFailed = false;
         this.transportError = false;
         this.transportEnded = false;
         this.readinessState = "pending";
@@ -43,6 +49,8 @@ export default class StudioAudioSurface {
 
         this.handleImageLoad = this.handleImageLoad.bind(this);
         this.handleImageError = this.handleImageError.bind(this);
+        this.handleMotionReady = this.handleMotionReady.bind(this);
+        this.handleMotionError = this.handleMotionError.bind(this);
         this.handleLoadedMetadata = this.handleLoadedMetadata.bind(this);
         this.handleSeeked = this.handleSeeked.bind(this);
         this.handleAudioReady = this.handleAudioReady.bind(this);
@@ -57,6 +65,7 @@ export default class StudioAudioSurface {
     async start(root) {
         this.root = root;
         this.image = this.stillUrl ? document.createElement("img") : null;
+        this.motion = this.motionUrl ? this.createMotionElement() : null;
         this.audio = document.createElement("audio");
         this.audioSource = document.createElement("source");
         if (this.image) {
@@ -90,10 +99,15 @@ export default class StudioAudioSurface {
         placeholder.className = "studio-render-audio-placeholder";
         placeholder.textContent = "AUDIO";
         this.placeholder = placeholder;
-        root.replaceChildren(placeholder, ...(this.image ? [this.image] : []), this.audio);
+        root.replaceChildren(placeholder, ...(this.image ? [this.image] : []),
+            ...(this.motion ? [this.motion] : []), this.audio);
         this.showStatus("Loading audio…", "loading");
         this.setHealth("connecting", null);
         if (this.image) this.image.src = this.stillUrl;
+        if (this.motion) {
+            this.motion.src = this.motionUrl;
+            this.motion.load();
+        }
         this.audio.load();
         this.notifyTransport();
         this.checkCurrentReadiness();
@@ -106,52 +120,133 @@ export default class StudioAudioSurface {
     }
 
     handleImageLoad() {
-        this.showArtwork();
+        this.imageReady = true;
+        this.artworkFailed = false;
+        this.refreshArtworkVisibility();
         this.checkCurrentReadiness();
     }
 
     handleImageError() {
         this.artworkFailed = true;
         this.imageReady = true;
-        if (this.image) this.image.hidden = true;
-        if (this.placeholder) this.placeholder.hidden = false;
+        this.refreshArtworkVisibility();
         this.checkCurrentReadiness();
     }
 
     showArtwork() {
         this.imageReady = true;
-        if (this.image) this.image.hidden = false;
-        if (this.placeholder) this.placeholder.hidden = true;
+        this.artworkFailed = false;
+        this.refreshArtworkVisibility();
     }
 
-    updateSourceDefinition({ audioUrl, stillUrl } = {}) {
-        if (this.destroyed || audioUrl !== this.audioUrl) return false;
-        const nextStillUrl = typeof stillUrl === "string" && stillUrl ? stillUrl : null;
-        if (nextStillUrl === (this.stillUrl || null)) return true;
-        this.stillUrl = nextStillUrl;
-        if (this.image) {
-            this.image.removeEventListener("load", this.handleImageLoad);
-            this.image.removeEventListener("error", this.handleImageError);
-            this.image.removeAttribute("src");
-            this.image.remove();
-            this.image = null;
-        }
-        this.artworkFailed = false;
-        this.imageReady = !nextStillUrl;
-        if (this.placeholder) this.placeholder.hidden = false;
-        if (!nextStillUrl) {
-            this.checkCurrentReadiness();
+    handleMotionReady(event) {
+        if (event?.currentTarget && event.currentTarget !== this.motion) return;
+        this.motionReady = true;
+        this.motionFailed = false;
+        void this.startMotionPlayback();
+    }
+
+    handleMotionError(event) {
+        if (event?.currentTarget && event.currentTarget !== this.motion) return;
+        this.motionFailed = true;
+        this.motionReady = false;
+        this.refreshArtworkVisibility();
+    }
+
+    async startMotionPlayback() {
+        if (!this.motion || this.destroyed || this.motionFailed) return false;
+        const motion = this.motion;
+        try {
+            await motion.play();
+            if (motion !== this.motion || this.destroyed) return false;
+            this.motionReady = true;
+            this.refreshArtworkVisibility();
             return true;
         }
-        const image = document.createElement("img");
-        image.className = "studio-render-audio-still";
-        image.alt = "";
-        image.hidden = true;
-        image.addEventListener("load", this.handleImageLoad);
-        image.addEventListener("error", this.handleImageError);
-        this.image = image;
-        this.root.insertBefore(image, this.audio);
-        image.src = nextStillUrl;
+        catch {
+            if (motion !== this.motion || this.destroyed) return false;
+            this.handleMotionError();
+            return false;
+        }
+    }
+
+    createMotionElement() {
+        const motion = document.createElement("video");
+        motion.className = "studio-render-audio-motion";
+        motion.muted = true;
+        motion.defaultMuted = true;
+        motion.loop = true;
+        motion.autoplay = true;
+        motion.playsInline = true;
+        motion.controls = false;
+        motion.preload = "auto";
+        motion.hidden = true;
+        motion.addEventListener("loadeddata", this.handleMotionReady);
+        motion.addEventListener("error", this.handleMotionError);
+        return motion;
+    }
+
+    removeMotionElement() {
+        if (!this.motion) return;
+        this.motion.removeEventListener("loadeddata", this.handleMotionReady);
+        this.motion.removeEventListener("error", this.handleMotionError);
+        this.motion.pause();
+        this.motion.removeAttribute("src");
+        this.motion.load();
+        this.motion.remove();
+        this.motion = null;
+    }
+
+    refreshArtworkVisibility() {
+        const showMotion = Boolean(this.motion && this.motionReady && !this.motionFailed);
+        const showStill = !showMotion && Boolean(this.image && this.imageReady &&
+            !this.artworkFailed);
+        if (this.motion) this.motion.hidden = !showMotion;
+        if (this.image) this.image.hidden = !showStill;
+        if (this.placeholder) this.placeholder.hidden = showMotion || showStill;
+    }
+
+    updateSourceDefinition({ audioUrl, stillUrl, motionUrl } = {}) {
+        if (this.destroyed || audioUrl !== this.audioUrl) return false;
+        const nextStillUrl = typeof stillUrl === "string" && stillUrl ? stillUrl : null;
+        const nextMotionUrl = typeof motionUrl === "string" && motionUrl ? motionUrl : null;
+        if (nextStillUrl !== (this.stillUrl || null)) {
+            this.stillUrl = nextStillUrl;
+            if (this.image) {
+                this.image.removeEventListener("load", this.handleImageLoad);
+                this.image.removeEventListener("error", this.handleImageError);
+                this.image.removeAttribute("src");
+                this.image.remove();
+                this.image = null;
+            }
+            this.artworkFailed = false;
+            this.imageReady = !nextStillUrl;
+            if (nextStillUrl) {
+                const image = document.createElement("img");
+                image.className = "studio-render-audio-still";
+                image.alt = "";
+                image.hidden = true;
+                image.addEventListener("load", this.handleImageLoad);
+                image.addEventListener("error", this.handleImageError);
+                this.image = image;
+                this.root.insertBefore(image, this.motion || this.audio);
+                image.src = nextStillUrl;
+            }
+        }
+        if (nextMotionUrl !== (this.motionUrl || null)) {
+            this.motionUrl = nextMotionUrl;
+            this.removeMotionElement();
+            this.motionReady = false;
+            this.motionFailed = false;
+            if (nextMotionUrl) {
+                this.motion = this.createMotionElement();
+                this.root.insertBefore(this.motion, this.audio);
+                this.motion.src = nextMotionUrl;
+                this.motion.load();
+            }
+        }
+        this.refreshArtworkVisibility();
+        this.checkCurrentReadiness();
         return true;
     }
 
@@ -531,6 +626,7 @@ export default class StudioAudioSurface {
             this.image.remove();
             this.image = null;
         }
+        this.removeMotionElement();
         if (this.audio) {
             this.audio.removeEventListener("loadedmetadata", this.handleLoadedMetadata);
             this.audio.removeEventListener("loadeddata", this.handleAudioReady);

@@ -52,10 +52,36 @@ async function loadConfig(configUrl) {
 }
 
 export function readPublisherToken() {
+    return readPersistentPublisherToken();
+}
+
+export function readPersistentPublisherToken({
+    persistentStorage = getBrowserStorage("localStorage"),
+    legacyStorage = getBrowserStorage("sessionStorage")
+} = {}) {
+    const persistent = readStorageToken(persistentStorage);
+    if (persistent) return persistent;
+    const legacy = readStorageToken(legacyStorage);
+    if (!legacy) return "";
     try {
-        return globalThis.sessionStorage?.getItem(
-            PROGRAM_OUTPUT_PUBLISHER_TOKEN_KEY
-        ) || "";
+        persistentStorage?.setItem(PROGRAM_OUTPUT_PUBLISHER_TOKEN_KEY, legacy);
+        if (readStorageToken(persistentStorage) === legacy) {
+            legacyStorage?.removeItem(PROGRAM_OUTPUT_PUBLISHER_TOKEN_KEY);
+        }
+    }
+    catch { /* Legacy session token remains usable when persistence is denied. */ }
+    return legacy;
+}
+
+function readStorageToken(storage) {
+    try {
+        const value = storage?.getItem(PROGRAM_OUTPUT_PUBLISHER_TOKEN_KEY);
+        return typeof value === "string" ? value.trim() : "";
     }
     catch { return ""; }
+}
+
+function getBrowserStorage(name) {
+    try { return globalThis[name]; }
+    catch { return null; }
 }

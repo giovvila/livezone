@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "serve": "node server/program-output-server.js",
+    "serve": "node --env-file-if-exists=.env server/program-output-server.js",
     "test:program-output": "node --test test/program-output-network.test.js",
     "test:scheduler": "node --test test/scheduler.test.js",
     "test:schedule-workspace": "node --test test/schedule-workspace.test.js",

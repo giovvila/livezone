@@ -191,8 +191,12 @@ export default class StudioCatalogManager {
                     assetId: source.assetId || null,
                     audioAssetId: source.audioAssetId || null,
                     stillAssetId: source.stillAssetId || null,
+                    motionAssetId: source.motionAssetId || null,
                     audioUrl: source.audioUrl || null,
                     stillUrl: source.stillUrl || null,
+                    motionUrl: source.motionUrl || null,
+                    stillUnavailableReason: source.stillUnavailableReason || null,
+                    motionUnavailableReason: source.motionUnavailableReason || null,
                     configRef: source.configRef || null,
                     origin: source.origin,
                     enabled: source.enabled !== false,
@@ -368,7 +372,8 @@ export default class StudioCatalogManager {
         return this.addOperatorPair(source, scene);
     }
 
-    addSource({ kind, name, url, stillUrl, assetId, audioAssetId, stillAssetId } = {}) {
+    addSource({ kind, name, url, stillUrl, assetId, audioAssetId, stillAssetId,
+        motionAssetId } = {}) {
         const normalizedKind = this.normalizeString(kind, 20)?.toLowerCase();
         const runtimeKind = ({ live: "hls", video: "media", audio: "audio", image: "image" })[normalizedKind];
         if (!runtimeKind) return this.failure("invalid-kind");
@@ -391,7 +396,9 @@ export default class StudioCatalogManager {
         const source = this.createSourceRecord({
             id: `${normalizedKind}-${uuid}`, name: normalizedName, kind: runtimeKind,
             ...(runtimeKind === "audio"
-                ? (audioAssetId ? { audioAssetId, ...(stillAssetId ? { stillAssetId } : {}) }
+                ? (audioAssetId ? { audioAssetId,
+                    ...(stillAssetId ? { stillAssetId } : {}),
+                    ...(motionAssetId ? { motionAssetId } : {}) }
                     : { audioUrl: canonicalUrl, ...(canonicalStillUrl ? { stillUrl: canonicalStillUrl } : {}) })
                 : (assetId ? { assetId } : { url: canonicalUrl })),
             ...(runtimeKind === "hls" ? { enabled: true } : {})
@@ -465,7 +472,7 @@ export default class StudioCatalogManager {
     }
 
     updateSource(sourceId, { name, url, stillUrl, enabled, assetId, audioAssetId,
-        stillAssetId } = {}) {
+        stillAssetId, motionAssetId } = {}) {
         const id = this.normalizeString(sourceId, MAX_ID_LENGTH);
         const current = id ? this.sources.get(id) : null;
         if (!current) return this.failure("source-not-editable");
@@ -491,7 +498,8 @@ export default class StudioCatalogManager {
         }
         const candidate = current.kind === "audio"
             ? (audioAssetId ? { id, name: normalizedName, kind: "audio", audioAssetId,
-                ...(stillAssetId ? { stillAssetId } : {}) }
+                ...(stillAssetId ? { stillAssetId } : {}),
+                ...(motionAssetId ? { motionAssetId } : {}) }
                 : { id, name: normalizedName, kind: "audio", audioUrl: canonicalUrl,
                     ...(canonicalStillUrl ? { stillUrl: canonicalStillUrl } : {}) })
             : current.kind === "hls"
@@ -777,7 +785,7 @@ export default class StudioCatalogManager {
         const id = this.normalizeString(assetId, MAX_ID_LENGTH);
         if (!id) return Object.freeze([]);
         return Object.freeze(Array.from(this.sources.values()).flatMap((source) => {
-            const fields = ["assetId", "audioAssetId", "stillAssetId"]
+            const fields = ["assetId", "audioAssetId", "stillAssetId", "motionAssetId"]
                 .filter((field) => source[field] === id);
             return fields.length ? [Object.freeze({ sourceId: source.id,
                 sourceName: source.name, fields: Object.freeze(fields) })] : [];
@@ -907,14 +915,9 @@ export default class StudioCatalogManager {
             candidate,
             ["id", "name", "kind", "assetId"]
         );
-        const audio = this.hasExactKeys(
-            candidate,
-            ["id", "name", "kind", "audioAssetId", "stillAssetId"]
-        );
-        const audioWithoutStill = this.hasExactKeys(
-            candidate,
-            ["id", "name", "kind", "audioAssetId"]
-        );
+        const audio = this.hasAllowedKeys(candidate,
+            ["id", "name", "kind", "audioAssetId"],
+            ["stillAssetId", "motionAssetId"]);
         const audioUrl = this.hasExactKeys(
             candidate,
             ["id", "name", "kind", "audioUrl"]
@@ -935,7 +938,7 @@ export default class StudioCatalogManager {
             }
         }
         else if (candidate.kind === "audio") {
-            if ((!audio && !audioWithoutStill && !audioUrl && !audioUrlWithStill) ||
+            if ((!audio && !audioUrl && !audioUrlWithStill) ||
                 !this.isGeneratedSourceId(candidate.id, "audio")) {
                 return null;
             }
@@ -1007,24 +1010,28 @@ export default class StudioCatalogManager {
                 candidate.stillAssetId,
                 MAX_ID_LENGTH
             );
+            const motionAssetId = this.normalizeString(
+                candidate.motionAssetId,
+                MAX_ID_LENGTH
+            );
             const audioResolution = audioAssetId ? this.resolveAsset(audioAssetId, "audio") : null;
             const stillResolution = stillAssetId ? this.resolveAsset(stillAssetId, "image") : null;
+            const motionResolution = motionAssetId ? this.resolveAsset(motionAssetId, "video") : null;
             const audioAsset = audioResolution?.ok ? audioResolution.asset : null;
             const stillAsset = stillResolution?.ok ? stillResolution.asset : null;
+            const motionAsset = motionResolution?.ok ? motionResolution.asset : null;
             const audioUrl = audioAsset
                 ? this.createHttpUrl(audioAsset.url)
                 : this.createHttpUrl(candidate.audioUrl);
             const stillUrl = stillAsset
                 ? this.createHttpUrl(stillAsset.url)
                 : this.createHttpUrl(candidate.stillUrl);
+            const motionUrl = motionAsset ? this.createHttpUrl(motionAsset.url) : null;
             if (audioAssetId && !audioAsset) return Object.freeze({ id, name, kind,
-                audioAssetId, ...(stillAssetId ? { stillAssetId } : {}), available: false,
+                audioAssetId, ...(stillAssetId ? { stillAssetId } : {}),
+                ...(motionAssetId ? { motionAssetId } : {}), available: false,
                 unavailableReason: audioResolution?.reason || "asset-not-found", origin });
-            if (stillAssetId && !stillAsset) return Object.freeze({ id, name, kind,
-                audioAssetId, stillAssetId, available: false,
-                unavailableReason: stillResolution?.reason || "asset-not-found", origin });
-            if (!audioUrl || candidate.stillUrl && !stillUrl || stillAssetId &&
-                (!stillAsset || !stillUrl)) {
+            if (!audioUrl || candidate.stillUrl && !stillUrl) {
                 return null;
             }
             return Object.freeze({
@@ -1033,8 +1040,14 @@ export default class StudioCatalogManager {
                 kind,
                 audioUrl,
                 ...(audioAssetId ? { audioAssetId } : {}),
-                ...(stillAssetId ? { stillAssetId, stillUrl } :
-                    stillUrl ? { stillUrl } : {}),
+                ...(stillAssetId ? { stillAssetId } : {}),
+                ...(stillUrl ? { stillUrl } : {}),
+                ...(stillAssetId && !stillAsset ? { stillAssetId,
+                    stillUnavailableReason: stillResolution?.reason || "asset-not-found" } : {}),
+                ...(motionAssetId ? { motionAssetId } : {}),
+                ...(motionUrl ? { motionUrl } : {}),
+                ...(motionAssetId && !motionAsset ? { motionUnavailableReason:
+                    motionResolution?.reason || "asset-not-found" } : {}),
                 available: true,
                 origin
             });
@@ -1120,12 +1133,14 @@ export default class StudioCatalogManager {
                 url,
                 assetId,
                 audioAssetId,
-                stillAssetId
+                stillAssetId,
+                motionAssetId
             } = source;
             if (kind === "audio") {
                 return audioAssetId
                     ? { id: sourceId, name, kind, audioAssetId,
-                        ...(stillAssetId ? { stillAssetId } : {}) }
+                        ...(stillAssetId ? { stillAssetId } : {}),
+                        ...(motionAssetId ? { motionAssetId } : {}) }
                     : { id: sourceId, name, kind, audioUrl: source.audioUrl,
                         ...(source.stillUrl ? { stillUrl: source.stillUrl } : {}) };
             }
@@ -1160,7 +1175,8 @@ export default class StudioCatalogManager {
         if (source.kind === "audio") return source.audioAssetId
             ? { id: source.id, name: source.name, kind: source.kind,
                 audioAssetId: source.audioAssetId,
-                ...(source.stillAssetId ? { stillAssetId: source.stillAssetId } : {}) }
+                ...(source.stillAssetId ? { stillAssetId: source.stillAssetId } : {}),
+                ...(source.motionAssetId ? { motionAssetId: source.motionAssetId } : {}) }
             : { id: source.id, name: source.name, kind: source.kind,
                 audioUrl: source.audioUrl, ...(source.stillUrl ? { stillUrl: source.stillUrl } : {}) };
         if (source.kind === "hls") return { id: source.id, name: source.name,
@@ -1340,6 +1356,13 @@ export default class StudioCatalogManager {
         const expected = [...keys].sort();
         return actual.length === expected.length &&
             actual.every((key, index) => key === expected[index]);
+    }
+
+    hasAllowedKeys(value, requiredKeys, optionalKeys = []) {
+        if (!this.isPlainObject(value)) return false;
+        const actual = Object.keys(value);
+        return requiredKeys.every((key) => actual.includes(key)) &&
+            actual.every((key) => requiredKeys.includes(key) || optionalKeys.includes(key));
     }
 
     isPlainObject(value) {

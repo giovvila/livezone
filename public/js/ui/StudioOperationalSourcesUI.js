@@ -117,7 +117,7 @@ export default class StudioOperationalSourcesUI {
         const form = document.createElement("form");
         form.className = "studio-operational-source-form";
         form.hidden = true;
-        form.innerHTML = `<label>TYPE<select name="kind" required><option value="live">LIVE · HLS</option><option value="video">VIDEO</option><option value="audio">AUDIO</option><option value="image">IMAGE</option></select></label><label>NAME<input name="name" maxlength="120" required></label><div data-source-managed hidden><span data-source-primary-label>MEDIA</span><div class="studio-source-asset-controls"><button type="button" data-source-library="primary">LIBRARY</button><label class="studio-source-browse">BROWSE PC<input type="file" data-source-file="primary"></label></div><p data-source-selection="primary">NONE</p></div><label data-source-url><span data-source-url-label>SOURCE URL / MEDIA URL</span><input name="url" maxlength="4096"></label><div data-source-artwork hidden><span>ARTWORK — OPTIONAL</span><div class="studio-source-asset-controls"><button type="button" data-source-library="artwork">LIBRARY</button><label class="studio-source-browse">BROWSE PC<input type="file" accept="image/jpeg,image/png,image/webp" data-source-file="artwork"></label><button type="button" data-source-clear-artwork>CLEAR</button></div><p data-source-selection="artwork">NONE</p><label>LEGACY ARTWORK URL<input name="stillUrl" maxlength="4096"></label></div><div class="studio-operational-source-form__actions"><button type="submit">SAVE</button><button type="button" data-source-cancel>CANCEL</button></div>`;
+        form.innerHTML = `<label>TYPE<select name="kind" required><option value="live">LIVE · HLS</option><option value="video">VIDEO</option><option value="audio">AUDIO</option><option value="image">IMAGE</option></select></label><label>NAME<input name="name" maxlength="120" required></label><div data-source-managed hidden><span data-source-primary-label>MEDIA</span><div class="studio-source-asset-controls"><button type="button" data-source-library="primary">LIBRARY</button><label class="studio-source-browse">BROWSE PC<input type="file" data-source-file="primary"></label></div><p data-source-selection="primary">NONE</p></div><label data-source-url><span data-source-url-label>SOURCE URL / MEDIA URL</span><input name="url" maxlength="4096"></label><div data-source-artwork hidden><span>STATIC ARTWORK — OPTIONAL</span><div class="studio-source-asset-controls"><button type="button" data-source-library="artwork">LIBRARY</button><label class="studio-source-browse">BROWSE PC<input type="file" accept="image/jpeg,image/png,image/webp" data-source-file="artwork"></label><button type="button" data-source-clear-artwork>CLEAR</button></div><p data-source-selection="artwork">NONE</p><label>LEGACY ARTWORK URL<input name="stillUrl" maxlength="4096"></label><span>MOTION ARTWORK — OPTIONAL</span><div class="studio-source-asset-controls"><button type="button" data-source-library="motion">LIBRARY</button><label class="studio-source-browse">BROWSE PC<input type="file" accept="video/mp4" data-source-file="motion"></label><button type="button" data-source-clear-motion>CLEAR</button></div><p data-source-selection="motion">NONE</p></div><div class="studio-operational-source-form__actions"><button type="submit">SAVE</button><button type="button" data-source-cancel>CANCEL</button></div>`;
         form.elements.kind.addEventListener("change", this.handleKindChange);
         this.cancelButton = form.querySelector("[data-source-cancel]");
         this.cancelButton.addEventListener("click", this.handleCancelClick);
@@ -151,7 +151,7 @@ export default class StudioOperationalSourcesUI {
         this.form.querySelector("[data-source-artwork]").hidden = !audio;
         this.form.querySelector("[data-source-managed]").hidden = !managed;
         this.form.querySelector("[data-source-primary-label]").textContent =
-            audio ? "AUDIO" : kind === "image" ? "IMAGE" : "MEDIA";
+            audio ? "AUDIO FILE" : kind === "image" ? "IMAGE" : "MEDIA";
         const file = this.form.querySelector('[data-source-file="primary"]');
         file.accept = audio ? "audio/mpeg" : kind === "image"
             ? "image/jpeg,image/png,image/webp" : "video/mp4";
@@ -178,6 +178,7 @@ export default class StudioOperationalSourcesUI {
         if (data.kind === "audio" && this.selectedAssets.primary) {
             data.audioAssetId = this.selectedAssets.primary.id;
             if (this.selectedAssets.artwork) data.stillAssetId = this.selectedAssets.artwork.id;
+            if (this.selectedAssets.motion) data.motionAssetId = this.selectedAssets.motion.id;
         }
         else if (["video", "image"].includes(data.kind) && this.selectedAssets.primary) {
             data.assetId = this.selectedAssets.primary.id;
@@ -186,7 +187,7 @@ export default class StudioOperationalSourcesUI {
     }
 
     createSelectedAssets(source = null) {
-        if (!source) return { primary: null, artwork: null };
+        if (!source) return { primary: null, artwork: null, motion: null };
         const primaryId = source.category === "audio"
             ? source.audioAssetId : source.assetId;
         const primaryUrl = source.category === "audio" ? source.audioUrl : source.url;
@@ -195,13 +196,17 @@ export default class StudioOperationalSourcesUI {
             primary: this.resolveManagedSelection(primaryId, primaryUrl, primaryKind),
             artwork: source.stillAssetId
                 ? this.resolveManagedSelection(source.stillAssetId, source.stillUrl, "image")
-                : this.resolveManagedSelection(null, source.stillUrl, "image")
+                : this.resolveManagedSelection(null, source.stillUrl, "image"),
+            motion: source.motionAssetId
+                ? this.resolveManagedSelection(source.motionAssetId, source.motionUrl, "video")
+                : null
         };
     }
 
     resolveManagedSelection(assetId, runtimeUrl = null, kind = null) {
         if (assetId) return this.mediaLibraryManager?.getAsset(assetId) ||
-            { id: assetId, originalName: assetId };
+            { id: assetId, originalName: `${assetId} · UNAVAILABLE`, kind,
+                unavailable: true };
         if (!runtimeUrl || !kind) return null;
         return this.mediaLibraryManager?.listAssets({ kind }).find(
             (asset) => this.urlsMatch(asset.url, runtimeUrl)
@@ -220,8 +225,8 @@ export default class StudioOperationalSourcesUI {
         const library = event.target.closest("[data-source-library]");
         if (library) {
             const slot = library.dataset.sourceLibrary;
-            const kind = slot === "artwork" ? "image" : this.form.elements.kind.value === "audio"
-                ? "audio" : this.form.elements.kind.value;
+            const kind = slot === "artwork" ? "image" : slot === "motion" ? "video"
+                : this.form.elements.kind.value === "audio" ? "audio" : this.form.elements.kind.value;
             const asset = await this.mediaLibraryPicker?.choose({ kind,
                 selectedId: this.selectedAssets[slot]?.id });
             if (asset) { this.selectedAssets[slot] = asset; this.renderSelections(); }
@@ -229,6 +234,10 @@ export default class StudioOperationalSourcesUI {
         if (event.target.closest("[data-source-clear-artwork]")) {
             this.selectedAssets.artwork = null;
             this.form.elements.stillUrl.value = "";
+            this.renderSelections();
+        }
+        if (event.target.closest("[data-source-clear-motion]")) {
+            this.selectedAssets.motion = null;
             this.renderSelections();
         }
     }
@@ -242,6 +251,7 @@ export default class StudioOperationalSourcesUI {
             this.setFeedback("Importing asset…");
             const asset = await this.mediaLibraryManager.importAsset(file);
             const expectedKind = input.dataset.sourceFile === "artwork" ? "image"
+                : input.dataset.sourceFile === "motion" ? "video"
                 : this.form.elements.kind.value === "audio" ? "audio"
                     : this.form.elements.kind.value;
             if (asset.kind !== expectedKind) throw new Error(`Select a ${expectedKind.toUpperCase()} file.`);
@@ -257,9 +267,12 @@ export default class StudioOperationalSourcesUI {
     }
 
     renderSelections() {
-        ["primary", "artwork"].forEach((slot) => {
+        ["primary", "artwork", "motion"].forEach((slot) => {
             const target = this.form.querySelector(`[data-source-selection="${slot}"]`);
-            if (target) target.textContent = this.selectedAssets[slot]?.originalName || "NONE";
+            const asset = this.selectedAssets[slot];
+            if (target) target.textContent = asset
+                ? `${asset.originalName || asset.id} · ${(asset.kind || "asset").toUpperCase()} · SELECTED`
+                : "NONE";
         });
     }
 

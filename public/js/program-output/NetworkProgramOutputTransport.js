@@ -103,7 +103,7 @@ export default class NetworkProgramOutputTransport {
             this.setStatus("token-missing");
             console.error(
                 "[ProgramOutput] Network publish blocked: " +
-                "sessionStorage publisher token is missing."
+                "browser publisher token is missing."
             );
             return false;
         }

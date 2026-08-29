@@ -13,10 +13,12 @@ const STATUS_LABELS = Object.freeze({
 
 export default class ProgramOutputSetupUI {
     constructor({ root = globalThis.document, transport,
-        storage = getSessionStorage() } = {}) {
+        storage = getBrowserStorage("localStorage"),
+        legacyStorage = getBrowserStorage("sessionStorage") } = {}) {
         this.root = root;
         this.transport = transport;
         this.storage = storage;
+        this.legacyStorage = legacyStorage;
         this.started = false;
         this.handleToggle = this.handleToggle.bind(this);
         this.handleSubmit = this.handleSubmit.bind(this);
@@ -69,12 +71,16 @@ export default class ProgramOutputSetupUI {
         if (!token) return;
         try { storePublisherToken(this.storage, token); }
         catch { this.handleStatus("publishing-error"); return; }
+        clearPublisherToken(this.legacyStorage);
         this.input.value = "";
         this.transport.refreshPublisherCredential?.();
     }
 
     handleClear() {
-        try { clearPublisherToken(this.storage); }
+        try {
+            clearPublisherToken(this.storage);
+            clearPublisherToken(this.legacyStorage);
+        }
         catch { this.handleStatus("publishing-error"); return; }
         this.input.value = "";
         this.transport.refreshPublisherCredential?.();
@@ -89,8 +95,8 @@ export default class ProgramOutputSetupUI {
     }
 }
 
-function getSessionStorage() {
-    try { return globalThis.sessionStorage; }
+function getBrowserStorage(name) {
+    try { return globalThis[name]; }
     catch { return null; }
 }
 

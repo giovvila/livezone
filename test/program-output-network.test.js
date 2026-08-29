@@ -8,7 +8,8 @@ import NetworkProgramOutputTransport from
     "../public/js/program-output/NetworkProgramOutputTransport.js";
 import LocalProgramOutputTransport from
     "../public/js/program-output/LocalProgramOutputTransport.js";
-import { createProgramOutputTransport, PROGRAM_OUTPUT_PUBLISHER_TOKEN_KEY } from
+import { createProgramOutputTransport, PROGRAM_OUTPUT_PUBLISHER_TOKEN_KEY,
+    readPersistentPublisherToken } from
     "../public/js/program-output/ProgramOutputTransportFactory.js";
 import { storePublisherToken, clearPublisherToken } from
     "../public/js/ui/ProgramOutputSetupUI.js";
@@ -28,7 +29,16 @@ import StudioRenderer from "../public/js/studio/StudioRenderer.js";
 
 const TOKEN = "test-publisher-token-12345";
 
-test("operator token helpers use canonical session-scoped key", () => {
+function memoryStorage() {
+    const values = new Map();
+    return {
+        getItem: (key) => values.get(key) ?? null,
+        setItem: (key, value) => values.set(key, String(value)),
+        removeItem: (key) => values.delete(key)
+    };
+}
+
+test("operator token helpers use canonical persistent key", () => {
     const values = new Map();
     const storage = {
         setItem: (key, value) => values.set(key, value),
@@ -38,6 +48,47 @@ test("operator token helpers use canonical session-scoped key", () => {
     assert.equal(values.get(PROGRAM_OUTPUT_PUBLISHER_TOKEN_KEY), TOKEN);
     clearPublisherToken(storage);
     assert.equal(values.has(PROGRAM_OUTPUT_PUBLISHER_TOKEN_KEY), false);
+});
+
+test("persistent publisher token survives new reads and local storage wins", () => {
+    const local = memoryStorage();
+    const session = memoryStorage();
+    local.setItem(PROGRAM_OUTPUT_PUBLISHER_TOKEN_KEY, TOKEN);
+    session.setItem(PROGRAM_OUTPUT_PUBLISHER_TOKEN_KEY, "legacy-token-value-12345");
+    assert.equal(readPersistentPublisherToken({ persistentStorage: local,
+        legacyStorage: session }), TOKEN);
+    assert.equal(readPersistentPublisherToken({ persistentStorage: local,
+        legacyStorage: session }), TOKEN);
+    assert.equal(session.getItem(PROGRAM_OUTPUT_PUBLISHER_TOKEN_KEY),
+        "legacy-token-value-12345");
+});
+
+test("legacy session publisher token migrates once into persistent storage", () => {
+    const local = memoryStorage();
+    const session = memoryStorage();
+    session.setItem(PROGRAM_OUTPUT_PUBLISHER_TOKEN_KEY, TOKEN);
+    assert.equal(readPersistentPublisherToken({ persistentStorage: local,
+        legacyStorage: session }), TOKEN);
+    assert.equal(local.getItem(PROGRAM_OUTPUT_PUBLISHER_TOKEN_KEY), TOKEN);
+    assert.equal(session.getItem(PROGRAM_OUTPUT_PUBLISHER_TOKEN_KEY), null);
+    assert.equal(readPersistentPublisherToken({ persistentStorage: local,
+        legacyStorage: session }), TOKEN);
+});
+
+test("persistent token update and clear retain explicit operator control", () => {
+    const local = memoryStorage();
+    assert.equal(readPersistentPublisherToken({ persistentStorage: local,
+        legacyStorage: memoryStorage() }), "");
+    assert.equal(storePublisherToken(local, TOKEN), true);
+    assert.equal(readPersistentPublisherToken({ persistentStorage: local,
+        legacyStorage: memoryStorage() }), TOKEN);
+    const replacement = "replacement-token-value-12345";
+    assert.equal(storePublisherToken(local, replacement), true);
+    assert.equal(readPersistentPublisherToken({ persistentStorage: local,
+        legacyStorage: memoryStorage() }), replacement);
+    clearPublisherToken(local);
+    assert.equal(readPersistentPublisherToken({ persistentStorage: local,
+        legacyStorage: memoryStorage() }), "");
 });
 
 test("recorded Program playback projects late-join time without polling", () => {
@@ -795,17 +846,22 @@ test("publisher token can be configured and cleared without recreating transport
 });
 
 test("publisher surfaces authorization rejection distinctly", async () => {
+    const local = memoryStorage();
+    local.setItem(PROGRAM_OUTPUT_PUBLISHER_TOKEN_KEY, "wrong-token-value");
     const transport = new NetworkProgramOutputTransport({
         role: "publisher",
         publishUrl: "https://livezone.test/api/program-output",
         subscribeUrl: "https://livezone.test/api/program-output/events",
-        tokenProvider: () => "wrong-token-value",
+        tokenProvider: () => readPersistentPublisherToken({
+            persistentStorage: local, legacyStorage: memoryStorage() }),
         fetchImplementation: async () => ({ ok: false, status: 401 })
     });
     transport.start();
     transport.publish(snapshot());
     await transport.publishQueue;
     assert.equal(transport.status, "auth-error");
+    assert.equal(local.getItem(PROGRAM_OUTPUT_PUBLISHER_TOKEN_KEY),
+        "wrong-token-value");
     transport.destroy();
 });
 
