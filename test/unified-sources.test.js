@@ -6,10 +6,12 @@ import StudioAudioSurface from "../public/js/studio/renderers/StudioAudioSurface
 import StudioSourceManager from "../public/js/studio/StudioSourceManager.js";
 import StudioOperationalSourcesUI from "../public/js/ui/StudioOperationalSourcesUI.js";
 import StudioUI from "../public/js/ui/StudioUI.js";
+import StudioAssetResolver from "../public/js/studio/StudioAssetResolver.js";
+import createStudioRemovalGuard from "../public/js/studio/StudioRemovalGuard.js";
 
 const KEY = "livezone.studio.mediaCatalog.overlay.v1";
 
-function harness(seed = null) {
+function harness(seed = null, assetResolver = null) {
     const values = new Map(seed ? [[KEY, seed]] : []);
     const sources = new Map();
     const scenes = new Map();
@@ -17,7 +19,11 @@ function harness(seed = null) {
     let serial = 0;
     const sourceManager = {
         registerSource(value) { if (sources.has(value.id)) return null; sources.set(value.id, value); return value; },
-        replaceSource(value) { if (!sources.has(value.id)) return null; sources.set(value.id, value); return value; },
+        replaceSource(value) { if (!sources.has(value.id)) return null;
+            const matching = activeInstances.filter((item) => item.sourceId === value.id);
+            if (matching.some((item) => typeof item.updateSourceDefinition !== "function" ||
+                item.updateSourceDefinition(value) !== true)) return null;
+            sources.set(value.id, value); return value; },
         unregisterSource(id) { const value = sources.get(id); if (!value) return null; sources.delete(id); return value; },
         getSource(id) { return sources.get(id) || null; },
         getActiveInstances() { return activeInstances; }
@@ -32,14 +38,262 @@ function harness(seed = null) {
         getPreviewSceneId() { return previewSceneId; }, getProgramSceneId() { return programSceneId; }
     };
     const catalog = new StudioCatalogManager({ studioStateManager: stateManager,
-        studioSourceManager: sourceManager, eventTarget: null,
+        studioSourceManager: sourceManager, eventTarget: null, assetResolver,
         storage: { getItem: (key) => values.get(key) || null, setItem: (key, value) => values.set(key, value) },
         baseUrl: "https://studio.test/control/", uuidFactory: () => `00000000-0000-4000-8000-${String(++serial).padStart(12, "0")}` });
     return { catalog, values, sources, scenes,
         setPreview: (id) => { previewSceneId = id; },
         setProgram: (id) => { programSceneId = id; },
-        setActiveSource: (id) => { activeInstances = id ? [{ sourceId: id }] : []; } };
+        setActiveSource: (id, updateSourceDefinition = null) => { activeInstances = id
+            ? [{ sourceId: id, ...(updateSourceDefinition ? { updateSourceDefinition } : {}) }]
+            : []; } };
 }
+
+test("managed asset resolver validates kinds and rejects legacy collisions", () => {
+    const legacy = { getAsset: (id) => id === "asset-shared"
+        ? { id, name: "Legacy", kind: "video", url: "/legacy.mp4" } : null };
+    const managed = { getAsset: (id) => ({
+        "asset-video": { id, originalName: "clip.mp4", kind: "video", url: "/media-library/files/video/a.mp4" },
+        "asset-image": { id, originalName: "still.png", kind: "image", url: "/media-library/files/image/a.png" },
+        "asset-shared": { id, originalName: "managed.mp4", kind: "video", url: "/managed.mp4" }
+    })[id] || null };
+    const previousDocument = globalThis.document;
+    globalThis.document = { baseURI: "https://studio.test/control/" };
+    try {
+        const resolver = new StudioAssetResolver({ legacyLibrary: legacy, mediaLibraryManager: managed });
+        assert.equal(resolver.resolve("asset-video", { expectedKind: "video" }).asset.origin, "managed");
+        assert.equal(resolver.resolve("asset-image", { expectedKind: "image" }).ok, true);
+        assert.equal(resolver.resolve("asset-image", { expectedKind: "audio" }).reason, "asset-kind-mismatch");
+        assert.equal(resolver.resolve("missing").reason, "asset-not-found");
+        assert.equal(resolver.resolve("asset-shared").reason, "asset-id-ambiguous");
+    } finally { globalThis.document = previousDocument; }
+});
+
+test("scene removal guard distinguishes live, scheduler and runtime references without null collision", () => {
+    let authorizedSourceId = null;
+    let scheduledSceneIds = [];
+    let runtimeSceneIds = [];
+    let busy = false;
+    const guard = createStudioRemovalGuard({
+        dominantLiveConfig: { getSnapshot: () => ({ authorizedSourceId }) },
+        transitionCoordinator: { isBusy: () => busy },
+        studioRenderer: { isSceneInUse: (id) => runtimeSceneIds.includes(id) },
+        scheduleStore: { getSnapshot: () => ({ schedule: { items:
+            scheduledSceneIds.map((sceneId) => ({ sceneId })) } }) }
+    });
+    assert.equal(guard({ sourceId: null, sceneId: "S1" }), null);
+    runtimeSceneIds = ["S1"];
+    assert.equal(guard({ sourceId: null, sceneId: "S1" }), "active-runtime-reference");
+    runtimeSceneIds = [];
+    assert.equal(guard({ sourceId: null, sceneId: "S1" }), null);
+    scheduledSceneIds = ["S1"];
+    assert.equal(guard({ sourceId: null, sceneId: "S1" }), "scheduler-reference");
+    scheduledSceneIds = [];
+    assert.equal(guard({ sourceId: null, sceneId: "S1" }), null);
+    busy = true;
+    assert.equal(guard({ sourceId: null, sceneId: "S1" }), "active-runtime-reference");
+    busy = false;
+    authorizedSourceId = "S1";
+    assert.equal(guard({ sourceId: null, sceneId: "S1" }), null,
+        "sceneId must never be compared with authorizedSourceId");
+    assert.equal(guard({ sourceId: "S1", sceneId: null }), "source-authorized");
+    assert.equal(guard({ sourceId: "different", sceneId: "S1" }), null);
+});
+
+test("scene deletion becomes available after Preview and Program references move", () => {
+    const h = harness(); h.catalog.initialize();
+    const source = h.catalog.addSource({ kind: "image", name: "Still", url: "/still.png" }).source;
+    const scene = h.catalog.createSceneForSource(source.id, { name: "Scene" }).scene;
+    h.setPreview(scene.id);
+    assert.equal(h.catalog.removeScene(scene.id).reason, "scene-in-preview");
+    h.setPreview("other");
+    h.setProgram(scene.id);
+    assert.equal(h.catalog.removeScene(scene.id).reason, "scene-in-program");
+    h.setProgram("other");
+    assert.equal(h.catalog.removeScene(scene.id).ok, true);
+});
+
+test("scene deletion becomes available after Scheduler reference is removed", () => {
+    const h = harness(); h.catalog.initialize();
+    const source = h.catalog.addSource({ kind: "image", name: "Still", url: "/still.png" }).source;
+    const scene = h.catalog.createSceneForSource(source.id, { name: "Scene" }).scene;
+    let items = [{ sceneId: scene.id }];
+    h.catalog.setRemovalGuard(createStudioRemovalGuard({
+        dominantLiveConfig: { getSnapshot: () => ({ authorizedSourceId: null }) },
+        transitionCoordinator: { isBusy: () => false },
+        studioRenderer: { isSceneInUse: () => false },
+        scheduleStore: { getSnapshot: () => ({ schedule: { items } }) }
+    }));
+    assert.equal(h.catalog.removeScene(scene.id).reason, "scheduler-reference");
+    items = [];
+    assert.equal(h.catalog.removeScene(scene.id).ok, true);
+});
+
+test("schema v3 persists managed VIDEO IMAGE and AUDIO references without scenes", () => {
+    const assets = new Map([
+        ["v", { id: "v", kind: "video", url: "https://studio.test/v.mp4" }],
+        ["i", { id: "i", kind: "image", url: "https://studio.test/i.png" }],
+        ["a", { id: "a", kind: "audio", url: "https://studio.test/a.mp3" }]
+    ]);
+    const resolver = { resolve(id, { expectedKind }) { const asset = assets.get(id);
+        return asset && asset.kind === expectedKind ? { ok: true, asset }
+            : { ok: false, reason: asset ? "asset-kind-mismatch" : "asset-not-found" }; } };
+    const h = harness(null, resolver); h.catalog.initialize();
+    assert.equal(h.catalog.addSource({ kind: "video", name: "V", assetId: "v" }).ok, true);
+    assert.equal(h.catalog.addSource({ kind: "image", name: "I", assetId: "i" }).ok, true);
+    assert.equal(h.catalog.addSource({ kind: "audio", name: "A", audioAssetId: "a" }).ok, true);
+    const stored = JSON.parse(h.values.get(KEY));
+    assert.equal(stored.version, 3);
+    assert.equal(stored.scenes.length, 0);
+    assert.deepEqual(stored.sources.map(({ kind, assetId, audioAssetId, stillAssetId }) =>
+        ({ kind, assetId, audioAssetId, stillAssetId })), [
+        { kind: "media", assetId: "v", audioAssetId: undefined, stillAssetId: undefined },
+        { kind: "image", assetId: "i", audioAssetId: undefined, stillAssetId: undefined },
+        { kind: "audio", assetId: undefined, audioAssetId: "a", stillAssetId: undefined }
+    ]);
+});
+
+test("missing authoritative asset remains visible and blocks runtime definition", () => {
+    const seed = JSON.stringify({ version: 3, sources: [
+        { id: "video-00000000-0000-4000-8000-000000000001", name: "Missing", kind: "media", assetId: "gone" }
+    ], scenes: [], sourceOverrides: [], sceneOverrides: [],
+    deletedBootstrapSourceIds: [], deletedBootstrapSceneIds: [] });
+    const resolver = { resolve: () => ({ ok: false, reason: "asset-not-found" }) };
+    const h = harness(seed, resolver); h.catalog.initialize();
+    const source = h.catalog.getSources()[0];
+    assert.equal(source.available, false);
+    assert.equal(source.unavailableReason, "asset-not-found");
+    assert.equal(h.sources.size, 0);
+});
+
+test("asset reference inspection returns source names and matching fields", () => {
+    const asset = { id: "a", kind: "audio", url: "https://studio.test/a.mp3" };
+    const image = { id: "i", kind: "image", url: "https://studio.test/i.png" };
+    const resolver = { resolve(id) { return { ok: true, asset: id === "a" ? asset : image }; } };
+    const h = harness(null, resolver); h.catalog.initialize();
+    h.catalog.addSource({ kind: "audio", name: "Radio", audioAssetId: "a", stillAssetId: "i" });
+    assert.deepEqual(h.catalog.getAssetReferences("i").map((item) =>
+        ({ sourceName: item.sourceName, fields: [...item.fields] })),
+    [{ sourceName: "Radio", fields: ["stillAssetId"] }]);
+});
+
+test("active AUDIO source propagates artwork replacement and clear without changing scene", () => {
+    const assets = new Map([
+        ["A1", { id: "A1", kind: "audio", url: "https://studio.test/audio.mp3" }],
+        ["I1", { id: "I1", kind: "image", url: "https://studio.test/old.png" }],
+        ["I2", { id: "I2", kind: "image", url: "https://studio.test/new.png" }]
+    ]);
+    const resolver = { resolve(id, { expectedKind }) { const asset = assets.get(id);
+        return asset && asset.kind === expectedKind ? { ok: true, asset }
+            : { ok: false, reason: "asset-kind-mismatch" }; } };
+    const h = harness(null, resolver); h.catalog.initialize();
+    const source = h.catalog.addSource({ kind: "audio", name: "Show",
+        audioAssetId: "A1", stillAssetId: "I1" }).source;
+    const scene = h.catalog.createSceneForSource(source.id, { name: "Show scene" }).scene;
+    const propagated = [];
+    h.setActiveSource(source.id, (definition) => { propagated.push(definition); return true; });
+    const changed = h.catalog.updateSource(source.id, { name: "Show",
+        audioAssetId: "A1", stillAssetId: "I2" });
+    assert.equal(changed.ok, true);
+    assert.equal(changed.source.id, source.id);
+    assert.match(h.sources.get(source.id).stillUrl, /new\.png$/);
+    assert.equal(h.scenes.get(scene.id).renderer.sourceId, source.id);
+    assert.match(propagated.at(-1).stillUrl, /new\.png$/);
+    const storedAfterChange = JSON.parse(h.values.get(KEY)).sources.find(
+        (item) => item.id === source.id);
+    assert.equal(storedAfterChange.audioAssetId, "A1");
+    assert.equal(storedAfterChange.stillAssetId, "I2");
+    const reloaded = harness(h.values.get(KEY), resolver);
+    reloaded.catalog.initialize();
+    const reloadedSource = reloaded.catalog.getSources().find((item) => item.id === source.id);
+    assert.equal(reloadedSource.audioAssetId, "A1");
+    assert.equal(reloadedSource.stillAssetId, "I2");
+    const manager = { getAsset: (id) => ({ id, originalName: `${id}.asset` }) };
+    const ui = new StudioOperationalSourcesUI(null, null, { mediaLibraryManager: manager });
+    ui.selectedAssets = ui.createSelectedAssets(reloadedSource);
+    assert.equal(ui.selectedAssets.primary.id, "A1");
+    assert.equal(ui.selectedAssets.artwork.id, "I2");
+    const editPayload = ui.applyManagedSelections({ kind: "audio", name: "Show" });
+    assert.equal(editPayload.audioAssetId, "A1");
+    assert.equal(editPayload.stillAssetId, "I2");
+    const cleared = h.catalog.updateSource(source.id, { name: "Show",
+        audioAssetId: "A1" });
+    assert.equal(cleared.ok, true);
+    assert.equal(h.sources.get(source.id).stillUrl, undefined);
+    assert.equal(propagated.at(-1).stillUrl, undefined);
+    assert.equal(h.scenes.get(scene.id).renderer.sourceId, source.id);
+    const storedAfterClear = JSON.parse(h.values.get(KEY)).sources.find(
+        (item) => item.id === source.id);
+    assert.equal(Object.hasOwn(storedAfterClear, "stillAssetId"), false);
+    const clearedReload = harness(h.values.get(KEY), resolver);
+    clearedReload.catalog.initialize();
+    const clearedSource = clearedReload.catalog.getSources().find((item) => item.id === source.id);
+    const clearedSelections = ui.createSelectedAssets(clearedSource);
+    assert.equal(clearedSelections.primary.id, "A1");
+    assert.equal(clearedSelections.artwork, null);
+});
+
+test("EDIT payload preserves managed AUDIO IDs when disabled kind is absent from FormData", () => {
+    const ui = new StudioOperationalSourcesUI(null, null);
+    ui.selectedAssets = {
+        primary: { id: "A1", originalName: "audio.mp3" },
+        artwork: { id: "I2", originalName: "new.png" }
+    };
+    const data = ui.applyManagedSelections({ kind: "audio", name: "Show" });
+    assert.deepEqual(data, { kind: "audio", name: "Show",
+        audioAssetId: "A1", stillAssetId: "I2" });
+    ui.selectedAssets.artwork = null;
+    const cleared = ui.applyManagedSelections({ kind: "audio", name: "Show" });
+    assert.equal(cleared.audioAssetId, "A1");
+    assert.equal(Object.hasOwn(cleared, "stillAssetId"), false);
+});
+
+test("real EDIT recovery reconciles prior URL-converted AUDIO before artwork replace", () => {
+    const previousDocument = globalThis.document;
+    globalThis.document = { baseURI: "https://studio.test/control/" };
+    try {
+        const assets = [
+            { id: "A1", kind: "audio", originalName: "audio.mp3",
+                url: "https://studio.test/media-library/files/audio/a.mp3" },
+            { id: "I1", kind: "image", originalName: "old.png",
+                url: "https://studio.test/media-library/files/image/old.png" },
+            { id: "I2", kind: "image", originalName: "new.png",
+                url: "https://studio.test/media-library/files/image/new.png" }
+        ];
+        const manager = { getAsset: (id) => assets.find((asset) => asset.id === id) || null,
+            listAssets: ({ kind }) => assets.filter((asset) => asset.kind === kind) };
+        const resolver = { resolve(id, { expectedKind }) { const asset = manager.getAsset(id);
+            return asset?.kind === expectedKind ? { ok: true, asset }
+                : { ok: false, reason: "asset-kind-mismatch" }; } };
+        const h = harness(null, resolver); h.catalog.initialize();
+        const source = h.catalog.addSource({ kind: "audio", name: "Show",
+            url: "/media-library/files/audio/a.mp3",
+            stillUrl: "/media-library/files/image/old.png" }).source;
+        assert.equal(source.audioAssetId, undefined);
+        assert.equal(source.stillAssetId, undefined);
+        const ui = new StudioOperationalSourcesUI(null, null,
+            { mediaLibraryManager: manager });
+        ui.selectedAssets = ui.createSelectedAssets(h.catalog.getSources()[0]);
+        assert.equal(ui.selectedAssets.primary.id, "A1");
+        assert.equal(ui.selectedAssets.artwork.id, "I1");
+        ui.selectedAssets.artwork = manager.getAsset("I2");
+        const payload = ui.applyManagedSelections({ kind: "audio", name: "Show" });
+        assert.equal(payload.audioAssetId, "A1");
+        assert.equal(payload.stillAssetId, "I2");
+        assert.equal(h.catalog.updateSource(source.id, payload).ok, true);
+        const stored = JSON.parse(h.values.get(KEY)).sources.find(
+            (item) => item.id === source.id);
+        assert.equal(stored.audioAssetId, "A1");
+        assert.equal(stored.stillAssetId, "I2");
+        assert.equal(Object.hasOwn(stored, "audioUrl"), false);
+        const reloaded = harness(h.values.get(KEY), resolver);
+        reloaded.catalog.initialize();
+        const restored = reloaded.catalog.getSources()[0];
+        assert.equal(restored.audioAssetId, "A1");
+        assert.equal(restored.stillAssetId, "I2");
+    }
+    finally { globalThis.document = previousDocument; }
+});
 
 class FakeTarget {
     constructor() {
@@ -376,6 +630,91 @@ test("AudioSurface artwork load and failure keep audio authority and fallback", 
         consumer: "program" });
     assert.equal(plain.imageReady, true);
     assert.equal(plain.stillUrl, undefined);
+});
+
+test("initial cached AUDIO artwork hides placeholder and no-artwork keeps it", () => {
+    const illustrated = new StudioAudioSurface({ sourceId: "audio-cached",
+        audioUrl: "https://example.test/audio.mp3",
+        stillUrl: "https://example.test/art.jpg", instanceId: "instance-cached",
+        consumer: "preview" });
+    illustrated.image = { complete: true, naturalWidth: 640, hidden: true };
+    illustrated.placeholder = { hidden: false };
+    illustrated.audio = { error: null, readyState: 0 };
+    illustrated.checkCurrentReadiness();
+    assert.equal(illustrated.image.hidden, false);
+    assert.equal(illustrated.placeholder.hidden, true);
+
+    const plain = new StudioAudioSurface({ sourceId: "audio-plain",
+        audioUrl: "https://example.test/audio.mp3", instanceId: "instance-plain",
+        consumer: "program" });
+    plain.placeholder = { hidden: false };
+    plain.audio = { error: null, readyState: 0 };
+    plain.checkCurrentReadiness();
+    assert.equal(plain.image, null);
+    assert.equal(plain.placeholder.hidden, false);
+});
+
+test("managed AUDIO asset references reach Preview and Program surfaces with stillUrl", () => {
+    StudioSourceManager.destroy();
+    StudioSourceManager.initialize({});
+    const assets = new Map([
+        ["A1", { id: "A1", kind: "audio", url: "https://studio.test/audio.mp3" }],
+        ["I1", { id: "I1", kind: "image", url: "https://studio.test/art.png" }]
+    ]);
+    const resolver = { resolve(id, { expectedKind }) { const asset = assets.get(id);
+        return asset && asset.kind === expectedKind ? { ok: true, asset }
+            : { ok: false, reason: "asset-kind-mismatch" }; } };
+    const scenes = new Map();
+    const catalog = new StudioCatalogManager({
+        studioStateManager: { registerScene(scene) { scenes.set(scene.id, scene); return scene; },
+            unregisterScene() {}, getPreviewSceneId() { return null; }, getProgramSceneId() { return null; } },
+        studioSourceManager: StudioSourceManager, assetResolver: resolver, eventTarget: null,
+        storage: { getItem() { return null; }, setItem() {} },
+        baseUrl: "https://studio.test/control/", uuidFactory: () => "00000000-0000-4000-8000-000000000099"
+    });
+    catalog.initialize();
+    const source = catalog.addSource({ kind: "audio", name: "Managed",
+        audioAssetId: "A1", stillAssetId: "I1" }).source;
+    const preview = StudioSourceManager.createInstance(source.id, { consumer: "preview" });
+    const program = StudioSourceManager.createInstance(source.id, { consumer: "program" });
+    assert.equal(preview.audioUrl, "https://studio.test/audio.mp3");
+    assert.equal(preview.stillUrl, "https://studio.test/art.png");
+    assert.equal(program.stillUrl, preview.stillUrl);
+    assert.notEqual(preview, program);
+    StudioSourceManager.destroy();
+});
+
+test("AudioSurface replaces and clears artwork in place without replacing audio", () => {
+    const previousDocument = globalThis.document;
+    const removed = [];
+    const oldImage = { removeEventListener() {}, removeAttribute() {},
+        remove() { removed.push("old"); } };
+    const newImage = { addEventListener() {}, hidden: false, removeEventListener() {},
+        removeAttribute() {}, remove() { removed.push("new"); } };
+    globalThis.document = { createElement: () => newImage };
+    try {
+        const surface = new StudioAudioSurface({ sourceId: "audio-a",
+            audioUrl: "https://example.test/audio.mp3",
+            stillUrl: "https://example.test/old.jpg", instanceId: "instance-a",
+            consumer: "preview" });
+        const audio = {};
+        surface.audio = audio;
+        surface.image = oldImage;
+        surface.placeholder = { hidden: true };
+        surface.root = { insertBefore(node, before) {
+            assert.equal(node, newImage); assert.equal(before, audio); } };
+        surface.checkCurrentReadiness = () => {};
+        assert.equal(surface.updateSourceDefinition({ audioUrl: surface.audioUrl,
+            stillUrl: "https://example.test/new.jpg" }), true);
+        assert.equal(surface.image, newImage);
+        assert.equal(surface.stillUrl, "https://example.test/new.jpg");
+        assert.equal(removed[0], "old");
+        assert.equal(surface.updateSourceDefinition({ audioUrl: surface.audioUrl }), true);
+        assert.equal(surface.image, null);
+        assert.equal(surface.stillUrl, null);
+        assert.equal(surface.placeholder.hidden, false);
+        assert.deepEqual(removed, ["old", "new"]);
+    } finally { globalThis.document = previousDocument; }
 });
 
 test("Control Room Preview and Program receive independent AUDIO artwork surfaces", () => {

@@ -106,18 +106,53 @@ export default class StudioAudioSurface {
     }
 
     handleImageLoad() {
-        this.imageReady = true;
-        this.image.hidden = false;
-        this.placeholder.hidden = true;
+        this.showArtwork();
         this.checkCurrentReadiness();
     }
 
     handleImageError() {
         this.artworkFailed = true;
         this.imageReady = true;
-        this.image.hidden = true;
-        this.placeholder.hidden = false;
+        if (this.image) this.image.hidden = true;
+        if (this.placeholder) this.placeholder.hidden = false;
         this.checkCurrentReadiness();
+    }
+
+    showArtwork() {
+        this.imageReady = true;
+        if (this.image) this.image.hidden = false;
+        if (this.placeholder) this.placeholder.hidden = true;
+    }
+
+    updateSourceDefinition({ audioUrl, stillUrl } = {}) {
+        if (this.destroyed || audioUrl !== this.audioUrl) return false;
+        const nextStillUrl = typeof stillUrl === "string" && stillUrl ? stillUrl : null;
+        if (nextStillUrl === (this.stillUrl || null)) return true;
+        this.stillUrl = nextStillUrl;
+        if (this.image) {
+            this.image.removeEventListener("load", this.handleImageLoad);
+            this.image.removeEventListener("error", this.handleImageError);
+            this.image.removeAttribute("src");
+            this.image.remove();
+            this.image = null;
+        }
+        this.artworkFailed = false;
+        this.imageReady = !nextStillUrl;
+        if (this.placeholder) this.placeholder.hidden = false;
+        if (!nextStillUrl) {
+            this.checkCurrentReadiness();
+            return true;
+        }
+        const image = document.createElement("img");
+        image.className = "studio-render-audio-still";
+        image.alt = "";
+        image.hidden = true;
+        image.addEventListener("load", this.handleImageLoad);
+        image.addEventListener("error", this.handleImageError);
+        this.image = image;
+        this.root.insertBefore(image, this.audio);
+        image.src = nextStillUrl;
+        return true;
     }
 
     handleLoadedMetadata() {
@@ -376,8 +411,7 @@ export default class StudioAudioSurface {
 
         if (this.image?.complete) {
             if (this.image.naturalWidth > 0) {
-                this.imageReady = true;
-                this.image.hidden = false;
+                this.showArtwork();
             }
             else if (this.image.src && !this.artworkFailed) {
                 this.handleImageError();
@@ -402,7 +436,6 @@ export default class StudioAudioSurface {
         this.readinessState = "ready";
         this.status?.remove();
         this.status = null;
-        this.placeholder = null;
         this.setHealth("ready", null);
         this.settleReadinessWaiters("resolve");
         this.notifyTransport();

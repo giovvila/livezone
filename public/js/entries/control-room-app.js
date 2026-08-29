@@ -17,10 +17,12 @@ import DebugPanel from "../debug/DebugPanel.js";
 import StudioBootstrap from "../studio/StudioBootstrap.js";
 import StudioCatalogManager from "../studio/StudioCatalogManager.js";
 import StudioAssetLibrary from "../studio/StudioAssetLibrary.js";
+import StudioAssetResolver from "../studio/StudioAssetResolver.js";
 import StudioRenderer from "../studio/StudioRenderer.js";
 import StudioSourceManager from "../studio/StudioSourceManager.js";
 import StudioGraphicsManager from "../studio/StudioGraphicsManager.js";
 import StudioTransitionCoordinator from "../studio/StudioTransitionCoordinator.js";
+import createStudioRemovalGuard from "../studio/StudioRemovalGuard.js";
 import ProgramOutputManager from "../program-output/ProgramOutputManager.js";
 import ProgramOutputSetupUI from "../ui/ProgramOutputSetupUI.js";
 import StudioScheduleSummaryUI from "../ui/StudioScheduleSummaryUI.js";
@@ -43,16 +45,22 @@ import { createDominantLiveConsumerFactory } from
 import MediaLibraryClient from "../media-library/MediaLibraryClient.js";
 import MediaLibraryManager from "../media-library/MediaLibraryManager.js";
 import MediaLibraryUI from "../ui/MediaLibraryUI.js";
+import MediaLibraryPickerUI from "../ui/MediaLibraryPickerUI.js";
 
 BroadcastStateManager.initialize();
 StudioStateManager.initialize();
 
 const runtime = new PlaybackRuntime();
 const studioAssetLibrary = new StudioAssetLibrary();
+const mediaLibraryManager = new MediaLibraryManager(new MediaLibraryClient());
+const studioAssetResolver = new StudioAssetResolver({
+    legacyLibrary: studioAssetLibrary,
+    mediaLibraryManager
+});
 const studioCatalogManager = new StudioCatalogManager({
     studioStateManager: StudioStateManager,
     studioSourceManager: StudioSourceManager,
-    assetResolver: (assetId) => studioAssetLibrary.getAsset(assetId)
+    assetResolver: studioAssetResolver
 });
 const studioBootstrap = new StudioBootstrap({
     studioCatalogManager,
@@ -79,9 +87,11 @@ let technicalLiveMonitorUI = null;
 let dominantLiveController = null;
 let dominantLiveUI = null;
 let mediaLibraryUI = null;
+let mediaLibraryPickerUI = null;
 
 function destroyControlRoom() {
     mediaLibraryUI?.destroy();
+    mediaLibraryPickerUI?.destroy();
     studioSourcesUI?.destroy();
     studioSourcesUI = null;
     studioUI?.destroy();
@@ -104,6 +114,9 @@ runtime.start({
         if (assetLibraryReport.status !== "ready") {
             console.warn("[StudioAssetLibrary]", assetLibraryReport);
         }
+
+        try { await mediaLibraryManager.initialize(); }
+        catch (error) { console.warn("[MediaLibraryManager]", error); }
 
         const bootstrapReport = await studioBootstrap.initialize();
 
@@ -145,14 +158,12 @@ runtime.start({
         });
         programOutputSetupUI.start();
         const scheduleStore = new ScheduleStore();
-        studioCatalogManager.setRemovalGuard(({ sourceId, sceneId }) =>
-            dominantLiveConfig.getSnapshot().authorizedSourceId === sourceId ||
-            studioTransitionCoordinator.isBusy() ||
-            Boolean(sceneId && (studioRenderer.isSceneInUse(sceneId) ||
-                scheduleStore.getSnapshot().schedule.items.some(
-                    (item) => item.sceneId === sceneId
-                )))
-        );
+        studioCatalogManager.setRemovalGuard(createStudioRemovalGuard({
+            dominantLiveConfig,
+            transitionCoordinator: studioTransitionCoordinator,
+            studioRenderer,
+            scheduleStore
+        }));
 
         studioUI = new StudioUI(
             document.getElementById("studio-panel"),
@@ -205,14 +216,16 @@ runtime.start({
         );
         studioMediaUI.start();
 
+        mediaLibraryPickerUI = new MediaLibraryPickerUI(mediaLibraryManager);
+        mediaLibraryPickerUI.start();
         studioSourcesUI = new StudioOperationalSourcesUI(
-            document.getElementById("studio-panel"),
-            studioCatalogManager
+            document.getElementById("studio-panel"), studioCatalogManager,
+            { mediaLibraryManager, mediaLibraryPicker: mediaLibraryPickerUI }
         );
         studioSourcesUI.start();
         mediaLibraryUI = new MediaLibraryUI(
             document.getElementById("media-library"),
-            new MediaLibraryManager(new MediaLibraryClient())
+            mediaLibraryManager
         );
         mediaLibraryUI.start();
 

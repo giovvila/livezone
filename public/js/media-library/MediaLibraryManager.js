@@ -1,6 +1,6 @@
 export default class MediaLibraryManager {
     constructor(client) { this.client = client; this.assets = []; this.listeners = new Set(); this.state = "idle"; this.error = null; this.progress = null; }
-    async initialize() { return this.refresh(); }
+    initialize() { if (!this.initializationPromise) this.initializationPromise = this.refresh(); return this.initializationPromise; }
     async refresh(kind = null) { return this.run("loading", async () => { const result = await this.client.list(kind); this.assets = result.assets.map((asset) => Object.freeze({ ...asset, metadata: asset.metadata && Object.freeze({ ...asset.metadata }) })); return this.getSnapshot(); }); }
     listAssets({ kind = null } = {}) { return Object.freeze(this.assets.filter((asset) => !kind || asset.kind === kind)); }
     getAsset(id) { return this.assets.find((asset) => asset.id === id) || null; }

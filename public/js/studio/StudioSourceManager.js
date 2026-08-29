@@ -75,6 +75,15 @@ class StudioSourceManager {
             return null;
         }
 
+        const active = Array.from(this.instances.values()).filter(
+            (instance) => instance.sourceId === source.id
+        );
+        if (active.length && active.some((instance) =>
+            typeof instance.updateSourceDefinition !== "function" ||
+            instance.updateSourceDefinition(source) !== true)) {
+            return null;
+        }
+
         this.sources.set(source.id, source);
         return this.createSourceSnapshot(source);
     }

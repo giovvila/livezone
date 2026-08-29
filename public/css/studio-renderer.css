@@ -54,6 +54,10 @@
     object-fit: contain;
 }
 
+.studio-render-audio-still[hidden] {
+    display: none;
+}
+
 .studio-render-audio-placeholder {
     display: grid;
     width: 100%;

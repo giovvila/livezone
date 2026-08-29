@@ -348,6 +348,8 @@ export default class StudioUI {
         const messages = { "scene-in-preview": "Scene is currently in Preview.",
             "scene-in-program": "Scene is currently in Program.",
             "scene-authorized": "Scene is referenced by Scheduler or an active runtime.",
+            "scheduler-reference": "Scene is referenced by Scheduler.",
+            "active-runtime-reference": "Scene is referenced by an active runtime.",
             "source-not-found": "Choose an available source.",
             "invalid-name": "Enter a valid scene name.",
             "persistence-failed": "Scene registry could not be saved." };
