@@ -40,6 +40,9 @@ import DominantLiveController from "../studio/DominantLiveController.js";
 import DominantLiveUI from "../ui/DominantLiveUI.js";
 import { createDominantLiveConsumerFactory } from
     "../studio/DominantLiveHealthConsumer.js";
+import MediaLibraryClient from "../media-library/MediaLibraryClient.js";
+import MediaLibraryManager from "../media-library/MediaLibraryManager.js";
+import MediaLibraryUI from "../ui/MediaLibraryUI.js";
 
 BroadcastStateManager.initialize();
 StudioStateManager.initialize();
@@ -75,8 +78,10 @@ let programRemainingTimeUI = null;
 let technicalLiveMonitorUI = null;
 let dominantLiveController = null;
 let dominantLiveUI = null;
+let mediaLibraryUI = null;
 
 function destroyControlRoom() {
+    mediaLibraryUI?.destroy();
     studioSourcesUI?.destroy();
     studioSourcesUI = null;
     studioUI?.destroy();
@@ -205,6 +210,11 @@ runtime.start({
             studioCatalogManager
         );
         studioSourcesUI.start();
+        mediaLibraryUI = new MediaLibraryUI(
+            document.getElementById("media-library"),
+            new MediaLibraryManager(new MediaLibraryClient())
+        );
+        mediaLibraryUI.start();
 
         const technicalRoot = document.querySelector(".control-room-technical");
         const liveSourceMonitor = new LiveSourceMonitor({

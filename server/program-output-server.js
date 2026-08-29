@@ -4,10 +4,13 @@ import { extname, join, normalize, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { timingSafeEqual } from "node:crypto";
 import ProgramOutputStore from "./program-output/ProgramOutputStore.js";
+import MediaAssetRepository from "./media-library/MediaAssetRepository.js";
+import MediaLibraryRoutes from "./media-library/MediaLibraryRoutes.js";
 
 const MAX_BODY_BYTES = 64 * 1024;
 const SSE_KEEPALIVE_MS = 15000;
 const PUBLIC_ROOT = fileURLToPath(new URL("../public/", import.meta.url));
+const DEFAULT_MEDIA_LIBRARY_ROOT = fileURLToPath(new URL("../var/media-library/", import.meta.url));
 const MIME_TYPES = new Map([
     [".html", "text/html; charset=utf-8"], [".js", "text/javascript; charset=utf-8"],
     [".css", "text/css; charset=utf-8"], [".json", "application/json; charset=utf-8"],
@@ -19,12 +22,18 @@ const MIME_TYPES = new Map([
 export function createProgramOutputServer({
     publisherToken = process.env.LIVEZONE_PROGRAM_OUTPUT_TOKEN,
     allowedOrigins = parseOrigins(process.env.LIVEZONE_ALLOWED_ORIGINS),
-    store = new ProgramOutputStore()
+    store = new ProgramOutputStore(),
+    mediaLibraryRoot = process.env.LIVEZONE_MEDIA_LIBRARY_ROOT || DEFAULT_MEDIA_LIBRARY_ROOT,
+    mediaLibraryMaxBytes = Number.parseInt(process.env.LIVEZONE_MEDIA_LIBRARY_MAX_BYTES || String(2 * 1024 ** 3), 10),
+    mediaAssetRepository = new MediaAssetRepository({ root: mediaLibraryRoot })
 } = {}) {
     if (typeof publisherToken !== "string" || publisherToken.length < 16) {
         throw new Error("LIVEZONE_PROGRAM_OUTPUT_TOKEN must contain at least 16 characters.");
     }
     const clients = new Set();
+    const mediaReady = mediaAssetRepository.initialize();
+    const mediaRoutes = new MediaLibraryRoutes({ repository: mediaAssetRepository,
+        maxUploadBytes: mediaLibraryMaxBytes });
     const unsubscribe = store.subscribe((envelope) => {
         const event = formatSse(envelope);
         clients.forEach((response) => {
@@ -39,6 +48,11 @@ export function createProgramOutputServer({
     const server = createServer(async (request, response) => {
         try {
             const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
+            if (url.pathname.startsWith("/api/media-library/") ||
+                url.pathname.startsWith("/media-library/files/")) {
+                await mediaReady;
+                if (await mediaRoutes.handle(request, response, url)) return;
+            }
             if (url.pathname === "/api/program-output" && request.method === "OPTIONS") {
                 handlePublishOptions(request, response, allowedOrigins);
                 return;

@@ -252,6 +252,17 @@
 
                 </div>
 
+                <section id="media-library" class="media-library" aria-labelledby="media-library-title">
+                    <h3 id="media-library-title">MEDIA LIBRARY</h3>
+                    <div class="media-library__toolbar">
+                        <label class="media-library__import">BROWSE PC / IMPORT<input id="media-library-input" type="file" accept="video/mp4,audio/mpeg,image/jpeg,image/png,image/webp"></label>
+                        <label>FILTER<select id="media-library-filter"><option value="">ALL</option><option value="video">VIDEO</option><option value="audio">AUDIO</option><option value="image">IMAGE</option></select></label>
+                        <button id="media-library-toggle" class="media-library__toggle" type="button" aria-expanded="true" aria-controls="media-library-list">COLLAPSE ▲</button>
+                    </div>
+                    <p id="media-library-status" class="media-library__status" aria-live="polite">IDLE</p>
+                    <ul id="media-library-list" class="media-library__list"></ul>
+                </section>
+
             </aside>
             <section id="control-schedule-view" class="schedule-workspace control-schedule-workspace" aria-labelledby="control-schedule-title">
                 <section class="schedule-card schedule-navigation">

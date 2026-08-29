@@ -8,7 +8,11 @@
     "test:scheduler": "node --test test/scheduler.test.js",
     "test:schedule-workspace": "node --test test/schedule-workspace.test.js",
     "test:live-sources": "node --test test/live-sources.test.js",
-    "test:dominant-live": "node --test test/dominant-live.test.js"
-    ,"test:unified-sources": "node --test test/unified-sources.test.js"
+    "test:dominant-live": "node --test test/dominant-live.test.js",
+    "test:unified-sources": "node --test test/unified-sources.test.js",
+    "test:media-library": "node --test test/media-library.test.js"
+  },
+  "dependencies": {
+    "busboy": "^1.6.0"
   }
 }
