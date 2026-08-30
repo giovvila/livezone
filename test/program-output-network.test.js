@@ -679,6 +679,78 @@ test("active Program publishes updated AUDIO artwork without changing playback",
     assert.deepEqual(published[0].playback, first.playback);
 });
 
+test("Program source promotion baselines transport before one authoritative publish", () => {
+    let sceneId = "media-a-scene";
+    let transition = { state: "running", type: "dissolve" };
+    const published = [];
+    const sources = new Map([
+        ["media-a", { id: "media-a", kind: "media",
+            url: "https://example.test/a.mp4" }],
+        ["media-b", { id: "media-b", kind: "media",
+            url: "https://example.test/b.mp4" }],
+        ["audio-a", { id: "audio-a", kind: "audio",
+            audioUrl: "https://example.test/audio.mp3",
+            stillUrl: "https://example.test/still.jpg",
+            motionUrl: "https://example.test/motion.mp4" }]
+    ]);
+    const definitions = new Map([
+        ["media-a-scene", { id: "media-a-scene", name: "MEDIA A", type: "MEDIA",
+            renderer: { kind: "source", sourceId: "media-a" } }],
+        ["media-b-scene", { id: "media-b-scene", name: "MEDIA B", type: "MEDIA",
+            renderer: { kind: "source", sourceId: "media-b" } }],
+        ["audio-a-scene", { id: "audio-a-scene", name: "AUDIO A", type: "AUDIO",
+            renderer: { kind: "source", sourceId: "audio-a" } }]
+    ]);
+    let programTransport = { sourceId: "media-a", state: "playing",
+        currentTime: 1, duration: 60, ended: false };
+    const manager = new ProgramOutputManager({
+        stateManager: {
+            getProgramSceneId: () => sceneId,
+            getScene: (id) => definitions.get(id)
+        },
+        catalog: { getDefinition: (id) => definitions.get(id) },
+        sourceManager: { getSource: (id) => sources.get(id) },
+        renderer: { getProgramTransport: () => programTransport },
+        graphicsManager: { getVisibleGraphics: () => [] },
+        transitionCoordinator: { getSnapshot: () => transition },
+        transport: { publish: (value) => published.push(value) },
+        now: () => Date.parse("2026-08-21T10:00:00.000Z")
+    });
+    manager.started = true;
+    manager.handleProgramTransport(programTransport);
+    manager.handleProgramChanged();
+    published.length = 0;
+
+    const take = (nextSceneId, nextTransport) => {
+        sceneId = nextSceneId;
+        programTransport = nextTransport;
+        manager.handleProgramTransport(nextTransport);
+        assert.equal(published.length, 0);
+        manager.handleProgramChanged();
+        assert.equal(published.length, 1);
+        return published.pop();
+    };
+
+    const mediaB = take("media-b-scene", { sourceId: "media-b", state: "playing",
+        currentTime: 2, duration: 60, ended: false });
+    assert.deepEqual(mediaB.transition, { type: "dissolve", durationMs: 400 });
+
+    const audio = take("audio-a-scene", { sourceId: "audio-a", state: "playing",
+        currentTime: 3, duration: 90, ended: false });
+    assert.equal(audio.source.audioUrl, "https://example.test/audio.mp3");
+    assert.equal(audio.source.stillUrl, "https://example.test/still.jpg");
+    assert.equal(audio.source.motionUrl, "https://example.test/motion.mp4");
+
+    take("media-a-scene", { sourceId: "media-a", state: "playing",
+        currentTime: 4, duration: 60, ended: false });
+
+    transition = { state: "idle", type: null };
+    programTransport = { ...programTransport, state: "paused" };
+    manager.handleProgramTransport(programTransport);
+    assert.equal(published.length, 1);
+    assert.equal(published[0].playback.state, "paused");
+});
+
 test("ProgramOutputStore retains AUDIO motion artwork", () => {
     const store = new ProgramOutputStore();
     const envelope = createProgramOutputEnvelope(audioSnapshot({

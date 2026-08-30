@@ -69,8 +69,19 @@ export default class ProgramOutputManager {
         const signature = this.transportSignature(snapshot);
         if (this.started && signature !== this.lastTransportSignature) {
             this.lastTransportSignature = signature;
+            if (this.isPendingProgramSource(snapshot)) return;
             this.publish("playback");
         }
+    }
+
+    isPendingProgramSource(transport) {
+        if (!transport?.sourceId || transport.sourceId === this.snapshot?.source?.id) {
+            return false;
+        }
+        const sceneId = this.stateManager.getProgramSceneId();
+        const definition = sceneId ? this.catalog.getDefinition(sceneId) : null;
+        const source = definition ? this.createSource(definition) : null;
+        return source?.id === transport.sourceId;
     }
 
     publish(reason) {
