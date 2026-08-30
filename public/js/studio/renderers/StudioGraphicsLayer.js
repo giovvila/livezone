@@ -66,6 +66,23 @@ export default class StudioGraphicsLayer {
             return image;
         }
 
+        if (graphic.kind === "text-crawl" && payload?.enabled) {
+            const overlay = document.createElement("div");
+            const text = document.createElement("span");
+            overlay.className = ["studio-text-crawl",
+                `studio-text-crawl--${payload.mode}`,
+                `studio-text-crawl--${payload.direction}`,
+                `studio-text-crawl--${payload.speed}`,
+                `studio-text-crawl--${payload.position}`,
+                payload.background ? "studio-text-crawl--background" : ""
+            ].filter(Boolean).join(" ");
+            text.className = "studio-text-crawl__text";
+            text.textContent = payload.text;
+            overlay.appendChild(text);
+            overlay.dataset.studioGraphicId = graphic.id;
+            return overlay;
+        }
+
         return null;
     }
 }

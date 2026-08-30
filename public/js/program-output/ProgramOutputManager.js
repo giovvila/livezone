@@ -110,6 +110,7 @@ export default class ProgramOutputManager {
             source,
             playback,
             graphics: this.createGraphics(),
+            overlays: this.createOverlays(),
             transition
         });
         if (!snapshot) return null;
@@ -132,6 +133,7 @@ export default class ProgramOutputManager {
             playback: { initialTime: 0, duration: null, playing: false,
                 ended: false, state: "ready", startedAt: nowIso },
             graphics: { items: [] },
+            overlays: this.createOverlays(),
             transition: { type: "cut", durationMs: 0 }
         });
         if (!snapshot) return null;
@@ -180,6 +182,7 @@ export default class ProgramOutputManager {
 
     createGraphics() {
         const items = this.graphicsManager.getVisibleGraphics("program")
+            .filter(({ graphic }) => graphic.kind !== "text-crawl")
             .map(({ graphic, payload }) => graphic.kind === "image"
                 ? { id: graphic.id, kind: graphic.kind,
                     position: payload?.position || graphic.position,
@@ -189,6 +192,12 @@ export default class ProgramOutputManager {
                     subtitle: payload.subtitle || "" } : null)
             .filter(Boolean);
         return { items };
+    }
+
+    createOverlays() {
+        const entry = this.graphicsManager.getVisibleGraphics("program")
+            .find(({ graphic }) => graphic.kind === "text-crawl");
+        return entry?.payload ? { textCrawl: { ...entry.payload } } : {};
     }
 
     createTransition(reason) {

@@ -30,6 +30,12 @@
       "kind": "lower-third",
       "position": "bottom-left",
       "defaultVisible": false
+    },
+    {
+      "id": "program-text-crawl",
+      "kind": "text-crawl",
+      "position": "bottom",
+      "defaultVisible": false
     }
   ],
   "scenes": [

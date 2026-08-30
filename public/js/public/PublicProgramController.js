@@ -53,6 +53,7 @@ export default class PublicProgramController {
                 JSON.stringify(snapshot.playback);
             this.current.snapshot = snapshot;
             this.renderGraphics(snapshot.graphics.items);
+            this.renderOverlays(snapshot.overlays);
             this.scheduleStaleState(snapshot, livePublisher ? this.now() : null);
             if (playbackChanged) void this.reconcilePlayback(snapshot, this.current);
             return;
@@ -117,6 +118,7 @@ export default class PublicProgramController {
             this.baseRoot.replaceChildren(layer);
         }
         this.renderGraphics(snapshot.graphics.items);
+        this.renderOverlays(snapshot.overlays);
         this.setStatus(
             snapshot.playback.state === "error" ? "PROGRAM UNAVAILABLE"
                 : snapshot.playback.ended ? "PROGRAM ENDED" : "PROGRAM",
@@ -373,6 +375,8 @@ export default class PublicProgramController {
     }
 
     renderGraphics(items) {
+        const layer = this.getGraphicsLayer("items");
+        if (!layer) return;
         const elements = items.map((item) => {
             if (item.kind === "image") {
                 const image = document.createElement("img");
@@ -388,7 +392,43 @@ export default class PublicProgramController {
                 subtitle.textContent = item.subtitle; graphic.appendChild(subtitle); }
             return graphic;
         });
-        this.graphicsRoot.replaceChildren(...elements);
+        layer.replaceChildren(...elements);
+    }
+
+    renderOverlays(overlays = {}) {
+        const layer = this.getGraphicsLayer("overlays");
+        if (!layer) return;
+        const item = overlays?.textCrawl;
+        if (!item?.enabled || !item.text) {
+            layer.replaceChildren();
+            return;
+        }
+        const overlay = document.createElement("div");
+        const text = document.createElement("span");
+        overlay.className = ["public-text-crawl", `public-text-crawl--${item.mode}`,
+            `public-text-crawl--${item.direction}`,
+            `public-text-crawl--${item.speed}`,
+            `public-text-crawl--${item.position}`,
+            item.background ? "public-text-crawl--background" : ""
+        ].filter(Boolean).join(" ");
+        text.className = "public-text-crawl__text";
+        text.textContent = item.text;
+        overlay.appendChild(text);
+        layer.replaceChildren(overlay);
+    }
+
+    getGraphicsLayer(kind) {
+        const root = this.graphicsRoot;
+        if (!root) return null;
+        const selector = `[data-public-${kind}]`;
+        let layer = root.querySelector(selector);
+        if (!layer) {
+            layer = document.createElement("div");
+            layer.className = `public-program__${kind}`;
+            layer.setAttribute(`data-public-${kind}`, "");
+            root.appendChild(layer);
+        }
+        return layer;
     }
 
     enableAudio() {
@@ -436,6 +476,6 @@ export default class PublicProgramController {
     releaseCurrent() { this.release(this.current); this.current = null; }
     release(entry) { if (!entry) return; entry.cleanup(); entry.layer.remove(); }
 
-    get baseRoot() { return this.root.querySelector("[data-public-base]"); }
-    get graphicsRoot() { return this.root.querySelector("[data-public-graphics]"); }
+    get baseRoot() { return this.root?.querySelector("[data-public-base]") || null; }
+    get graphicsRoot() { return this.root?.querySelector("[data-public-graphics]") || null; }
 }

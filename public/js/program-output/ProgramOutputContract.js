@@ -21,10 +21,12 @@ export function validateProgramOutputSnapshot(candidate) {
     const source = isEmpty ? null : validateSource(candidate.source);
     const playback = validatePlayback(candidate.playback);
     const graphics = validateGraphics(candidate.graphics);
+    const overlays = candidate.overlays === undefined
+        ? undefined : validateOverlays(candidate.overlays);
     const transition = validateTransition(candidate.transition);
 
     if ((!isEmpty && (!scene || !source)) || !playback || !graphics ||
-        !transition || (!isEmpty &&
+        !transition || candidate.overlays !== undefined && !overlays || (!isEmpty &&
         (scene.type === "SLATE") !== (source.kind === "break"))) {
         return null;
     }
@@ -39,6 +41,7 @@ export function validateProgramOutputSnapshot(candidate) {
         source,
         playback,
         graphics,
+        ...(overlays ? { overlays } : {}),
         transition
     });
 }
@@ -135,6 +138,24 @@ function validateTransition(value) {
         (value.type === "cut" && value.durationMs !== 0) ||
         (value.type === "dissolve" && value.durationMs !== 400)) return null;
     return { type: value.type, durationMs: value.durationMs };
+}
+
+function validateOverlays(value) {
+    if (!isObject(value)) return null;
+    const keys = Object.keys(value);
+    if (keys.some((key) => key !== "textCrawl")) return null;
+    if (value.textCrawl === undefined) return {};
+    const item = value.textCrawl;
+    if (!isObject(item) || typeof item.enabled !== "boolean" ||
+        !["crawl", "fixed"].includes(item.mode) ||
+        !isText(item.text, MAX_TEXT) ||
+        !["rtl", "ltr"].includes(item.direction) ||
+        !["slow", "medium", "fast"].includes(item.speed) ||
+        !["top", "bottom"].includes(item.position) ||
+        typeof item.background !== "boolean") return null;
+    return { textCrawl: { enabled: item.enabled, mode: item.mode,
+        text: item.text.trim(), direction: item.direction, speed: item.speed,
+        position: item.position, background: item.background } };
 }
 
 function validateUrl(value) {

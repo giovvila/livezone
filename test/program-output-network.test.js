@@ -27,6 +27,10 @@ import StudioMediaSurface from
 import StudioAudioSurface from
     "../public/js/studio/renderers/StudioAudioSurface.js";
 import StudioRenderer from "../public/js/studio/StudioRenderer.js";
+import { StudioGraphicsManager } from
+    "../public/js/studio/StudioGraphicsManager.js";
+import StudioTextCrawlUI, { STUDIO_TEXT_CRAWL_STORAGE_KEY } from
+    "../public/js/ui/StudioTextCrawlUI.js";
 
 const TOKEN = "test-publisher-token-12345";
 
@@ -705,6 +709,194 @@ test("public AUDIO contract accepts every optional artwork combination", () => {
         stillUrl: "https://example.test/legacy.jpg" })).source.kind, "audio");
 });
 
+test("Program Output text crawl contract is optional, canonical and strict", () => {
+    const legacy = validateProgramOutputSnapshot(snapshot());
+    assert.ok(legacy);
+    assert.equal(legacy.overlays, undefined);
+    const textCrawl = { enabled: true, mode: "crawl", text: "  LIVE NEWS  ",
+        direction: "rtl", speed: "medium", position: "bottom", background: true };
+    const valid = validateProgramOutputSnapshot({ ...snapshot(), overlays: { textCrawl } });
+    assert.deepEqual(valid.overlays.textCrawl, { ...textCrawl, text: "LIVE NEWS" });
+    assert.equal(validateProgramOutputSnapshot({ ...snapshot(), overlays: {
+        textCrawl: { ...textCrawl, speed: "instant" }
+    } }), null);
+    assert.equal(validateProgramOutputSnapshot({ ...snapshot(), overlays: {
+        textCrawl: { ...textCrawl, text: "   " }
+    } }), null);
+});
+
+test("Program Output store retains text crawl for a new Public subscriber", () => {
+    const store = new ProgramOutputStore();
+    const textCrawl = { enabled: true, mode: "fixed", text: "Retained headline",
+        direction: "rtl", speed: "slow", position: "top", background: false };
+    const envelope = createProgramOutputEnvelope({ ...snapshot(),
+        overlays: { textCrawl } });
+    assert.equal(store.accept(envelope).accepted, true);
+    assert.deepEqual(store.getCurrent().snapshot.overlays.textCrawl, textCrawl);
+});
+
+test("text crawl SHOW HIDE UPDATE publish once and survive Program TAKE", () => {
+    const graphicsManager = new StudioGraphicsManager();
+    graphicsManager.initialize();
+    graphicsManager.registerGraphic({ id: "program-text-crawl", kind: "text-crawl",
+        position: "bottom", defaultVisible: false });
+    let sceneId = "break-a";
+    const published = [];
+    const definitions = new Map([
+        ["break-a", { id: "break-a", name: "BREAK A", type: "SLATE",
+            renderer: { kind: "slate", title: "A", message: "A",
+                logo: "https://example.test/logo.svg" } }],
+        ["break-b", { id: "break-b", name: "BREAK B", type: "SLATE",
+            renderer: { kind: "slate", title: "B", message: "B",
+                logo: "https://example.test/logo.svg" } }]
+    ]);
+    const manager = new ProgramOutputManager({
+        stateManager: { getProgramSceneId: () => sceneId,
+            getScene: (id) => definitions.get(id) },
+        catalog: { getDefinition: (id) => definitions.get(id), subscribe: () => () => {} },
+        sourceManager: { getSource: () => null },
+        renderer: { subscribeProgramTransport: () => () => {},
+            getProgramTransport: () => null },
+        graphicsManager,
+        transitionCoordinator: { getSnapshot: () => ({ state: "idle", type: null }) },
+        transport: { start() {}, publish: (value) => published.push(value), destroy() {} },
+        now: () => Date.parse("2026-08-31T10:00:00.000Z")
+    });
+    manager.start();
+    published.length = 0;
+    const payload = { enabled: true, mode: "crawl", text: "First",
+        direction: "rtl", speed: "medium", position: "bottom", background: true };
+    graphicsManager.show("program-text-crawl", { consumer: "program", payload });
+    assert.equal(published.length, 1);
+    assert.equal(published[0].overlays.textCrawl.enabled, true);
+    published.length = 0;
+    graphicsManager.show("program-text-crawl", { consumer: "program",
+        payload: { ...payload, text: "Updated", direction: "ltr", position: "top" } });
+    assert.equal(published.length, 1);
+    assert.equal(published[0].overlays.textCrawl.text, "Updated");
+    published.length = 0;
+    graphicsManager.show("program-text-crawl", { consumer: "program",
+        payload: { ...payload, text: "Updated", direction: "ltr", position: "top",
+            enabled: false } });
+    assert.equal(published.length, 1);
+    assert.equal(published[0].overlays.textCrawl.enabled, false);
+    published.length = 0;
+    graphicsManager.show("program-text-crawl", { consumer: "program",
+        payload: { ...payload, text: "Persistent" } });
+    published.length = 0;
+    sceneId = "break-b";
+    manager.handleProgramChanged();
+    assert.equal(published.length, 1);
+    assert.equal(published[0].scene.id, "break-b");
+    assert.equal(published[0].overlays.textCrawl.text, "Persistent");
+    manager.destroy();
+});
+
+test("text crawl operator state persists versioned configuration and enabled state", () => {
+    const values = new Map();
+    const storage = { getItem: (key) => values.get(key) || null,
+        setItem: (key, value) => values.set(key, value) };
+    const actions = [];
+    const ui = new StudioTextCrawlUI({ storage, graphicsManager: {
+        show: (_id, options) => { actions.push(options.payload); return {}; }
+    } });
+    ui.text = { value: "Operator crawl" };
+    ui.mode = { value: "crawl" };
+    ui.direction = { value: "rtl" };
+    ui.speed = { value: "fast" };
+    ui.position = { value: "bottom" };
+    ui.background = { checked: true };
+    ui.status = { textContent: "" };
+    ui.handleShow();
+    assert.equal(actions.length, 1);
+    assert.equal(actions[0].enabled, true);
+    ui.text.value = "Updated crawl";
+    ui.handleUpdate();
+    assert.equal(actions.length, 2);
+    assert.equal(actions[1].text, "Updated crawl");
+    ui.text.value = "";
+    ui.handleHide();
+    assert.equal(actions.length, 3);
+    assert.equal(actions[2].enabled, false);
+    assert.equal(actions[2].text, "Updated crawl");
+    const persisted = JSON.parse(values.get(STUDIO_TEXT_CRAWL_STORAGE_KEY));
+    assert.equal(persisted.version, 1);
+    assert.equal(persisted.textCrawl.enabled, false);
+    assert.equal(persisted.textCrawl.text, "Updated crawl");
+    const restored = new StudioTextCrawlUI({ storage }).readState();
+    assert.deepEqual(restored, persisted.textCrawl);
+});
+
+test("Public text crawl reconciles safely without replacing Program media", () => {
+    const previousDocument = globalThis.document;
+    const created = [];
+    globalThis.document = { createElement(tagName) {
+        const element = { tagName: tagName.toUpperCase(), className: "", textContent: "",
+            children: [], appendChild(child) { this.children.push(child); },
+            replaceChildren(...children) { this.children = children; },
+            setAttribute() {} };
+        created.push(element);
+        return element;
+    } };
+    try {
+        const overlayLayer = { children: [], replaceChildren(...children) {
+            this.children = children;
+        } };
+        const media = { id: "program-media" };
+        const controller = new PublicProgramController({ transport: {} });
+        controller.current = { snapshot: { source: { kind: "media" } },
+            layer: { children: [media] } };
+        controller.getGraphicsLayer = () => overlayLayer;
+        const textCrawl = { enabled: true, mode: "crawl",
+            text: "<script>alert(1)</script>", direction: "ltr", speed: "fast",
+            position: "top", background: false };
+        controller.renderOverlays({ textCrawl });
+        const overlay = overlayLayer.children[0];
+        assert.match(overlay.className, /public-text-crawl--crawl/);
+        assert.match(overlay.className, /public-text-crawl--ltr/);
+        assert.match(overlay.className, /public-text-crawl--top/);
+        assert.doesNotMatch(overlay.className, /background/);
+        assert.equal(overlay.children[0].textContent, "<script>alert(1)</script>");
+        assert.equal(controller.current.layer.children[0], media);
+        controller.current.snapshot = { source: { kind: "audio" } };
+        controller.renderOverlays({ textCrawl: { ...textCrawl, mode: "fixed",
+            position: "bottom", background: true, text: "Fixed" } });
+        assert.match(overlayLayer.children[0].className, /public-text-crawl--fixed/);
+        assert.match(overlayLayer.children[0].className, /public-text-crawl--bottom/);
+        assert.match(overlayLayer.children[0].className, /background/);
+        assert.equal(controller.current.layer.children[0], media);
+        controller.renderOverlays({ textCrawl: { ...textCrawl, enabled: false } });
+        assert.equal(overlayLayer.children.length, 0);
+        assert.equal(controller.current.layer.children[0], media);
+    }
+    finally { globalThis.document = previousDocument; }
+});
+
+test("Public reconciles an overlay-only revision with unchanged Program media", () => {
+    const base = validateProgramOutputSnapshot(snapshot());
+    const media = { id: "program-media" };
+    const rendered = [];
+    const controller = new PublicProgramController({ transport: {},
+        now: () => Date.parse("2026-01-01T00:00:01.000Z") });
+    controller.current = { snapshot: base, layer: { children: [media] } };
+    controller.renderGraphics = () => {};
+    controller.renderOverlays = (overlays) => rendered.push(overlays);
+    controller.scheduleStaleState = () => {};
+    controller.renderSnapshot = () => {
+        throw new Error("overlay-only revision must not recreate Program media");
+    };
+    const textCrawl = { enabled: true, mode: "fixed", text: "Current headline",
+        direction: "rtl", speed: "medium", position: "bottom", background: true };
+    const update = validateProgramOutputSnapshot({ ...snapshot({ revision: 2 }),
+        overlays: { textCrawl } });
+
+    controller.handleSnapshot(update, { livePublisher: true });
+
+    assert.deepEqual(rendered, [{ textCrawl }]);
+    assert.equal(controller.current.snapshot, update);
+    assert.equal(controller.current.layer.children[0], media);
+});
+
 test("Program snapshot projects AUDIO runtime URLs without managed asset IDs", () => {
     const manager = new ProgramOutputManager({ sourceManager: { getSource: () => ({
         id: "audio-source", kind: "audio",
@@ -1294,6 +1486,55 @@ test("one SSE connection receives retained then multiple live revisions", async 
     assert.equal(clients.size, 1);
     abort.abort();
 });
+
+test("HTTP server retains and emits text crawl across active update hide and legacy input",
+    async (context) => {
+        const { server, store } = createProgramOutputServer({ publisherToken: TOKEN });
+        await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+        context.after(() => new Promise((resolve) => server.close(resolve)));
+        const base = `http://127.0.0.1:${server.address().port}`;
+        const active = { enabled: true, mode: "crawl", text: "Breaking news",
+            direction: "rtl", speed: "medium", position: "bottom", background: true };
+        const activeEnvelope = createProgramOutputEnvelope({ ...snapshot(),
+            overlays: { textCrawl: active } });
+
+        assert.equal((await publish(base, activeEnvelope)).status, 202);
+        assert.deepEqual(store.getCurrent().snapshot.overlays.textCrawl, active);
+
+        const abort = new AbortController();
+        const response = await fetch(`${base}/api/program-output/events`, {
+            signal: abort.signal
+        });
+        const reader = response.body.getReader();
+        const retained = await readProgramEvent(reader);
+        assert.match(retained, /"textCrawl":\{"enabled":true/);
+        assert.match(retained, /"text":"Breaking news"/);
+
+        const updated = { ...active, text: "Updated headline", position: "top" };
+        const updateEnvelope = createProgramOutputEnvelope({
+            ...snapshot({ revision: 2, publishedAt: "2026-08-21T10:00:01.000Z" }),
+            overlays: { textCrawl: updated }
+        });
+        assert.equal((await publish(base, updateEnvelope)).status, 202);
+        assert.deepEqual(store.getCurrent().snapshot.overlays.textCrawl, updated);
+        assert.match(await readProgramEvent(reader), /"text":"Updated headline"/);
+
+        const hidden = { ...updated, enabled: false };
+        const hideEnvelope = createProgramOutputEnvelope({
+            ...snapshot({ revision: 3, publishedAt: "2026-08-21T10:00:02.000Z" }),
+            overlays: { textCrawl: hidden }
+        });
+        assert.equal((await publish(base, hideEnvelope)).status, 202);
+        assert.equal(store.getCurrent().snapshot.overlays.textCrawl.enabled, false);
+        assert.match(await readProgramEvent(reader), /"enabled":false/);
+
+        const legacyEnvelope = createProgramOutputEnvelope(snapshot({ revision: 4,
+            publishedAt: "2026-08-21T10:00:03.000Z" }));
+        assert.equal((await publish(base, legacyEnvelope)).status, 202);
+        assert.equal(store.getCurrent().snapshot.overlays, undefined);
+        assert.doesNotMatch(await readProgramEvent(reader), /"overlays"/);
+        abort.abort();
+    });
 
 test("connected SSE client receives explicit empty Program", async (context) => {
     const { server } = createProgramOutputServer({ publisherToken: TOKEN });

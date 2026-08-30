@@ -15,7 +15,8 @@ const MODULE_DEFINITIONS = Object.freeze([
     Object.freeze({ id: "media-preview", label: "Preview Transport", x: 8, y: 0, w: 3, h: 4, minW: 3, minH: 3, compactW: 1 }),
     Object.freeze({ id: "lower-third", label: "Lower Third", x: 9, y: 0, w: 3, h: 7, minW: 3, minH: 6, compactW: 1 }),
     Object.freeze({ id: "channel-logo", label: "Channel Logo", x: 10, y: 0, w: 4, h: 7, minW: 3, minH: 6, compactW: 1 }),
-    Object.freeze({ id: "technical-monitor", label: "Technical Monitor", x: 11, y: 0, w: 6, h: 7, minW: 4, minH: 5, compactW: 1 })
+    Object.freeze({ id: "technical-monitor", label: "Technical Monitor", x: 11, y: 0, w: 6, h: 7, minW: 4, minH: 5, compactW: 1 }),
+    Object.freeze({ id: "text-crawl", label: "Text / Crawl", x: 0, y: 0, w: 4, h: 7, minW: 3, minH: 6, compactW: 1 })
 ]);
 
 const MODULE_BY_ID = new Map(
@@ -586,7 +587,7 @@ export default class ControlDeskLayoutManager {
     }
 
     getCompactColumnCount(width) {
-        if (width >= 1320) return 9;
+        if (width >= 1320) return 10;
         if (width >= 760) return 5;
         if (width >= 480) return 3;
         if (width >= 320) return 2;

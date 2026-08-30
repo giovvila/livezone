@@ -666,6 +666,10 @@
     grid-row: span 7;
 }
 
+.control-desk__module[data-control-module="text-crawl"] {
+    grid-column: span 4;
+}
+
 .control-desk__module[data-control-module="technical-monitor"] {
     grid-column: span 6;
     grid-row: span 7;
@@ -1551,7 +1555,8 @@
 }
 
 .studio-graphics-controls input,
-.studio-graphics-controls select {
+.studio-graphics-controls select,
+.studio-graphics-controls textarea {
     min-width: 0;
     width: 100%;
     max-width: 100%;
@@ -1564,6 +1569,10 @@
     font: inherit;
     font-size: 12px;
 }
+
+.studio-graphics-controls textarea { resize: vertical; }
+.studio-text-crawl-background { display: flex; align-items: center; gap: .45rem; }
+.studio-text-crawl-background input { width: auto; }
 
 .studio-graphics-controls input:focus-visible,
 .studio-graphics-controls select:focus-visible {
@@ -2180,6 +2189,7 @@
 .control-desk__module[data-control-module="media-preview"] .control-desk__module-header::before { content: "▷"; }
 .control-desk__module[data-control-module="lower-third"] .control-desk__module-header::before { content: "▤"; }
 .control-desk__module[data-control-module="channel-logo"] .control-desk__module-header::before { content: "◇"; }
+.control-desk__module[data-control-module="text-crawl"] .control-desk__module-header::before { content: "↔"; }
 .control-desk__module[data-control-module="technical-monitor"] .control-desk__module-header::before { content: "▣"; }
 
 .control-desk__collapse-toggle {
@@ -2459,7 +2469,7 @@
 .studio-panel:not(.is-layout-editing)
     .control-desk__workspace:not(:has(.control-desk__module:not(.is-collapsed))) {
     grid-template-columns: repeat(
-        var(--control-desk-compact-columns, 9),
+        var(--control-desk-compact-columns, 10),
         minmax(0, 1fr)
     );
 }
@@ -2467,7 +2477,7 @@
 /* Normal operation always uses one intrinsic, per-card responsive grid. */
 .studio-panel:not(.is-layout-editing) .control-desk__workspace {
     grid-template-columns: repeat(
-        var(--control-desk-compact-columns, 9),
+        var(--control-desk-compact-columns, 10),
         minmax(0, 1fr)
     );
     grid-auto-rows: max-content;

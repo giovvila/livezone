@@ -1,4 +1,4 @@
-class StudioGraphicsManager {
+export class StudioGraphicsManager {
 
     constructor() {
         this.graphics = new Map();
@@ -219,6 +219,15 @@ class StudioGraphicsManager {
             });
         }
 
+        if (kind === "text-crawl") {
+            return Object.freeze({
+                id,
+                kind,
+                position: "bottom",
+                defaultVisible: definition.defaultVisible
+            });
+        }
+
         return null;
     }
 
@@ -240,6 +249,10 @@ class StudioGraphicsManager {
     createCanonicalPayload(graphic, payload) {
         if (graphic.kind === "lower-third") {
             return this.createLowerThirdPayload(payload);
+        }
+
+        if (graphic.kind === "text-crawl") {
+            return this.createTextCrawlPayload(payload);
         }
 
         return this.createImagePayload(graphic, payload);
@@ -293,6 +306,24 @@ class StudioGraphicsManager {
         }
 
         return Object.freeze({ title, subtitle });
+    }
+
+    createTextCrawlPayload(payload) {
+        if (!payload || typeof payload !== "object" || Array.isArray(payload) ||
+            typeof payload.enabled !== "boolean" ||
+            typeof payload.text !== "string" ||
+            !["crawl", "fixed"].includes(payload.mode) ||
+            !["rtl", "ltr"].includes(payload.direction) ||
+            !["slow", "medium", "fast"].includes(payload.speed) ||
+            !["top", "bottom"].includes(payload.position) ||
+            typeof payload.background !== "boolean") {
+            return undefined;
+        }
+        const text = payload.text.trim();
+        if (!text || Array.from(text).length > 500) return undefined;
+        return Object.freeze({ enabled: payload.enabled, mode: payload.mode,
+            text, direction: payload.direction, speed: payload.speed,
+            position: payload.position, background: payload.background });
     }
 
     valuesEqual(left, right) {

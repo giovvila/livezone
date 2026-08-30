@@ -171,6 +171,26 @@
     white-space: nowrap;
 }
 
+.studio-text-crawl { position: absolute; left: 0; right: 0; z-index: 4;
+    overflow: hidden; padding: 1.2% 0; color: #fff; white-space: nowrap;
+    font-size: clamp(7px, 3vw, 18px); font-weight: 700; line-height: 1.15; }
+.studio-text-crawl--top { top: 0; }
+.studio-text-crawl--bottom { bottom: 0; }
+.studio-text-crawl--background { background: rgba(8, 11, 17, .88); }
+.studio-text-crawl__text { display: inline-block; min-width: 100%; padding: 0 3%; }
+.studio-text-crawl--fixed .studio-text-crawl__text { text-align: center; }
+.studio-text-crawl--crawl.studio-text-crawl--rtl .studio-text-crawl__text {
+    animation: studio-crawl-rtl var(--studio-crawl-duration, 16s) linear infinite; }
+.studio-text-crawl--crawl.studio-text-crawl--ltr .studio-text-crawl__text {
+    animation: studio-crawl-ltr var(--studio-crawl-duration, 16s) linear infinite; }
+.studio-text-crawl--slow { --studio-crawl-duration: 24s; }
+.studio-text-crawl--medium { --studio-crawl-duration: 16s; }
+.studio-text-crawl--fast { --studio-crawl-duration: 9s; }
+@keyframes studio-crawl-rtl { from { transform: translateX(100%); }
+    to { transform: translateX(-100%); } }
+@keyframes studio-crawl-ltr { from { transform: translateX(-100%); }
+    to { transform: translateX(100%); } }
+
 .studio-lower-third__title {
     font-size: clamp(8px, 3.2vw, 15px);
     font-weight: 700;

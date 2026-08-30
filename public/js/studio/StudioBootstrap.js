@@ -439,6 +439,11 @@ export default class StudioBootstrap {
             });
         }
 
+        if (kind === "text-crawl" && ["top", "bottom"].includes(position)) {
+            return Object.freeze({ id, kind, position,
+                defaultVisible: candidate.defaultVisible });
+        }
+
         return null;
     }
 

@@ -199,15 +199,15 @@ test("Control DOM registers one Technical Monitor and one unified operational sc
     const workspaceMarkup = html.slice(workspaceStart, workspaceEnd);
     const deskMarkers = Array.from(workspaceMarkup.matchAll(
         /data-control-desk-module="([^"]+)"/g), (match) => match[1]);
-    assert.equal(deskMarkers.length, 9);
+    assert.equal(deskMarkers.length, 10);
     assert.deepEqual(new Set(deskMarkers), new Set([
         "scenes", "sources", "transition", "take", "broadcast",
-        "media-preview", "lower-third", "channel-logo", "technical-monitor"
+        "media-preview", "lower-third", "text-crawl", "channel-logo", "technical-monitor"
     ]));
     assert.equal(workspaceMarkup.includes("control-schedule-view"), false);
     assert.match(html, /<\/aside>\s*<section id="control-schedule-view"/);
     ["scenes", "sources", "transition", "take", "broadcast", "media-preview",
-        "lower-third", "channel-logo", "technical-monitor"].forEach((id) =>
+        "lower-third", "text-crawl", "channel-logo", "technical-monitor"].forEach((id) =>
         assert.equal(moduleIds.filter((moduleId) => moduleId === id).length, 1));
     assert.equal((html.match(/id="studio-take"/g) || []).length, 1);
 });
@@ -230,26 +230,26 @@ test("ControlDesk materializes the active module bottom boundary as workspace he
     const collapsed = manager.createResponsiveLayout(manager.createDefaultLayout(), 12);
     assert.ok(collapsed.every(({ h }) => h === 1));
     assert.ok(manager.calculateWorkspaceHeight(collapsed) > 0);
-    assert.equal(manager.calculateCompactWorkspaceHeight(9), 84);
+    assert.equal(manager.calculateCompactWorkspaceHeight(10), 84);
     assert.equal(manager.calculateCompactWorkspaceHeight(5), 176);
-    assert.equal(manager.calculateCompactWorkspaceHeight(3), 268);
+    assert.equal(manager.calculateCompactWorkspaceHeight(3), 360);
     assert.equal(manager.calculateCompactWorkspaceHeight(2), 452);
-    assert.equal(manager.calculateCompactWorkspaceHeight(1), 820);
+    assert.equal(manager.calculateCompactWorkspaceHeight(1), 912);
     assert.equal(manager.calculateWorkspaceHeight([
         { id: "take", x: 0, y: 6, w: 2, h: 4 }
     ]), 468);
 });
 
-test("clean and reset ControlDesk use a visible one-row compact module strip", () => {
+test("clean and reset ControlDesk keep every compact module visible", () => {
     const manager = new ControlDeskLayoutManager({ root: null,
         storage: { getItem: () => null, removeItem() {} } });
     const layout = manager.loadLayout();
-    assert.equal(manager.collapsedIds.size, 9);
+    assert.equal(manager.collapsedIds.size, 10);
     const compact = manager.createResponsiveLayout(layout, 12);
-    assert.equal(new Set(compact.map(({ y }) => y)).size, 1);
-    assert.equal(compact.reduce((total, { w }) => total + w, 0), 12);
-    assert.equal(manager.calculateWorkspaceHeight(compact), 36);
-    assert.equal(manager.getCompactColumnCount(1600), 9);
+    assert.equal(new Set(compact.map(({ y }) => y)).size, 2);
+    assert.equal(compact.reduce((total, { w }) => total + w, 0), 13);
+    assert.equal(manager.calculateWorkspaceHeight(compact), 84);
+    assert.equal(manager.getCompactColumnCount(1600), 10);
     assert.equal(manager.getCompactColumnCount(1000), 5);
     assert.equal(manager.getCompactColumnCount(700), 3);
     assert.equal(manager.getCompactColumnCount(440), 2);
@@ -285,9 +285,9 @@ test("ControlDesk management expansion consumes one stable track per open manage
     const moduleIds = Array.from(html.matchAll(/data-control-module="([^"]+)"/g),
         (match) => match[1]);
 
-    assert.equal(moduleIds.length, 9);
+    assert.equal(moduleIds.length, 10);
     assert.match(css,
-        /grid-template-columns:\s*repeat\(\s*var\(--control-desk-compact-columns, 9\),\s*minmax\(0, 1fr\)\s*\)/s);
+        /grid-template-columns:\s*repeat\(\s*var\(--control-desk-compact-columns, 10\),\s*minmax\(0, 1fr\)\s*\)/s);
     assert.match(dynamicCss,
         /\.control-desk__module:not\(\.is-collapsed\):is\([\s\S]*?scenes[\s\S]*?sources[\s\S]*?\)\s*\{\s*grid-column:\s*span 2 !important;/s);
     assert.doesNotMatch(dynamicCss,
@@ -295,10 +295,10 @@ test("ControlDesk management expansion consumes one stable track per open manage
 
     const occupiedTracks = (scenesExpanded, sourcesExpanded) =>
         moduleIds.length + Number(scenesExpanded) + Number(sourcesExpanded);
-    assert.equal(occupiedTracks(false, false), 9);
-    assert.equal(occupiedTracks(true, false) - 9, 1);
-    assert.equal(occupiedTracks(false, true) - 9, 1);
-    assert.equal(occupiedTracks(true, true) - 9, 2);
+    assert.equal(occupiedTracks(false, false), 10);
+    assert.equal(occupiedTracks(true, false) - 10, 1);
+    assert.equal(occupiedTracks(false, true) - 10, 1);
+    assert.equal(occupiedTracks(true, true) - 10, 2);
     assert.match(dynamicCss,
         /@media \(max-width: 759px\)[\s\S]*?data-control-module="scenes"[\s\S]*?data-control-module="sources"[\s\S]*?grid-column:\s*1 \/ -1 !important;/s);
     assert.match(css, /\.studio-take\s*\{[^}]*min-height:\s*44px;/s);

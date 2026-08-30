@@ -214,6 +214,29 @@
                     <p id="studio-lower-third-feedback" class="studio-graphics-controls__feedback"></p>
                 </fieldset>
 
+                <fieldset class="studio-graphics-controls control-desk__module control-desk__module--text-crawl" data-control-module="text-crawl" data-control-desk-module="text-crawl">
+                    <legend>TEXT / CRAWL</legend>
+                    <div class="studio-graphics-controls__fields">
+                        <label for="studio-text-crawl-text">Text</label>
+                        <textarea id="studio-text-crawl-text" maxlength="500" rows="2"></textarea>
+                        <label for="studio-text-crawl-mode">Mode</label>
+                        <select id="studio-text-crawl-mode"><option value="crawl">CRAWL</option><option value="fixed">FIXED</option></select>
+                        <label for="studio-text-crawl-direction">Direction</label>
+                        <select id="studio-text-crawl-direction"><option value="rtl">RIGHT → LEFT</option><option value="ltr">LEFT → RIGHT</option></select>
+                        <label for="studio-text-crawl-speed">Speed</label>
+                        <select id="studio-text-crawl-speed"><option value="slow">SLOW</option><option value="medium">MEDIUM</option><option value="fast">FAST</option></select>
+                        <label for="studio-text-crawl-position">Position</label>
+                        <select id="studio-text-crawl-position"><option value="top">TOP</option><option value="bottom">BOTTOM</option></select>
+                        <label class="studio-text-crawl-background"><input id="studio-text-crawl-background" type="checkbox" checked> Background</label>
+                    </div>
+                    <div class="studio-graphics-controls__actions">
+                        <button id="studio-text-crawl-show" class="studio-graphics-controls__take" type="button">SHOW</button>
+                        <button id="studio-text-crawl-hide" type="button">HIDE</button>
+                        <button id="studio-text-crawl-update" type="button">UPDATE</button>
+                    </div>
+                    <p class="studio-graphics-controls__feedback">Program Overlay: <strong id="studio-text-crawl-status">HIDDEN</strong></p>
+                </fieldset>
+
                 <fieldset class="studio-graphics-controls control-desk__module control-desk__module--logo" data-control-module="channel-logo" data-control-desk-module="channel-logo">
                     <legend>CHANNEL LOGO</legend>
 

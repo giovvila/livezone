@@ -6,6 +6,7 @@ import StudioStateManager from "../core/StudioStateManager.js";
 import BroadcastUI from "../ui/BroadcastUI.js";
 import StudioUI from "../ui/StudioUI.js";
 import StudioGraphicsUI from "../ui/StudioGraphicsUI.js";
+import StudioTextCrawlUI from "../ui/StudioTextCrawlUI.js";
 import StudioMediaUI from "../ui/StudioMediaUI.js";
 import StudioOperationalSourcesUI from "../ui/StudioOperationalSourcesUI.js";
 import ControlDeskLayoutManager from "../ui/ControlDeskLayoutManager.js";
@@ -70,6 +71,7 @@ const dominantLiveConfig = new DominantLiveConfig();
 let broadcastUI = null;
 let studioUI = null;
 let studioGraphicsUI = null;
+let studioTextCrawlUI = null;
 let studioMediaUI = null;
 let studioSourcesUI = null;
 let controlDeskLayoutManager = null;
@@ -90,6 +92,10 @@ let mediaLibraryUI = null;
 let mediaLibraryPickerUI = null;
 
 function destroyControlRoom() {
+    studioTextCrawlUI?.destroy();
+    studioTextCrawlUI = null;
+    studioGraphicsUI?.destroy();
+    studioGraphicsUI = null;
     mediaLibraryUI?.destroy();
     mediaLibraryPickerUI?.destroy();
     studioSourcesUI?.destroy();
@@ -278,6 +284,11 @@ runtime.start({
             studioAssetLibrary
         );
         studioGraphicsUI.start();
+        studioTextCrawlUI = new StudioTextCrawlUI({
+            root: document.getElementById("studio-panel"),
+            graphicsManager: StudioGraphicsManager
+        });
+        studioTextCrawlUI.start();
 
         studioAssetLibrary.setReferenceGuard((asset) =>
             studioCatalogManager.isAssetReferenced(asset.id) ||
