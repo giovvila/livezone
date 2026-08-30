@@ -16,6 +16,7 @@ export default class ProgramOutputManager {
             `session-${this.now()}-${Math.random().toString(36).slice(2)}`;
         this.handleProgramChanged = this.handleProgramChanged.bind(this);
         this.handleGraphicsChanged = this.handleGraphicsChanged.bind(this);
+        this.handleCatalogChanged = this.handleCatalogChanged.bind(this);
         this.handleProgramTransport = this.handleProgramTransport.bind(this);
     }
 
@@ -26,6 +27,7 @@ export default class ProgramOutputManager {
         this.unsubscribeGraphics = this.graphicsManager.subscribe(
             "program", this.handleGraphicsChanged
         );
+        this.unsubscribeCatalog = this.catalog.subscribe?.(this.handleCatalogChanged) || null;
         this.unsubscribeTransport = this.renderer.subscribeProgramTransport(
             this.handleProgramTransport
         );
@@ -37,6 +39,7 @@ export default class ProgramOutputManager {
         if (!this.started) return;
         EventBus.off(Events.STUDIO_PROGRAM_CHANGED, this.handleProgramChanged);
         this.unsubscribeGraphics?.();
+        this.unsubscribeCatalog?.();
         this.unsubscribeTransport?.();
         this.transport.destroy();
         this.started = false;
@@ -50,6 +53,15 @@ export default class ProgramOutputManager {
 
     handleGraphicsChanged() {
         if (this.started) this.publish("graphics");
+    }
+
+    handleCatalogChanged() {
+        if (!this.started || !this.snapshot?.scene) return;
+        const definition = this.catalog.getDefinition(this.snapshot.scene.id);
+        const source = definition ? this.createSource(definition) : null;
+        if (source && JSON.stringify(source) !== JSON.stringify(this.snapshot.source)) {
+            this.publish("source");
+        }
     }
 
     handleProgramTransport(snapshot) {
@@ -71,7 +83,7 @@ export default class ProgramOutputManager {
         if (!source) return null;
         const nowIso = new Date(this.now()).toISOString();
         const transition = this.createTransition(reason);
-        const playback = reason === "graphics" && this.snapshot &&
+        const playback = ["graphics", "source"].includes(reason) && this.snapshot &&
             this.snapshot.scene.id === scene.id &&
             this.snapshot.source.id === source.id
             ? this.snapshot.playback
@@ -127,7 +139,9 @@ export default class ProgramOutputManager {
         if (!source) return null;
         if (source.kind === "audio") return {
             id: source.id, kind: source.kind,
-            audioUrl: source.audioUrl, stillUrl: source.stillUrl
+            audioUrl: source.audioUrl,
+            ...(source.stillUrl ? { stillUrl: source.stillUrl } : {}),
+            ...(source.motionUrl ? { motionUrl: source.motionUrl } : {})
         };
         return { id: source.id, kind: source.kind, url: source.url };
     }

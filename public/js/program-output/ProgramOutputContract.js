@@ -74,8 +74,13 @@ function validateSource(value) {
     }
     if (value.kind === "audio") {
         const audioUrl = validateUrl(value.audioUrl);
-        const stillUrl = validateUrl(value.stillUrl);
-        return audioUrl && stillUrl ? { ...source, audioUrl, stillUrl } : null;
+        const stillUrl = value.stillUrl === undefined ? null : validateUrl(value.stillUrl);
+        const motionUrl = value.motionUrl === undefined ? null : validateUrl(value.motionUrl);
+        if (!audioUrl || value.stillUrl !== undefined && !stillUrl ||
+            value.motionUrl !== undefined && !motionUrl) return null;
+        return { ...source, audioUrl,
+            ...(stillUrl ? { stillUrl } : {}),
+            ...(motionUrl ? { motionUrl } : {}) };
     }
     if (!isText(value.title, 200) || !isText(value.message, MAX_TEXT)) return null;
     const logoUrl = validateUrl(value.logoUrl);

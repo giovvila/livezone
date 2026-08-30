@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import ProgramOutputStore from "../server/program-output/ProgramOutputStore.js";
 import { createProgramOutputServer } from "../server/program-output-server.js";
 import { createProgramOutputEnvelope } from
@@ -17,7 +18,7 @@ import ProgramOutputManager from
     "../public/js/program-output/ProgramOutputManager.js";
 import PublicProgramController from
     "../public/js/public/PublicProgramController.js";
-import { expectedPlaybackTime } from
+import { expectedPlaybackTime, validateProgramOutputSnapshot } from
     "../public/js/program-output/ProgramOutputContract.js";
 import EventBus from "../public/js/core/EventBus.js";
 import Events from "../public/js/core/Events.js";
@@ -434,6 +435,151 @@ test("failed transferred cue reports failure without assigning zero", () => {
     assert.equal(surface.video.currentTime, 0);
 });
 
+class FakePublicElement extends EventTarget {
+    constructor(tagName, { rejectPlay = false } = {}) {
+        super();
+        this.tagName = tagName.toUpperCase();
+        this.children = [];
+        this.hidden = false;
+        this.complete = false;
+        this.naturalWidth = 0;
+        this.currentTime = 0;
+        this.duration = null;
+        this.seeking = false;
+        this.paused = true;
+        this.rejectPlay = rejectPlay;
+        this.playCalls = 0;
+        this.pauseCalls = 0;
+        this.loadCalls = 0;
+    }
+    append(...children) { this.children.push(...children); }
+    appendChild(child) { this.children.push(child); return child; }
+    async play() {
+        this.playCalls += 1;
+        if (this.rejectPlay) throw new Error("autoplay-rejected");
+        this.paused = false;
+    }
+    pause() { this.pauseCalls += 1; this.paused = true; }
+    load() { this.loadCalls += 1; }
+    removeAttribute(name) { if (name === "src") this.src = ""; }
+}
+
+async function createPublicAudioHarness(source, { rejectMotion = false } = {}) {
+    const previousDocument = globalThis.document;
+    const elements = [];
+    globalThis.document = { createElement(tagName) {
+        const element = new FakePublicElement(tagName, {
+            rejectPlay: tagName === "video" && rejectMotion
+        });
+        elements.push(element);
+        return element;
+    } };
+    const root = new FakePublicElement("div");
+    const controller = new PublicProgramController({ root: null, status: null,
+        audioButton: null, transport: {}, now: () => Date.parse(
+            "2026-08-21T10:00:00.000Z") });
+    const pending = controller.createAudio(root, { ...audioSnapshot(), source });
+    const audio = elements.find((element) => element.tagName === "AUDIO");
+    audio.dispatchEvent(new Event("loadeddata"));
+    const cleanup = await pending;
+    return { previousDocument, elements, root, cleanup,
+        audio, image: elements.find((element) => element.tagName === "IMG"),
+        motion: elements.find((element) => element.tagName === "VIDEO"),
+        placeholder: elements.find((element) => element.tagName === "DIV") };
+}
+
+test("Public AUDIO gives ready motion priority over still artwork", async () => {
+    const harness = await createPublicAudioHarness({ id: "audio-source", kind: "audio",
+        audioUrl: "https://example.test/audio.mp3",
+        stillUrl: "https://example.test/still.jpg",
+        motionUrl: "https://example.test/motion.mp4" });
+    try {
+        harness.image.dispatchEvent(new Event("load"));
+        assert.equal(harness.image.hidden, false);
+        harness.motion.dispatchEvent(new Event("loadeddata"));
+        await Promise.resolve();
+        assert.equal(harness.motion.hidden, false);
+        assert.equal(harness.image.hidden, true);
+        assert.equal(harness.placeholder.hidden, true);
+        assert.equal(harness.motion.muted, true);
+        assert.equal(harness.motion.loop, true);
+        assert.equal(harness.motion.autoplay, true);
+        assert.equal(harness.motion.playsInline, true);
+        assert.equal(harness.motion.controls, false);
+        assert.notEqual(harness.motion, harness.audio);
+    }
+    finally {
+        harness.cleanup();
+        globalThis.document = harness.previousDocument;
+    }
+});
+
+test("Public AUDIO falls back through still to placeholder", async () => {
+    const still = await createPublicAudioHarness({ id: "audio-source", kind: "audio",
+        audioUrl: "https://example.test/audio.mp3",
+        stillUrl: "https://example.test/still.jpg" });
+    try {
+        still.image.dispatchEvent(new Event("load"));
+        assert.equal(still.image.hidden, false);
+        assert.equal(still.placeholder.hidden, true);
+    }
+    finally { still.cleanup(); globalThis.document = still.previousDocument; }
+
+    const plain = await createPublicAudioHarness({ id: "audio-source", kind: "audio",
+        audioUrl: "https://example.test/audio.mp3" });
+    try {
+        assert.equal(plain.image, undefined);
+        assert.equal(plain.motion, undefined);
+        assert.equal(plain.placeholder.hidden, false);
+    }
+    finally { plain.cleanup(); globalThis.document = plain.previousDocument; }
+});
+
+test("Public AUDIO motion failure preserves still fallback and cleanup", async () => {
+    const harness = await createPublicAudioHarness({ id: "audio-source", kind: "audio",
+        audioUrl: "https://example.test/audio.mp3",
+        stillUrl: "https://example.test/still.jpg",
+        motionUrl: "https://example.test/motion.mp4" }, { rejectMotion: true });
+    try {
+        harness.image.dispatchEvent(new Event("load"));
+        harness.motion.dispatchEvent(new Event("loadeddata"));
+        await Promise.resolve(); await Promise.resolve();
+        assert.equal(harness.motion.hidden, true);
+        assert.equal(harness.image.hidden, false);
+        harness.cleanup();
+        assert.ok(harness.motion.pauseCalls >= 1);
+        assert.equal(harness.motion.src, "");
+        assert.ok(harness.motion.loadCalls >= 2);
+        assert.equal(harness.audio.src, "");
+    }
+    finally { harness.cleanup(); globalThis.document = harness.previousDocument; }
+
+    const plain = await createPublicAudioHarness({ id: "audio-source", kind: "audio",
+        audioUrl: "https://example.test/audio.mp3",
+        motionUrl: "https://example.test/motion.mp4" }, { rejectMotion: true });
+    try {
+        plain.motion.dispatchEvent(new Event("loadeddata"));
+        await Promise.resolve(); await Promise.resolve();
+        assert.equal(plain.motion.hidden, true);
+        assert.equal(plain.placeholder.hidden, false);
+    }
+    finally { plain.cleanup(); globalThis.document = plain.previousDocument; }
+});
+
+test("same Program activation rerenders when AUDIO artwork URL changes", () => {
+    const controller = new PublicProgramController({ root: null, status: null,
+        audioButton: null, transport: {} });
+    const first = audioSnapshot({ motionUrl: "https://example.test/m1.mp4" });
+    const second = { ...audioSnapshot({ motionUrl: "https://example.test/m2.mp4",
+        revision: 2 }), committedAt: first.committedAt };
+    controller.current = { snapshot: first, cleanup() {}, layer: { remove() {} } };
+    controller.scheduleStaleState = () => {};
+    let rendered = null;
+    controller.renderSnapshot = (value) => { rendered = value; };
+    controller.handleSnapshot(second, { livePublisher: true });
+    assert.equal(rendered.source.motionUrl, "https://example.test/m2.mp4");
+});
+
 function snapshot({ session = "session-a", revision = 1,
     publishedAt = "2026-08-21T10:00:00.000Z" } = {}) {
     return {
@@ -458,6 +604,96 @@ function emptySnapshot({ session = "session-empty", revision = 1 } = {}) {
         graphics: { items: [] }, transition: { type: "cut", durationMs: 0 }
     };
 }
+
+function audioSnapshot({ stillUrl, motionUrl, revision = 1 } = {}) {
+    const base = snapshot({ revision });
+    return { ...base,
+        scene: { id: "audio-scene", name: "AUDIO", type: "AUDIO" },
+        source: { id: "audio-source", kind: "audio",
+            audioUrl: "https://example.test/audio.mp3",
+            ...(stillUrl ? { stillUrl } : {}),
+            ...(motionUrl ? { motionUrl } : {}) },
+        playback: { ...base.playback, state: "paused" }
+    };
+}
+
+test("public AUDIO contract accepts every optional artwork combination", () => {
+    const audioOnly = validateProgramOutputSnapshot(audioSnapshot());
+    const still = validateProgramOutputSnapshot(audioSnapshot({
+        stillUrl: "https://example.test/still.jpg" }));
+    const motion = validateProgramOutputSnapshot(audioSnapshot({
+        motionUrl: "https://example.test/motion.mp4" }));
+    const both = validateProgramOutputSnapshot(audioSnapshot({
+        stillUrl: "https://example.test/still.jpg",
+        motionUrl: "https://example.test/motion.mp4" }));
+    assert.equal(audioOnly.source.stillUrl, undefined);
+    assert.equal(still.source.stillUrl, "https://example.test/still.jpg");
+    assert.equal(motion.source.motionUrl, "https://example.test/motion.mp4");
+    assert.equal(both.source.motionUrl, "https://example.test/motion.mp4");
+    assert.equal(validateProgramOutputSnapshot({ ...audioSnapshot(), source: {
+        id: "audio-source", kind: "audio" } }), null);
+    assert.equal(validateProgramOutputSnapshot(audioSnapshot({
+        stillUrl: "https://example.test/legacy.jpg" })).source.kind, "audio");
+});
+
+test("Program snapshot projects AUDIO runtime URLs without managed asset IDs", () => {
+    const manager = new ProgramOutputManager({ sourceManager: { getSource: () => ({
+        id: "audio-source", kind: "audio",
+        audioUrl: "https://example.test/audio.mp3",
+        stillUrl: "https://example.test/still.jpg",
+        motionUrl: "https://example.test/motion.mp4",
+        audioAssetId: "A1", stillAssetId: "I1", motionAssetId: "M1"
+    }) } });
+    const source = manager.createSource({ renderer: { kind: "source",
+        sourceId: "audio-source" } });
+    assert.deepEqual(source, { id: "audio-source", kind: "audio",
+        audioUrl: "https://example.test/audio.mp3",
+        stillUrl: "https://example.test/still.jpg",
+        motionUrl: "https://example.test/motion.mp4" });
+});
+
+test("active Program publishes updated AUDIO artwork without changing playback", () => {
+    const published = [];
+    const first = validateProgramOutputSnapshot(audioSnapshot({
+        motionUrl: "https://example.test/m1.mp4" }));
+    const manager = new ProgramOutputManager({
+        stateManager: { getProgramSceneId: () => "audio-scene",
+            getScene: () => first.scene },
+        catalog: { getDefinition: () => ({ renderer: { kind: "source",
+            sourceId: "audio-source" } }) },
+        sourceManager: { getSource: () => ({ id: "audio-source", kind: "audio",
+            audioUrl: "https://example.test/audio.mp3",
+            motionUrl: "https://example.test/m2.mp4" }) },
+        graphicsManager: { getVisibleGraphics: () => [] },
+        transitionCoordinator: { getSnapshot: () => ({ state: "idle" }) },
+        transport: { publish: (value) => published.push(value) },
+        now: () => Date.parse("2026-08-21T10:00:01.000Z")
+    });
+    manager.started = true;
+    manager.snapshot = first;
+    manager.revision = first.revision;
+    manager.publisherSessionId = first.publisherSessionId;
+    manager.handleCatalogChanged();
+    assert.equal(published.length, 1);
+    assert.equal(published[0].source.motionUrl, "https://example.test/m2.mp4");
+    assert.deepEqual(published[0].playback, first.playback);
+});
+
+test("ProgramOutputStore retains AUDIO motion artwork", () => {
+    const store = new ProgramOutputStore();
+    const envelope = createProgramOutputEnvelope(audioSnapshot({
+        motionUrl: "https://example.test/motion.mp4" }));
+    assert.equal(store.accept(envelope).accepted, true);
+    assert.equal(store.getCurrent().snapshot.source.motionUrl,
+        "https://example.test/motion.mp4");
+});
+
+test("Public AUDIO motion CSS fills composition and honors hidden", async () => {
+    const css = await readFile(new URL("../public/css/public-viewer.css",
+        import.meta.url), "utf8");
+    assert.match(css, /\.public-program-audio-motion\s*\{/);
+    assert.match(css, /\.public-program-audio-motion\[hidden\][^{]*\{[^}]*display:\s*none;/s);
+});
 
 test("store retains newest revision and retires replaced sessions", () => {
     const store = new ProgramOutputStore();
@@ -934,6 +1170,24 @@ test("connected SSE client receives explicit empty Program", async (context) => 
     const event = await readProgramEvent(reader);
     assert.match(event, /"scene":null/);
     assert.match(event, /"source":null/);
+    abort.abort();
+});
+
+test("late SSE subscriber receives retained AUDIO motion artwork", async (context) => {
+    const { server } = createProgramOutputServer({ publisherToken: TOKEN });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    context.after(() => new Promise((resolve) => server.close(resolve)));
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const envelope = createProgramOutputEnvelope(audioSnapshot({
+        stillUrl: "https://example.test/still.jpg",
+        motionUrl: "https://example.test/motion.mp4" }));
+    assert.equal((await publish(base, envelope)).status, 202);
+    const abort = new AbortController();
+    const response = await fetch(`${base}/api/program-output/events`, {
+        signal: abort.signal
+    });
+    const event = await readProgramEvent(response.body.getReader());
+    assert.match(event, /"motionUrl":"https:\/\/example\.test\/motion\.mp4"/);
     abort.abort();
 });
 

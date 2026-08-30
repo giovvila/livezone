@@ -42,6 +42,13 @@ export default class PublicProgramController {
         const sameActivation = previousSnapshot &&
             this.activationKey(previousSnapshot) === this.activationKey(snapshot);
         if (sameActivation) {
+            const sourceChanged = JSON.stringify(previousSnapshot.source) !==
+                JSON.stringify(snapshot.source);
+            if (sourceChanged) {
+                this.scheduleStaleState(snapshot, livePublisher ? this.now() : null);
+                void this.renderSnapshot(snapshot);
+                return;
+            }
             const playbackChanged = JSON.stringify(previousSnapshot.playback) !==
                 JSON.stringify(snapshot.playback);
             this.current.snapshot = snapshot;
@@ -162,25 +169,93 @@ export default class PublicProgramController {
     }
 
     async createAudio(root, snapshot) {
-        const image = document.createElement("img");
         const audio = document.createElement("audio");
-        image.className = "public-program__media";
-        image.src = snapshot.source.stillUrl;
-        image.alt = "";
+        const placeholder = document.createElement("div");
+        const image = snapshot.source.stillUrl ? document.createElement("img") : null;
+        const motion = snapshot.source.motionUrl ? document.createElement("video") : null;
+        let imageReady = false;
+        let imageFailed = false;
+        let motionReady = false;
+        let motionFailed = false;
+        let released = false;
+        placeholder.className = "public-program-audio-placeholder";
+        placeholder.textContent = "AUDIO";
+        if (image) {
+            image.className = "public-program-audio-still";
+            image.alt = "";
+            image.hidden = true;
+        }
+        if (motion) {
+            motion.className = "public-program-audio-motion";
+            motion.muted = true;
+            motion.defaultMuted = true;
+            motion.loop = true;
+            motion.autoplay = true;
+            motion.playsInline = true;
+            motion.controls = false;
+            motion.preload = "auto";
+            motion.hidden = true;
+        }
+        audio.hidden = true;
         audio.src = snapshot.source.audioUrl;
         audio.preload = "auto";
-        root.append(image, audio);
+        const refreshArtwork = () => {
+            if (released) return;
+            const showMotion = Boolean(motion && motionReady && !motionFailed);
+            const showStill = !showMotion && Boolean(image && imageReady && !imageFailed);
+            if (motion) motion.hidden = !showMotion;
+            if (image) image.hidden = !showStill;
+            placeholder.hidden = showMotion || showStill;
+        };
+        const handleImageLoad = () => {
+            imageReady = true; imageFailed = false; refreshArtwork();
+        };
+        const handleImageError = () => {
+            imageReady = false; imageFailed = true; refreshArtwork();
+        };
+        const handleMotionError = () => {
+            motionReady = false; motionFailed = true; refreshArtwork();
+        };
+        const handleMotionReady = async () => {
+            if (released || !motion) return;
+            try {
+                await motion.play();
+                if (released) return;
+                motionReady = true; motionFailed = false; refreshArtwork();
+            }
+            catch { handleMotionError(); }
+        };
+        image?.addEventListener("load", handleImageLoad);
+        image?.addEventListener("error", handleImageError);
+        motion?.addEventListener("loadeddata", handleMotionReady);
+        motion?.addEventListener("error", handleMotionError);
+        root.append(audio, placeholder, ...(image ? [image] : []), ...(motion ? [motion] : []));
+        if (image) {
+            image.src = snapshot.source.stillUrl;
+            if (image.complete && image.naturalWidth > 0) handleImageLoad();
+        }
+        if (motion) {
+            motion.src = snapshot.source.motionUrl;
+            motion.load();
+        }
+        refreshArtwork();
+        const cleanup = () => {
+            if (released) return;
+            released = true;
+            image?.removeEventListener("load", handleImageLoad);
+            image?.removeEventListener("error", handleImageError);
+            motion?.removeEventListener("loadeddata", handleMotionReady);
+            motion?.removeEventListener("error", handleMotionError);
+            if (motion) {
+                motion.pause(); motion.removeAttribute("src"); motion.load();
+            }
+            audio.pause(); audio.removeAttribute("src"); audio.load();
+        };
         try {
-            await Promise.all([
-                this.waitForReady(audio, ["loadeddata", "canplay"]),
-                image.complete && image.naturalWidth > 0
-                    ? Promise.resolve()
-                    : this.waitForReady(image, ["load"])
-            ]);
+            await this.waitForReady(audio, ["loadeddata", "canplay"]);
         }
         catch (error) {
-            audio.removeAttribute("src");
-            audio.load();
+            cleanup();
             throw error;
         }
         await this.seekRecordedMedia(audio, snapshot);
@@ -188,7 +263,7 @@ export default class PublicProgramController {
             try { await audio.play(); } catch { this.showAudioButton(); }
         }
         else if (snapshot.playback.playing) this.showAudioButton();
-        return () => { audio.pause(); audio.removeAttribute("src"); audio.load(); };
+        return cleanup;
     }
 
     createBreak(root, source) {
@@ -251,7 +326,9 @@ export default class PublicProgramController {
     async reconcilePlayback(snapshot, entry) {
         if (!entry || this.current !== entry ||
             !["media", "audio"].includes(snapshot.source.kind)) return;
-        const media = entry.layer.querySelector("audio, video");
+        const media = entry.layer.querySelector(
+            snapshot.source.kind === "audio" ? "audio" : "video"
+        );
         if (!media) return;
         if (!snapshot.playback.playing || snapshot.playback.ended) media.pause();
         try { await this.seekRecordedMedia(media, snapshot); }
@@ -295,7 +372,9 @@ export default class PublicProgramController {
     enableAudio() {
         this.audioEnabled = true;
         this.audioButton.hidden = true;
-        const media = this.current?.layer.querySelector("audio, video");
+        const media = this.current?.layer.querySelector(
+            this.current?.snapshot.source.kind === "audio" ? "audio" : "video"
+        );
         if (!media) return;
         media.muted = false;
         const playback = this.current?.snapshot.playback;
