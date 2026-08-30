@@ -745,6 +745,42 @@ test("AudioSurface artwork load and failure keep audio authority and fallback", 
     assert.equal(plain.stillUrl, undefined);
 });
 
+test("AudioSurface stops and resets motion at audio end and restarts on replay", async () => {
+    const surface = new StudioAudioSurface({ sourceId: "audio-motion",
+        audioUrl: "https://example.test/audio.mp3",
+        stillUrl: "https://example.test/still.jpg",
+        motionUrl: "https://example.test/motion.mp4", instanceId: "instance-motion",
+        consumer: "preview" });
+    let pauseCalls = 0;
+    let playCalls = 0;
+    surface.motion = { currentTime: 18, pause() { pauseCalls += 1; },
+        async play() { playCalls += 1; } };
+    surface.image = { hidden: true };
+    surface.placeholder = { hidden: true };
+    surface.setHealth = () => {};
+    surface.checkCurrentReadiness = () => {};
+    surface.notifyTransport = () => {};
+
+    surface.handleEnded();
+    assert.equal(pauseCalls, 1);
+    assert.equal(surface.motion.currentTime, 0);
+    assert.equal(surface.motionFailed, false);
+    assert.equal(surface.image.hidden, true);
+
+    surface.handlePlaying();
+    await Promise.resolve();
+    assert.equal(playCalls, 1);
+    assert.equal(surface.motionReady, true);
+
+    const stillOnly = new StudioAudioSurface({ sourceId: "audio-still",
+        audioUrl: "https://example.test/audio.mp3",
+        stillUrl: "https://example.test/still.jpg", instanceId: "instance-still",
+        consumer: "preview" });
+    stillOnly.setHealth = () => {};
+    stillOnly.notifyTransport = () => {};
+    assert.doesNotThrow(() => stillOnly.handleEnded());
+});
+
 test("initial cached AUDIO artwork hides placeholder and no-artwork keeps it", () => {
     const illustrated = new StudioAudioSurface({ sourceId: "audio-cached",
         audioUrl: "https://example.test/audio.mp3",

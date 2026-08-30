@@ -514,6 +514,75 @@ test("Public AUDIO gives ready motion priority over still artwork", async () => 
     }
 });
 
+test("Public AUDIO stops motion at audio end and restarts it on replay", async () => {
+    const harness = await createPublicAudioHarness({ id: "audio-source", kind: "audio",
+        audioUrl: "https://example.test/audio.mp3",
+        stillUrl: "https://example.test/still.jpg",
+        motionUrl: "https://example.test/motion.mp4" });
+    try {
+        harness.motion.dispatchEvent(new Event("loadeddata"));
+        await Promise.resolve();
+        harness.motion.currentTime = 14;
+        const pauseCalls = harness.motion.pauseCalls;
+        harness.audio.dispatchEvent(new Event("ended"));
+        assert.equal(harness.motion.pauseCalls, pauseCalls + 1);
+        assert.equal(harness.motion.currentTime, 0);
+        assert.equal(harness.motion.hidden, false);
+
+        const playCalls = harness.motion.playCalls;
+        harness.audio.dispatchEvent(new Event("playing"));
+        await Promise.resolve();
+        assert.equal(harness.motion.playCalls, playCalls + 1);
+        assert.equal(harness.motion.hidden, false);
+    }
+    finally {
+        harness.cleanup();
+        globalThis.document = harness.previousDocument;
+    }
+});
+
+test("Public authoritative AUDIO ended update resets only the current visible motion", async () => {
+    let publishCalls = 0;
+    const controller = new PublicProgramController({ root: null, status: null,
+        audioButton: null, transport: { publish() { publishCalls += 1; } } });
+    const currentAudio = new FakePublicElement("audio");
+    const currentMotion = new FakePublicElement("video");
+    currentMotion.currentTime = 24;
+    const staleMotion = new FakePublicElement("video");
+    staleMotion.currentTime = 12;
+    const entry = { snapshot: audioSnapshot(), layer: { querySelector(selector) {
+        return selector === "audio" ? currentAudio : currentMotion;
+    } } };
+    const stale = { snapshot: audioSnapshot(), layer: { querySelector(selector) {
+        return selector === "audio" ? new FakePublicElement("audio") : staleMotion;
+    } } };
+    controller.current = entry;
+    controller.seekRecordedMedia = async () => {};
+
+    await controller.reconcilePlayback({ ...audioSnapshot(), playback: {
+        ...audioSnapshot().playback, playing: false, ended: true, state: "ended"
+    } }, stale);
+    assert.equal(staleMotion.pauseCalls, 0);
+    assert.equal(staleMotion.currentTime, 12);
+
+    await controller.reconcilePlayback({ ...audioSnapshot(), playback: {
+        ...audioSnapshot().playback, playing: false, ended: true, state: "ended"
+    } }, entry);
+    assert.equal(currentMotion.pauseCalls, 1);
+    assert.equal(currentMotion.currentTime, 0);
+    assert.equal(currentAudio.pauseCalls, 1);
+
+    const noMotionEntry = { snapshot: audioSnapshot(), layer: {
+        querySelector: (selector) => selector === "audio"
+            ? new FakePublicElement("audio") : null
+    } };
+    controller.current = noMotionEntry;
+    await assert.doesNotReject(controller.reconcilePlayback({ ...audioSnapshot(), playback: {
+        ...audioSnapshot().playback, playing: false, ended: true, state: "ended"
+    } }, noMotionEntry));
+    assert.equal(publishCalls, 0);
+});
+
 test("Public AUDIO falls back through still to placeholder", async () => {
     const still = await createPublicAudioHarness({ id: "audio-source", kind: "audio",
         audioUrl: "https://example.test/audio.mp3",

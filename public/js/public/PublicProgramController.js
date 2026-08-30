@@ -225,10 +225,19 @@ export default class PublicProgramController {
             }
             catch { handleMotionError(); }
         };
+        const handleAudioPlaying = () => { void handleMotionReady(); };
+        const handleAudioEnded = () => {
+            if (!motion) return;
+            motion.pause();
+            try { motion.currentTime = 0; }
+            catch { /* An unavailable media timeline is safe to leave paused. */ }
+        };
         image?.addEventListener("load", handleImageLoad);
         image?.addEventListener("error", handleImageError);
         motion?.addEventListener("loadeddata", handleMotionReady);
         motion?.addEventListener("error", handleMotionError);
+        audio.addEventListener("playing", handleAudioPlaying);
+        audio.addEventListener("ended", handleAudioEnded);
         root.append(audio, placeholder, ...(image ? [image] : []), ...(motion ? [motion] : []));
         if (image) {
             image.src = snapshot.source.stillUrl;
@@ -246,6 +255,8 @@ export default class PublicProgramController {
             image?.removeEventListener("error", handleImageError);
             motion?.removeEventListener("loadeddata", handleMotionReady);
             motion?.removeEventListener("error", handleMotionError);
+            audio.removeEventListener("playing", handleAudioPlaying);
+            audio.removeEventListener("ended", handleAudioEnded);
             if (motion) {
                 motion.pause(); motion.removeAttribute("src"); motion.load();
             }
@@ -330,6 +341,9 @@ export default class PublicProgramController {
             snapshot.source.kind === "audio" ? "audio" : "video"
         );
         if (!media) return;
+        if (snapshot.source.kind === "audio" && snapshot.playback.ended) {
+            this.resetAudioMotion(entry);
+        }
         if (!snapshot.playback.playing || snapshot.playback.ended) media.pause();
         try { await this.seekRecordedMedia(media, snapshot); }
         catch { return; }
@@ -343,6 +357,14 @@ export default class PublicProgramController {
         }
         else media.pause();
         this.setStatus(snapshot.playback.ended ? "PROGRAM ENDED" : "PROGRAM", "online");
+    }
+
+    resetAudioMotion(entry) {
+        const motion = entry?.layer?.querySelector(".public-program-audio-motion");
+        if (!motion) return;
+        motion.pause();
+        try { motion.currentTime = 0; }
+        catch { /* An unavailable media timeline is safe to leave paused. */ }
     }
 
     activationKey(snapshot) {

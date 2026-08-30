@@ -319,6 +319,7 @@ export default class StudioAudioSurface {
 
     handlePlaying() {
         this.transportEnded = false;
+        void this.startMotionPlayback();
         this.setHealth("ready", null);
         this.checkCurrentReadiness();
         this.notifyTransport();
@@ -342,8 +343,20 @@ export default class StudioAudioSurface {
 
     handleEnded() {
         this.transportEnded = true;
+        this.resetMotionPlayback();
         this.setHealth("ended", null);
         this.notifyTransport();
+    }
+
+    resetMotionPlayback() {
+        if (!this.motion) return;
+        this.motion.pause();
+        try {
+            this.motion.currentTime = 0;
+        }
+        catch {
+            // An unavailable media timeline is safe to leave paused.
+        }
     }
 
     handleAudioError() {
