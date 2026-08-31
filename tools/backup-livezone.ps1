@@ -5,7 +5,9 @@ param(
 
     [string]$SourceRoot = (Split-Path -Parent $PSScriptRoot),
 
-    [switch]$DestinationSecurityConfirmed
+    [switch]$DestinationSecurityConfirmed,
+
+    [switch]$ApplyRetention
 )
 
 $ErrorActionPreference = "Stop"
@@ -165,6 +167,19 @@ try {
     $manifestPath = Join-Path $manifestDirectory "backup-manifest.json"
     $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $manifestPath -Encoding utf8NoBOM
     Move-Item -LiteralPath $stagingPath -Destination $finalPath
+
+    $retentionScript = Join-Path $PSScriptRoot "backup-retention.ps1"
+    try {
+        $retentionArguments = @("-BackupRoot", $destinationRoot)
+        if ($ApplyRetention) { $retentionArguments += "-ApplyRetention" }
+        & (Get-Process -Id $PID).Path -NoProfile -File $retentionScript @retentionArguments
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "Backup succeeded, but retention analysis failed closed. No retention deletions were performed."
+        }
+    }
+    catch {
+        Write-Warning "Backup succeeded, but retention analysis failed closed. No retention deletions were performed."
+    }
 
     $backupDirectories = @(Get-ChildItem -LiteralPath $destinationRoot -Directory |
         Where-Object { $_.Name -match '^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$' })
