@@ -10,6 +10,9 @@ import StudioScheduleSummaryUI from "../public/js/ui/StudioScheduleSummaryUI.js"
 import ScheduleWorkspaceUI, { formatClock } from "../public/js/ui/ScheduleWorkspaceUI.js";
 import MonitorWallLayoutManager from "../public/js/ui/MonitorWallLayoutManager.js";
 import ScheduleClock from "../public/js/ui/ScheduleClock.js";
+import StudioCatalogManager from "../public/js/studio/StudioCatalogManager.js";
+import StudioAssetResolver from "../public/js/studio/StudioAssetResolver.js";
+import StudioProgramCommand from "../public/js/scheduler/StudioProgramCommand.js";
 
 const createSchedule = (items) => validateSchedule({
     version: 1, timezone: "Europe/Rome", items
@@ -18,6 +21,57 @@ const item = (id, start, durationSeconds, behavior = "NORMAL") => ({
     id, title: id, start, durationSeconds, sceneId: "main-live",
     transition: "CUT", behavior, resumePolicy: "RESUME_FIXED"
 });
+
+function createCatalogHarness({ storage, resolver }) {
+    const sources = new Map();
+    const scenes = new Map();
+    let serial = 0;
+    const sourceManager = {
+        registerSource(value) { if (sources.has(value.id)) return null;
+            sources.set(value.id, value); return value; },
+        replaceSource(value) { if (!sources.has(value.id)) return null;
+            sources.set(value.id, value); return value; },
+        unregisterSource(id) { const value = sources.get(id) || null;
+            sources.delete(id); return value; },
+        getSource: (id) => sources.get(id) || null,
+        getActiveInstances: () => []
+    };
+    const stateManager = {
+        registerScene(value) { if (scenes.has(value.id)) return null;
+            scenes.set(value.id, value); return value; },
+        replaceScene(value) { if (!scenes.has(value.id)) return null;
+            scenes.set(value.id, value); return value; },
+        unregisterScene(id) { const value = scenes.get(id) || null;
+            scenes.delete(id); return value; },
+        getScene: (id) => scenes.get(id) || null,
+        getPreviewSceneId: () => null,
+        getProgramSceneId: () => null
+    };
+    const catalog = new StudioCatalogManager({ studioStateManager: stateManager,
+        studioSourceManager: sourceManager, assetResolver: resolver, storage,
+        eventTarget: null, baseUrl: "https://studio.test/control/schedule/",
+        uuidFactory: () => `00000000-0000-4000-8000-${String(++serial).padStart(12, "0")}`
+    });
+    return { catalog, sources, scenes };
+}
+
+function baseCatalog() {
+    return {
+        sources: [
+            { id: "media-demo", kind: "media", url: "https://studio.test/demo-a.mp4" },
+            { id: "media-demo-2", kind: "media", url: "https://studio.test/demo-b.mp4" }
+        ],
+        scenes: [
+            { id: "media-demo-scene", name: "MEDIA A", type: "MEDIA",
+                renderer: { kind: "source", sourceId: "media-demo" } },
+            { id: "media-demo-2-scene", name: "MEDIA B", type: "MEDIA",
+                renderer: { kind: "source", sourceId: "media-demo-2" } },
+            { id: "break", name: "BREAK", type: "SLATE",
+                renderer: { kind: "slate", title: "BREAK", message: "Back soon",
+                    logo: "https://studio.test/logo.svg" } }
+        ]
+    };
+}
 
 test("day window follows Europe/Rome DST day lengths", () => {
     assert.equal(getDayWindow("2026-03-29", "Europe/Rome").durationSeconds, 23 * 3600);
@@ -351,7 +405,118 @@ test("Schedule Workspace entry cannot instantiate a second scheduler authority",
     assert.match(source, /\["logo", "still"\]\.includes\(asset\.kind\)/,
         "workspace must reject removal when live graphics usage cannot be verified");
     assert.match(source, /dataset\.schedulerEnabled\s*=\s*String\(schedulerRuntimeState\.load\(\)\.enabled\)/);
+    const legacyReady = source.indexOf("await assetLibrary.initialize()");
+    const mediaReady = source.indexOf("await mediaLibraryManager.initialize()");
+    const resolverReady = source.indexOf("new StudioAssetResolver");
+    const catalogReady = source.indexOf("new StudioCatalogManager");
+    const bootstrapReady = source.indexOf("await bootstrap.initialize()");
+    assert.ok([legacyReady, mediaReady, resolverReady, catalogReady, bootstrapReady]
+        .every((index) => index >= 0));
+    assert.ok(legacyReady < mediaReady && mediaReady < resolverReady &&
+        resolverReady < catalogReady && catalogReady < bootstrapReady,
+    "managed and legacy assets must be ready before standalone catalog rehydration");
+    assert.match(source, /new StudioAssetResolver\(\{\s*legacyLibrary:\s*assetLibrary,\s*mediaLibraryManager\s*\}\)/s);
 });
+
+test("standalone Scheduler unified catalog exposes persisted managed scenes by stable ID",
+    async () => {
+        const values = new Map();
+        const storage = { getItem: (key) => values.get(key) || null,
+            setItem: (key, value) => values.set(key, value) };
+        const assets = new Map([
+            ["asset-video", { id: "asset-video", kind: "video",
+                url: "https://studio.test/media/video.mp4" }],
+            ["asset-audio", { id: "asset-audio", kind: "audio",
+                url: "https://studio.test/media/audio.mp3" }],
+            ["asset-image", { id: "asset-image", kind: "image",
+                url: "https://studio.test/media/image.png" }]
+        ]);
+        const resolver = new StudioAssetResolver({
+            legacyLibrary: { getAsset: () => null },
+            mediaLibraryManager: { getAsset: (id) => assets.get(id) || null }
+        });
+        const first = createCatalogHarness({ storage, resolver });
+        first.catalog.initialize(baseCatalog());
+        const video = first.catalog.addSource({ kind: "video", name: "Managed video",
+            assetId: "asset-video" }).source;
+        const audio = first.catalog.addSource({ kind: "audio", name: "Managed audio",
+            audioAssetId: "asset-audio" }).source;
+        const image = first.catalog.addSource({ kind: "image", name: "Managed image",
+            assetId: "asset-image" }).source;
+        const direct = first.catalog.addSource({ kind: "video", name: "Direct video",
+            url: "https://studio.test/media/direct.mp4" }).source;
+        const scenes = [video, audio, image, direct].map((source) =>
+            first.catalog.createSceneForSource(source.id, {
+                name: `${source.name} scene`
+            }).scene);
+        const stableIds = scenes.map(({ id }) => id);
+
+        const second = createCatalogHarness({ storage, resolver });
+        second.catalog.initialize(baseCatalog());
+        assert.deepEqual(stableIds.map((id) => Boolean(second.catalog.getDefinition(id))),
+            [true, true, true, true]);
+        assert.deepEqual(["media-demo-scene", "media-demo-2-scene", "break"].map(
+            (id) => second.catalog.getDefinition(id)?.name), ["MEDIA A", "MEDIA B", "BREAK"]);
+
+        const previousDocument = globalThis.document;
+        globalThis.document = { createElement: () => ({ value: "", textContent: "" }) };
+        try {
+            const sceneSelect = { value: "", children: [], replaceChildren(...children) {
+                this.children = children;
+            } };
+            const ui = new ScheduleWorkspaceUI({ catalog: second.catalog });
+            ui.sceneSelect = sceneSelect;
+            ui.renderScenes();
+            const optionIds = sceneSelect.children.map(({ value }) => value);
+            stableIds.forEach((id) => assert.ok(optionIds.includes(id)));
+            second.catalog.getSources().forEach(({ id }) =>
+                assert.equal(optionIds.includes(id), false, "Sources are not schedule targets"));
+        }
+        finally { globalThis.document = previousDocument; }
+
+        const scheduledSceneId = scenes[0].id;
+        const scheduleStore = new ScheduleStore({ storage });
+        const saved = scheduleStore.save(createSchedule([{
+            id: "managed-item", title: "Managed", start: "2026-08-23T12:00:00+02:00",
+            durationSeconds: 60, sceneId: scheduledSceneId, transition: "CUT"
+        }]));
+        assert.equal(saved.ok, true);
+        assert.equal(scheduleStore.load().schedule.items[0].sceneId, scheduledSceneId);
+
+        const renamed = second.catalog.updateScene(scheduledSceneId, {
+            name: "Renamed managed video", sourceId: video.id
+        });
+        assert.equal(renamed.scene.id, scheduledSceneId);
+        assert.equal(scheduleStore.load().schedule.items[0].sceneId, scheduledSceneId);
+        const edited = second.catalog.updateScene(scheduledSceneId, {
+            name: "Edited source", sourceId: direct.id
+        });
+        assert.equal(edited.scene.id, scheduledSceneId);
+        assert.equal(scheduleStore.load().schedule.items[0].sceneId, scheduledSceneId);
+
+        let preview = null;
+        const command = new StudioProgramCommand({ catalog: second.catalog,
+            stateManager: { getProgramSceneId: () => null,
+                getPreviewSceneId: () => preview,
+                setPreviewScene: (id) => { preview = id; return { currentSceneId: id }; } },
+            transitionCoordinator: { isBusy: () => false,
+                transition: async () => ({ state: "completed" }) }
+        });
+        assert.equal((await command.execute({ sceneId: scheduledSceneId })).ok, true);
+        assert.equal(preview, scheduledSceneId);
+
+        const missingResolver = new StudioAssetResolver({
+            legacyLibrary: { getAsset: () => null },
+            mediaLibraryManager: { getAsset: (id) => id === "asset-audio" ? null
+                : assets.get(id) || null }
+        });
+        const missing = createCatalogHarness({ storage, resolver: missingResolver });
+        missing.catalog.initialize(baseCatalog());
+        const persistedAudioScene = scenes.find(({ id }) => id.startsWith("audio-scene-"));
+        assert.equal(missing.catalog.getDefinition(persistedAudioScene.id), null);
+        assert.equal(missing.catalog.getDefinitions().some(
+            ({ id }) => id === persistedAudioScene.id), false);
+    });
 
 test("Control summary applies external store snapshots to its scheduler authority", () => {
     const nodes = new Map(["#studio-schedule-toggle", "#studio-schedule-status",

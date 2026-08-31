@@ -2,8 +2,11 @@ import StudioStateManager from "../core/StudioStateManager.js";
 import StudioSourceManager from "../studio/StudioSourceManager.js";
 import StudioGraphicsManager from "../studio/StudioGraphicsManager.js";
 import StudioAssetLibrary from "../studio/StudioAssetLibrary.js";
+import StudioAssetResolver from "../studio/StudioAssetResolver.js";
 import StudioCatalogManager from "../studio/StudioCatalogManager.js";
 import StudioBootstrap from "../studio/StudioBootstrap.js";
+import MediaLibraryClient from "../media-library/MediaLibraryClient.js";
+import MediaLibraryManager from "../media-library/MediaLibraryManager.js";
 import ScheduleStore from "../scheduler/ScheduleStore.js";
 import ScheduleWorkspaceUI from "../ui/ScheduleWorkspaceUI.js";
 import StudioAssetsUI from "../ui/StudioAssetsUI.js";
@@ -17,10 +20,16 @@ StudioGraphicsManager.initialize();
 
 const assetLibrary = new StudioAssetLibrary();
 await assetLibrary.initialize();
+const mediaLibraryManager = new MediaLibraryManager(new MediaLibraryClient());
+await mediaLibraryManager.initialize();
+const assetResolver = new StudioAssetResolver({
+    legacyLibrary: assetLibrary,
+    mediaLibraryManager
+});
 const catalog = new StudioCatalogManager({
     studioStateManager: StudioStateManager,
     studioSourceManager: StudioSourceManager,
-    assetResolver: (assetId) => assetLibrary.getAsset(assetId)
+    assetResolver
 });
 const bootstrap = new StudioBootstrap({
     studioCatalogManager: catalog,

@@ -960,7 +960,7 @@ export default class StudioCatalogManager {
 
     createOverlayScene(candidate) {
         if (!this.hasExactKeys(candidate, ["id", "name", "type", "renderer"]) ||
-            !["MEDIA", "AUDIO", "LIVE", "IMAGE"].includes(candidate.type) ||
+            !["MEDIA", "VIDEO", "AUDIO", "LIVE", "IMAGE"].includes(candidate.type) ||
             !["media", "live", "audio", "image"].some((kind) =>
                 this.isGeneratedSceneId(candidate.id, kind)) ||
             !this.hasExactKeys(candidate.renderer, ["kind", "sourceId"]) ||
