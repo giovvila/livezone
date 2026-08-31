@@ -1,0 +1,55 @@
+# LIVEZONE local ingest template for MediaMTX v1.20.1.
+# Runtime placeholders are replaced by tools/start-mediamtx.ps1 into the ignored
+# var/runtime/mediamtx/mediamtx.yml file. Never put real credentials here.
+logLevel: info
+logDestinations: [stdout]
+
+authMethod: internal
+authInternalUsers:
+  - user: "__LIVEZONE_RTMP_PUBLISH_USER__"
+    pass: "__LIVEZONE_RTMP_PUBLISH_PASSWORD__"
+    ips: []
+    permissions:
+      - action: publish
+        path: livezone-test
+  - user: any
+    pass:
+    ips: []
+    permissions:
+      - action: read
+        path: livezone-test
+      - action: playback
+        path: livezone-test
+  - user: any
+    pass:
+    ips: ["127.0.0.1", "::1"]
+    permissions:
+      - action: api
+
+api: true
+apiAddress: 127.0.0.1:9997
+apiAllowOrigins: []
+metrics: false
+pprof: false
+playback: false
+
+rtsp: false
+rtmp: true
+rtmpEncryption: "no"
+rtmpAddress: :1935
+
+hls: true
+hlsAddress: :8888
+hlsEncryption: false
+hlsAllowOrigins: ["http://127.0.0.1:8080", "http://localhost:8080"]
+hlsAlwaysRemux: true
+hlsVariant: fmp4
+
+webrtc: false
+srt: false
+moq: false
+
+paths:
+  livezone-test:
+    source: publisher
+    overridePublisher: false

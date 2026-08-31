@@ -1,4 +1,5 @@
 /var/media-library/*
+/var/runtime/mediamtx/*
 /node_modules/
 .env
 .env.local

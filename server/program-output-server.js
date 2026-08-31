@@ -6,6 +6,9 @@ import { timingSafeEqual } from "node:crypto";
 import ProgramOutputStore from "./program-output/ProgramOutputStore.js";
 import MediaAssetRepository from "./media-library/MediaAssetRepository.js";
 import MediaLibraryRoutes from "./media-library/MediaLibraryRoutes.js";
+import MediaIngestConfig from "./media-ingest/MediaIngestConfig.js";
+import MediaIngestStatusClient from "./media-ingest/MediaIngestStatusClient.js";
+import MediaIngestRoutes from "./media-ingest/MediaIngestRoutes.js";
 
 const MAX_BODY_BYTES = 64 * 1024;
 const SSE_KEEPALIVE_MS = 15000;
@@ -25,7 +28,9 @@ export function createProgramOutputServer({
     store = new ProgramOutputStore(),
     mediaLibraryRoot = process.env.LIVEZONE_MEDIA_LIBRARY_ROOT || DEFAULT_MEDIA_LIBRARY_ROOT,
     mediaLibraryMaxBytes = Number.parseInt(process.env.LIVEZONE_MEDIA_LIBRARY_MAX_BYTES || String(2 * 1024 ** 3), 10),
-    mediaAssetRepository = new MediaAssetRepository({ root: mediaLibraryRoot })
+    mediaAssetRepository = new MediaAssetRepository({ root: mediaLibraryRoot }),
+    mediaIngestConfig = MediaIngestConfig.fromEnvironment(),
+    mediaIngestStatusClient = new MediaIngestStatusClient({ config: mediaIngestConfig })
 } = {}) {
     if (typeof publisherToken !== "string" || publisherToken.length < 16) {
         throw new Error("LIVEZONE_PROGRAM_OUTPUT_TOKEN must contain at least 16 characters.");
@@ -34,6 +39,7 @@ export function createProgramOutputServer({
     const mediaReady = mediaAssetRepository.initialize();
     const mediaRoutes = new MediaLibraryRoutes({ repository: mediaAssetRepository,
         maxUploadBytes: mediaLibraryMaxBytes });
+    const mediaIngestRoutes = new MediaIngestRoutes({ statusClient: mediaIngestStatusClient });
     const unsubscribe = store.subscribe((envelope) => {
         const event = formatSse(envelope);
         clients.forEach((response) => {
@@ -48,6 +54,7 @@ export function createProgramOutputServer({
     const server = createServer(async (request, response) => {
         try {
             const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
+            if (await mediaIngestRoutes.handle(request, response, url)) return;
             if (url.pathname.startsWith("/api/media-library/") ||
                 url.pathname.startsWith("/media-library/files/")) {
                 await mediaReady;
