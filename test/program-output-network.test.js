@@ -468,7 +468,8 @@ class FakePublicElement extends EventTarget {
     removeAttribute(name) { if (name === "src") this.src = ""; }
 }
 
-async function createPublicAudioHarness(source, { rejectMotion = false } = {}) {
+async function createPublicAudioHarness(source, { rejectMotion = false,
+    snapshot = audioSnapshot() } = {}) {
     const previousDocument = globalThis.document;
     const elements = [];
     globalThis.document = { createElement(tagName) {
@@ -482,15 +483,44 @@ async function createPublicAudioHarness(source, { rejectMotion = false } = {}) {
     const controller = new PublicProgramController({ root: null, status: null,
         audioButton: null, transport: {}, now: () => Date.parse(
             "2026-08-21T10:00:00.000Z") });
-    const pending = controller.createAudio(root, { ...audioSnapshot(), source });
+    const pending = controller.createAudio(root, { ...snapshot, source });
     const audio = elements.find((element) => element.tagName === "AUDIO");
     audio.dispatchEvent(new Event("loadeddata"));
     const cleanup = await pending;
-    return { previousDocument, elements, root, cleanup,
+    return { previousDocument, elements, root, cleanup, controller,
         audio, image: elements.find((element) => element.tagName === "IMG"),
         motion: elements.find((element) => element.tagName === "VIDEO"),
         placeholder: elements.find((element) => element.tagName === "DIV") };
 }
+
+test("Public AUDIO late join keeps its explicit enable gate and current surface", async () => {
+    const playing = { ...audioSnapshot(), playback: { ...audioSnapshot().playback,
+        initialTime: 1800, playing: true, ended: false, state: "playing",
+        startedAt: "2026-08-21T10:00:00.000Z" } };
+    const harness = await createPublicAudioHarness({ id: "audio-source", kind: "audio",
+        audioUrl: "https://example.test/audio.mp3",
+        motionUrl: "https://example.test/motion.mp4" }, { snapshot: playing });
+    try {
+        assert.equal(harness.audio.playCalls, 0);
+        assert.equal(harness.audio.currentTime, 1800);
+        const motion = harness.motion;
+        harness.controller.audioButton = { hidden: false };
+        harness.controller.current = { snapshot: playing, layer: {
+            querySelector: (selector) => selector === "audio" ? harness.audio : motion
+        } };
+        harness.controller.enableAudio();
+        await Promise.resolve();
+        assert.equal(harness.audio.playCalls, 1);
+        assert.equal(harness.audio.currentTime, 1800);
+        assert.equal(harness.controller.audioEnabled, true);
+        assert.equal(harness.controller.audioButton.hidden, true);
+        assert.equal(harness.motion, motion);
+    }
+    finally {
+        harness.cleanup();
+        globalThis.document = harness.previousDocument;
+    }
+});
 
 test("Public AUDIO gives ready motion priority over still artwork", async () => {
     const harness = await createPublicAudioHarness({ id: "audio-source", kind: "audio",

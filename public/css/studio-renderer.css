@@ -258,6 +258,27 @@
     pointer-events: none;
 }
 
+.studio-render-audio-recovery {
+    position: absolute;
+    left: 50%;
+    bottom: 10px;
+    z-index: 3;
+    transform: translateX(-50%);
+    border: 1px solid rgba(255, 255, 255, .35);
+    border-radius: 4px;
+    padding: 7px 10px;
+    background: rgba(0, 0, 0, .78);
+    color: #fff;
+    font: 700 9px/1 Arial, sans-serif;
+    letter-spacing: .08em;
+    cursor: pointer;
+}
+
+.studio-render-audio-recovery:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 2px;
+}
+
 .studio-render-state--error,
 .studio-render-status--error {
     color: var(--lz-error);

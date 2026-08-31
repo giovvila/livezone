@@ -781,6 +781,92 @@ test("AudioSurface stops and resets motion at audio end and restarts on replay",
     assert.doesNotThrow(() => stillOnly.handleEnded());
 });
 
+test("Program AudioSurface exposes one gesture retry only for autoplay rejection", async () => {
+    const previousDocument = globalThis.document;
+    const listeners = new Map();
+    const button = {
+        type: "", className: "", textContent: "", removed: false,
+        addEventListener(type, listener) { listeners.set(type, listener); },
+        removeEventListener(type, listener) {
+            if (listeners.get(type) === listener) listeners.delete(type);
+        },
+        remove() { this.removed = true; }
+    };
+    globalThis.document = { createElement: (tag) => {
+        assert.equal(tag, "button"); return button;
+    } };
+    try {
+        const surface = new StudioAudioSurface({ sourceId: "audio-refresh",
+            audioUrl: "https://example.test/audio.mp3",
+            motionUrl: "https://example.test/motion.mp4",
+            instanceId: "program-refresh", consumer: "program" });
+        const root = { appended: [], appendChild(node) { this.appended.push(node); } };
+        let playCalls = 0;
+        let reject = true;
+        const audio = { currentTime: 43199, ended: false, paused: true,
+            async play() {
+                playCalls += 1;
+                if (reject) {
+                    const error = new Error("User activation is required");
+                    error.name = "NotAllowedError";
+                    throw error;
+                }
+                this.paused = false;
+            } };
+        const motion = { currentTime: 72, paused: false };
+        surface.root = root;
+        surface.audio = audio;
+        surface.motion = motion;
+
+        assert.equal(await surface.activateProgram(), false);
+        assert.equal(playCalls, 1);
+        assert.equal(surface.autoplayBlocked, true);
+        assert.equal(root.appended[0], button);
+        assert.equal(button.type, "button");
+        assert.equal(button.textContent, "ENABLE AUDIO");
+        assert.equal(surface.getHealth().reason, "autoplay");
+        assert.equal(motion.paused, false);
+        assert.equal(motion.currentTime, 72);
+
+        reject = false;
+        listeners.get("click")(new Event("click"));
+        await Promise.resolve();
+        await Promise.resolve();
+        assert.equal(playCalls, 2);
+        assert.equal(audio.currentTime, 43199);
+        assert.equal(audio.paused, false);
+        assert.equal(surface.autoplayBlocked, false);
+        assert.equal(surface.audioRecoveryButton, null);
+        assert.equal(button.removed, true);
+        assert.equal(surface.getHealth().state, "ready");
+        assert.equal(motion.paused, false);
+    }
+    finally { globalThis.document = previousDocument; }
+});
+
+test("Program AudioSurface resolved play and genuine failures show no recovery", async () => {
+    const resolved = new StudioAudioSurface({ sourceId: "audio-ok",
+        audioUrl: "https://example.test/audio.mp3", instanceId: "ok",
+        consumer: "program" });
+    resolved.audio = { ended: false, async play() {} };
+    assert.equal(await resolved.activateProgram(), true);
+    assert.equal(resolved.audioRecoveryButton, null);
+    assert.equal(resolved.getHealth().state, "ready");
+
+    const failed = new StudioAudioSurface({ sourceId: "audio-bad",
+        audioUrl: "https://example.test/bad.mp3", instanceId: "bad",
+        consumer: "program" });
+    failed.audio = { ended: false, async play() {
+        const error = new Error("Unsupported source");
+        error.name = "NotSupportedError";
+        throw error;
+    } };
+    assert.equal(await failed.activateProgram(), false);
+    assert.equal(failed.audioRecoveryButton, null);
+    assert.equal(failed.getHealth().state, "error");
+    assert.equal(failed.getHealth().reason, "playback");
+});
+
 test("initial cached AUDIO artwork hides placeholder and no-artwork keeps it", () => {
     const illustrated = new StudioAudioSurface({ sourceId: "audio-cached",
         audioUrl: "https://example.test/audio.mp3",

@@ -40,6 +40,8 @@ export default class StudioAudioSurface {
         this.motionFailed = false;
         this.transportError = false;
         this.transportEnded = false;
+        this.autoplayBlocked = false;
+        this.audioRecoveryButton = null;
         this.readinessState = "pending";
         this.readinessError = null;
         this.readinessWaiters = new Set();
@@ -60,6 +62,7 @@ export default class StudioAudioSurface {
         this.handleEnded = this.handleEnded.bind(this);
         this.handleAudioError = this.handleAudioError.bind(this);
         this.handleTransportUpdate = this.handleTransportUpdate.bind(this);
+        this.handleAudioRecovery = this.handleAudioRecovery.bind(this);
     }
 
     async start(root) {
@@ -319,6 +322,7 @@ export default class StudioAudioSurface {
 
     handlePlaying() {
         this.transportEnded = false;
+        this.clearAudioRecovery();
         void this.startMotionPlayback();
         this.setHealth("ready", null);
         this.checkCurrentReadiness();
@@ -332,7 +336,7 @@ export default class StudioAudioSurface {
     handlePause() {
         if (this.consumer === "program" && this.initialPlayback === "playing" &&
             !this.destroyed && !this.transportEnded && !this.transportError &&
-            !this.audio?.ended) {
+            !this.autoplayBlocked && !this.audio?.ended) {
             void this.startPlayback().then((resumed) => {
                 if (!resumed) this.notifyTransport();
             });
@@ -377,14 +381,61 @@ export default class StudioAudioSurface {
         if (!this.audio || this.destroyed) {
             return false;
         }
+        const audio = this.audio;
         try {
-            await this.audio.play();
+            await audio.play();
+            if (this.destroyed || this.audio !== audio) {
+                audio.pause();
+                return false;
+            }
+            this.clearAudioRecovery();
+            this.setHealth("ready", null);
             return true;
         }
-        catch {
-            this.setHealth("connecting", "autoplay");
+        catch (error) {
+            if (this.isAutoplayRejection(error)) {
+                this.autoplayBlocked = true;
+                this.setHealth("connecting", "autoplay");
+                this.showAudioRecovery();
+            }
+            else {
+                this.setHealth("error", "playback");
+            }
             return false;
         }
+    }
+
+    isAutoplayRejection(error) {
+        return error?.name === "NotAllowedError";
+    }
+
+    showAudioRecovery() {
+        if (this.consumer !== "program" || this.destroyed || this.transportEnded ||
+            this.audio?.ended || this.audioRecoveryButton) return;
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "studio-render-audio-recovery";
+        button.textContent = "ENABLE AUDIO";
+        button.addEventListener("click", this.handleAudioRecovery);
+        this.root?.appendChild(button);
+        this.audioRecoveryButton = button;
+    }
+
+    clearAudioRecovery() {
+        this.autoplayBlocked = false;
+        if (!this.audioRecoveryButton) return;
+        this.audioRecoveryButton.removeEventListener("click", this.handleAudioRecovery);
+        this.audioRecoveryButton.remove();
+        this.audioRecoveryButton = null;
+    }
+
+    handleAudioRecovery() {
+        if (this.destroyed || !this.autoplayBlocked || !this.audio ||
+            this.transportEnded || this.audio.ended) {
+            this.clearAudioRecovery();
+            return;
+        }
+        void this.startPlayback();
     }
 
     activateProgram() {
@@ -630,6 +681,7 @@ export default class StudioAudioSurface {
     destroy() {
         if (this.destroyed) return;
         this.destroyed = true;
+        this.clearAudioRecovery();
         this.failReadiness("destroyed-before-ready");
         this.notifyTransport();
         if (this.image) {
