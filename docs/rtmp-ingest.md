@@ -71,6 +71,21 @@ The browser-safe playback URL is always credential-free:
 http://127.0.0.1:8888/livezone-test/index.m3u8
 ```
 
+The validated Phase 2 delivery mode uses Low-Latency HLS while preserving that
+same URL and LIVE Source contract:
+
+```yaml
+hlsVariant: lowLatency
+hlsSegmentCount: 7
+hlsSegmentDuration: 1s
+hlsPartDuration: 200ms
+```
+
+To roll back to the Phase 1 delivery mode, restore `hlsVariant: fmp4`, remove
+the Phase 2-specific explicit timing settings, regenerate the ignored runtime
+configuration, and restart only MediaMTX. No Source, Program Output, or browser
+storage migration is required.
+
 In LIVEZONE, create a normal **LIVE · HLS** Source with that URL, then create a
 Scene separately. No `rtmp://` Source kind is introduced.
 

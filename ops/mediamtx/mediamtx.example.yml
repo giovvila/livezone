@@ -43,7 +43,10 @@ hlsAddress: :8888
 hlsEncryption: false
 hlsAllowOrigins: ["http://127.0.0.1:8080", "http://localhost:8080"]
 hlsAlwaysRemux: true
-hlsVariant: fmp4
+hlsVariant: lowLatency
+hlsSegmentCount: 7
+hlsSegmentDuration: 1s
+hlsPartDuration: 200ms
 
 webrtc: false
 srt: false
