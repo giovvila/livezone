@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import StudioCatalogManager from "../public/js/studio/StudioCatalogManager.js";
 import StudioAudioSurface from "../public/js/studio/renderers/StudioAudioSurface.js";
+import StudioHlsSurface from "../public/js/studio/renderers/StudioHlsSurface.js";
 import StudioSourceManager from "../public/js/studio/StudioSourceManager.js";
 import StudioOperationalSourcesUI from "../public/js/ui/StudioOperationalSourcesUI.js";
 import StudioUI from "../public/js/ui/StudioUI.js";
@@ -865,6 +866,96 @@ test("Program AudioSurface resolved play and genuine failures show no recovery",
     assert.equal(failed.audioRecoveryButton, null);
     assert.equal(failed.getHealth().state, "error");
     assert.equal(failed.getHealth().reason, "playback");
+});
+
+test("HLS audio policy keeps non-Program consumers muted and activates Program", async () => {
+    for (const consumer of ["preview", "technical", "dominant-live-health"]) {
+        const surface = new StudioHlsSurface({ sourceId: "live", sourceUrl: "/live.m3u8",
+            instanceId: consumer, consumer });
+        const attributes = new Set(["muted"]);
+        surface.video = { muted: true, defaultMuted: true, async play() {},
+            setAttribute: (name) => attributes.add(name),
+            removeAttribute: (name) => attributes.delete(name) };
+        assert.equal(surface.video.muted, true);
+        assert.equal(surface.video.defaultMuted, true);
+        assert.equal(attributes.has("muted"), true);
+    }
+
+    const program = new StudioHlsSurface({ sourceId: "live", sourceUrl: "/live.m3u8",
+        instanceId: "program", consumer: "program" });
+    const attributes = new Set(["muted"]);
+    program.video = { muted: true, defaultMuted: true, async play() {},
+        setAttribute: (name) => attributes.add(name),
+        removeAttribute: (name) => attributes.delete(name) };
+    assert.equal(await program.activateProgram(), true);
+    assert.equal(program.video.muted, false);
+    assert.equal(program.video.defaultMuted, false);
+    assert.equal(attributes.has("muted"), false);
+});
+
+test("Program HLS retries blocked audio on the same surface and keeps repeated rejection recoverable", async () => {
+    const previousDocument = globalThis.document;
+    const listeners = new Map();
+    const button = { removed: false,
+        addEventListener(type, listener) { listeners.set(type, listener); },
+        removeEventListener(type, listener) {
+            if (listeners.get(type) === listener) listeners.delete(type);
+        },
+        remove() { this.removed = true; } };
+    globalThis.document = { createElement(tag) { assert.equal(tag, "button"); return button; } };
+    try {
+        const surface = new StudioHlsSurface({ sourceId: "live", sourceUrl: "/live.m3u8",
+            instanceId: "program-live", consumer: "program" });
+        const attributes = new Set(["muted"]);
+        const notAllowed = () => { const error = new Error("gesture required");
+            error.name = "NotAllowedError"; return error; };
+        const outcomes = [notAllowed(), null, notAllowed(), null];
+        const video = { muted: true, defaultMuted: true, playCalls: 0,
+            async play() { this.playCalls += 1; const outcome = outcomes.shift();
+                if (outcome) throw outcome; },
+            setAttribute: (name) => attributes.add(name),
+            removeAttribute: (name) => attributes.delete(name) };
+        const hls = { identity: "same-hls" };
+        const root = { appended: [], appendChild(node) { this.appended.push(node); } };
+        surface.video = video; surface.hls = hls; surface.root = root;
+
+        assert.equal(await surface.activateProgram(), false);
+        await Promise.resolve();
+        assert.equal(surface.video, video);
+        assert.equal(surface.hls, hls);
+        assert.equal(surface.sourceUrl, "/live.m3u8");
+        assert.equal(root.appended[0], button);
+        assert.equal(button.textContent, "ENABLE AUDIO");
+        assert.equal(surface.autoplayBlocked, true);
+
+        listeners.get("click")();
+        await Promise.resolve(); await Promise.resolve();
+        assert.equal(surface.video, video);
+        assert.equal(surface.audioRecoveryButton, button);
+        assert.equal(surface.autoplayBlocked, true);
+        assert.equal(video.muted, true);
+
+        listeners.get("click")();
+        await Promise.resolve(); await Promise.resolve();
+        assert.equal(surface.video, video);
+        assert.equal(surface.hls, hls);
+        assert.equal(video.muted, false);
+        assert.equal(surface.audioRecoveryButton, null);
+        assert.equal(button.removed, true);
+    }
+    finally { globalThis.document = previousDocument; }
+});
+
+test("Program HLS genuine playback failure does not expose audio recovery", async () => {
+    const surface = new StudioHlsSurface({ sourceId: "live", sourceUrl: "/live.m3u8",
+        instanceId: "program-live-error", consumer: "program" });
+    surface.video = { muted: true, defaultMuted: true,
+        async play() { throw new Error("decode failed"); },
+        setAttribute() {}, removeAttribute() {} };
+    assert.equal(await surface.activateProgram(), false);
+    assert.equal(surface.audioRecoveryButton, null);
+    assert.equal(surface.autoplayBlocked, false);
+    assert.equal(surface.getHealth().reason, "playback");
 });
 
 test("initial cached AUDIO artwork hides placeholder and no-artwork keeps it", () => {

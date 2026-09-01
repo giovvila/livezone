@@ -1,12 +1,11 @@
 const EXIT_CONTROL_TIMEOUT_MS = 3000;
 
 export default class PublicShellController {
-    constructor({ page, composition, fullscreenButton, audioUnlock = null }) {
+    constructor({ page, composition, fullscreenButton }) {
         this.page = page;
         this.composition = composition;
         this.fullscreenButton = fullscreenButton;
         this.exitButton = composition?.querySelector(".public-program__fullscreen-exit") || null;
-        this.audioUnlock = typeof audioUnlock === "function" ? audioUnlock : null;
         this.fallbackActive = false;
         this.started = false;
         this.exitHideTimer = null;
@@ -54,8 +53,6 @@ export default class PublicShellController {
             this.setFallbackMode(false);
             return;
         }
-
-        this.audioUnlock?.();
 
         if (typeof this.composition.requestFullscreen !== "function") {
             this.setFallbackMode(true);

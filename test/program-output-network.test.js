@@ -18,6 +18,8 @@ import ProgramOutputManager from
     "../public/js/program-output/ProgramOutputManager.js";
 import PublicProgramController from
     "../public/js/public/PublicProgramController.js";
+import PublicShellController from
+    "../public/js/public/PublicShellController.js";
 import { expectedPlaybackTime, validateProgramOutputSnapshot } from
     "../public/js/program-output/ProgramOutputContract.js";
 import EventBus from "../public/js/core/EventBus.js";
@@ -322,7 +324,8 @@ test("Public PLAYING reconciliation invokes play and exposes rejected autoplay",
     media.seeking = false;
     media.pause = () => {};
     let playCalls = 0;
-    media.play = async () => { playCalls += 1; throw new Error("NotAllowedError"); };
+    media.play = async () => { playCalls += 1; const error = new Error("blocked");
+        error.name = "NotAllowedError"; throw error; };
     const snapshotValue = { ...snapshot(),
         scene: { id: "media-scene", name: "MEDIA", type: "MEDIA" },
         source: { id: "media-a", kind: "media", url: "https://example.test/media.mp4" },
@@ -339,6 +342,79 @@ test("Public PLAYING reconciliation invokes play and exposes rejected autoplay",
     assert.equal(playCalls, 1);
     assert.equal(audioButton.hidden, false);
     assert.equal(controller.current, entry);
+});
+
+test("Public HLS uses the canonical audio gate and preserves permission across replacements", async () => {
+    const previousDocument = globalThis.document;
+    const created = [];
+    globalThis.document = { createElement(tagName) {
+        const element = new FakePublicElement(tagName);
+        element.canPlayType = () => "probably";
+        created.push(element);
+        return element;
+    } };
+    try {
+        const audioButton = { hidden: true };
+        const controller = new PublicProgramController({ root: null, status: null,
+            audioButton, transport: {} });
+        controller.waitForReady = async () => {};
+        const hlsSnapshot = { ...snapshot(),
+            scene: { id: "live", name: "LIVE", type: "LIVE" },
+            source: { id: "live", kind: "hls", url: "https://example.test/live.m3u8" },
+            playback: { initialTime: 0, duration: null, playing: true, ended: false,
+                state: "playing", startedAt: "2026-08-21T10:00:00.000Z" } };
+        const firstRoot = new FakePublicElement("div");
+        const firstCleanup = await controller.createSource(firstRoot, hlsSnapshot);
+        const first = created[0];
+        assert.equal(controller.audioEnabled, false);
+        assert.equal(first.muted, true);
+        assert.equal(audioButton.hidden, false);
+
+        controller.current = { snapshot: hlsSnapshot,
+            layer: { querySelector: () => first } };
+        controller.enableAudio();
+        await Promise.resolve(); await Promise.resolve();
+        assert.equal(controller.audioEnabled, true);
+        assert.equal(first.muted, false);
+        assert.equal(audioButton.hidden, true);
+
+        const secondRoot = new FakePublicElement("div");
+        const secondCleanup = await controller.createSource(secondRoot, hlsSnapshot);
+        const second = created[1];
+        assert.notEqual(second, first);
+        assert.equal(second.muted, false);
+        assert.equal(controller.audioEnabled, true);
+        firstCleanup(); secondCleanup();
+
+        const fresh = new PublicProgramController({ root: null, status: null,
+            audioButton: { hidden: true }, transport: {} });
+        assert.equal(fresh.audioEnabled, false);
+    }
+    finally { globalThis.document = previousDocument; }
+});
+
+test("Public HLS exposes only NotAllowedError and fullscreen does not unlock audio", async () => {
+    const controller = new PublicProgramController({ root: null, status: null,
+        audioButton: { hidden: true }, transport: {} });
+    assert.equal(controller.handleAutoplayRejection(new Error("network")), false);
+    assert.equal(controller.audioButton.hidden, true);
+    const blocked = new Error("gesture required"); blocked.name = "NotAllowedError";
+    assert.equal(controller.handleAutoplayRejection(blocked), true);
+    assert.equal(controller.audioButton.hidden, false);
+
+    const previousDocument = globalThis.document;
+    let fullscreenCalls = 0; let audioCalls = 0;
+    globalThis.document = { fullscreenElement: null };
+    try {
+        const shell = new PublicShellController({ page: {},
+            composition: { requestFullscreen() { fullscreenCalls += 1;
+                return Promise.resolve(); }, querySelector() { return null; } }, fullscreenButton: {},
+            audioUnlock() { audioCalls += 1; } });
+        shell.handleFullscreenClick();
+        assert.equal(fullscreenCalls, 1);
+        assert.equal(audioCalls, 0);
+    }
+    finally { globalThis.document = previousDocument; }
 });
 
 test("ended Program handoff uses duration for every MEDIA currentTime behavior", () => {

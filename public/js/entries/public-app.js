@@ -16,8 +16,7 @@ controller.start();
 const shellController = new PublicShellController({
     page: document.getElementById("public-site"),
     composition: document.querySelector(".public-program__tv"),
-    fullscreenButton: document.getElementById("public-fullscreen-toggle"),
-    audioUnlock: () => controller.enableAudio()
+    fullscreenButton: document.getElementById("public-fullscreen-toggle")
 });
 
 shellController.start();

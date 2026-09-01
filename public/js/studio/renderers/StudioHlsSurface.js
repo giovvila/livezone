@@ -19,11 +19,14 @@ export default class StudioHlsSurface {
         this.videoFrameCallbackId = null;
         this.recoveryFramePending = false;
         this.usesVideoFrameCallback = false;
+        this.autoplayBlocked = false;
+        this.audioRecoveryButton = null;
         this.handleLoadedData = this.handleLoadedData.bind(this);
         this.handleCanPlay = this.handleCanPlay.bind(this);
         this.handleWaiting = this.handleWaiting.bind(this);
         this.handleEnded = this.handleEnded.bind(this);
         this.handleNativeError = this.handleNativeError.bind(this);
+        this.handleAudioRecovery = this.handleAudioRecovery.bind(this);
     }
 
     async start(root) {
@@ -32,10 +35,8 @@ export default class StudioHlsSurface {
         this.video = document.createElement("video");
         this.video.className = "studio-render-video";
         this.video.autoplay = true;
-        this.video.muted = true;
-        this.video.defaultMuted = true;
+        this.setMuted(true);
         this.video.playsInline = true;
-        this.video.setAttribute("muted", "");
         this.video.setAttribute("playsinline", "");
         this.usesVideoFrameCallback = typeof this.video
             .requestVideoFrameCallback === "function";
@@ -87,11 +88,104 @@ export default class StudioHlsSurface {
     async tryPlay() {
         try {
             await this.video?.play();
+            return true;
         }
-        catch {
+        catch (error) {
             // Muted autoplay is best-effort; loaded frames remain visible.
-            this.setHealth("connecting", "autoplay");
+            this.setHealth("connecting", this.isAutoplayRejection(error)
+                ? "autoplay" : "playback");
+            return false;
         }
+    }
+
+    async activateProgram() {
+        if (this.consumer !== "program" || !this.video || this.destroyed) {
+            return false;
+        }
+        this.setMuted(false);
+        try {
+            await this.video.play();
+            this.clearAudioRecovery();
+            return true;
+        }
+        catch (error) {
+            if (this.isAutoplayRejection(error)) {
+                this.autoplayBlocked = true;
+                this.setMuted(true);
+                this.showAudioRecovery();
+                this.setHealth("connecting", "autoplay");
+                void this.video.play().catch(() => {});
+            }
+            else {
+                this.setHealth("error", "playback");
+            }
+            return false;
+        }
+    }
+
+    deactivateProgram() {
+        if (this.consumer !== "program" || !this.video) return false;
+        this.setMuted(true);
+        return true;
+    }
+
+    async handleAudioRecovery() {
+        if (!this.autoplayBlocked || this.consumer !== "program" ||
+            !this.video || this.destroyed) return;
+        const video = this.video;
+        this.setMuted(false);
+        try {
+            await video.play();
+            if (this.destroyed || this.video !== video) return;
+            this.clearAudioRecovery();
+            if (this.readinessState === "ready") this.setHealth("ready", null);
+        }
+        catch (error) {
+            if (this.destroyed || this.video !== video) return;
+            if (this.isAutoplayRejection(error)) {
+                this.autoplayBlocked = true;
+                this.setMuted(true);
+                this.showAudioRecovery();
+                return;
+            }
+            this.clearAudioRecovery();
+            this.setMuted(true);
+            this.setHealth("error", "playback");
+        }
+    }
+
+    isAutoplayRejection(error) {
+        return error?.name === "NotAllowedError";
+    }
+
+    setMuted(muted) {
+        if (!this.video) return;
+        this.video.muted = muted;
+        this.video.defaultMuted = muted;
+        if (muted) this.video.setAttribute("muted", "");
+        else this.video.removeAttribute("muted");
+    }
+
+    showAudioRecovery() {
+        if (this.consumer !== "program" || this.destroyed ||
+            this.audioRecoveryButton) return;
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "studio-render-audio-recovery";
+        button.textContent = "ENABLE AUDIO";
+        button.addEventListener("click", this.handleAudioRecovery);
+        this.root?.appendChild(button);
+        this.audioRecoveryButton = button;
+    }
+
+    clearAudioRecovery() {
+        this.autoplayBlocked = false;
+        if (!this.audioRecoveryButton) return;
+        this.audioRecoveryButton.removeEventListener(
+            "click", this.handleAudioRecovery
+        );
+        this.audioRecoveryButton.remove();
+        this.audioRecoveryButton = null;
     }
 
     handleLoadedData() {
@@ -303,6 +397,7 @@ export default class StudioHlsSurface {
         this.destroyed = true;
         this.failReadiness("destroyed-before-ready");
         this.cancelPendingVideoFrameCallback();
+        this.clearAudioRecovery();
         this.hls?.destroy();
         this.hls = null;
 
