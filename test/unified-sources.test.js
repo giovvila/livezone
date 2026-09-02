@@ -4,11 +4,37 @@ import { readFile } from "node:fs/promises";
 import StudioCatalogManager from "../public/js/studio/StudioCatalogManager.js";
 import StudioAudioSurface from "../public/js/studio/renderers/StudioAudioSurface.js";
 import StudioHlsSurface from "../public/js/studio/renderers/StudioHlsSurface.js";
+import StudioMediaSurface from "../public/js/studio/renderers/StudioMediaSurface.js";
 import StudioSourceManager from "../public/js/studio/StudioSourceManager.js";
 import StudioOperationalSourcesUI from "../public/js/ui/StudioOperationalSourcesUI.js";
 import StudioUI from "../public/js/ui/StudioUI.js";
 import StudioAssetResolver from "../public/js/studio/StudioAssetResolver.js";
 import createStudioRemovalGuard from "../public/js/studio/StudioRemovalGuard.js";
+
+test("asset resolver preserves managed and legacy finite duration metadata", () => {
+    const managed = new Map([
+        ["video", { id: "video", kind: "video", url: "/video.mp4",
+            metadata: { durationSeconds: 33.8 } }],
+        ["audio", { id: "audio", kind: "audio", url: "/audio.mp3",
+            metadata: { durationSeconds: 222.25 } }],
+        ["motion", { id: "motion", kind: "video", url: "/motion.mp4",
+            metadata: { durationSeconds: 9 } }]
+    ]);
+    const resolver = new StudioAssetResolver({
+        legacyLibrary: { getAsset: (id) => id === "legacy"
+            ? { id, kind: "video", url: "/legacy.mp4", durationSeconds: 34 } : null },
+        mediaLibraryManager: { getAsset: (id) => managed.get(id) || null }
+    });
+    const previousDocument = globalThis.document;
+    globalThis.document = { baseURI: "https://studio.test/control/" };
+    try {
+        assert.equal(resolver.getAsset("video", "video").metadata.durationSeconds, 33.8);
+        assert.equal(resolver.getAsset("audio", "audio").metadata.durationSeconds, 222.25);
+        assert.equal(resolver.getAsset("legacy", "video").durationSeconds, 34);
+        assert.equal(resolver.getAsset("missing", "audio"), null);
+    }
+    finally { globalThis.document = previousDocument; }
+});
 
 const KEY = "livezone.studio.mediaCatalog.overlay.v1";
 
@@ -99,6 +125,20 @@ test("scene removal guard distinguishes live, scheduler and runtime references w
         "sceneId must never be compared with authorizedSourceId");
     assert.equal(guard({ sourceId: "S1", sceneId: null }), "source-authorized");
     assert.equal(guard({ sourceId: "different", sceneId: "S1" }), null);
+});
+
+test("source removal guard protects direct Scheduler source targets", () => {
+    let items = [{ target: { kind: "source", id: "source-a" } }];
+    const guard = createStudioRemovalGuard({
+        dominantLiveConfig: { getSnapshot: () => ({ authorizedSourceId: null }) },
+        transitionCoordinator: { isBusy: () => false },
+        studioRenderer: { isSceneInUse: () => false },
+        scheduleStore: { getSnapshot: () => ({ schedule: { items } }) }
+    });
+    assert.equal(guard({ sourceId: "source-a", sceneId: null }), "scheduler-reference");
+    assert.equal(guard({ sourceId: "source-b", sceneId: null }), null);
+    items = [];
+    assert.equal(guard({ sourceId: "source-a", sceneId: null }), null);
 });
 
 test("scene deletion becomes available after Preview and Program references move", () => {
@@ -843,6 +883,103 @@ test("Program AudioSurface exposes one gesture retry only for autoplay rejection
         assert.equal(motion.paused, false);
     }
     finally { globalThis.document = previousDocument; }
+});
+
+test("Program VIDEO keeps same-instance audio recovery authoritative until success or end", async () => {
+    const previousDocument = globalThis.document;
+    const listeners = new Map();
+    const button = { removed: false,
+        addEventListener(type, listener) { listeners.set(type, listener); },
+        removeEventListener(type, listener) {
+            if (listeners.get(type) === listener) listeners.delete(type);
+        },
+        remove() { this.removed = true; } };
+    globalThis.document = { createElement(tag) { assert.equal(tag, "button"); return button; } };
+    try {
+        const surface = new StudioMediaSurface({ sourceId: "video-program",
+            sourceUrl: "/video.mp4", instanceId: "program-video", consumer: "program" });
+        const notAllowed = () => { const error = new Error("gesture required");
+            error.name = "NotAllowedError"; return error; };
+        const outcomes = [notAllowed(), null, notAllowed(), null, null];
+        const attributes = new Set(["muted"]);
+        const video = { muted: true, defaultMuted: true, paused: true, ended: false,
+            currentTime: 73, playCalls: 0,
+            async play() { this.playCalls += 1; const outcome = outcomes.shift();
+                if (outcome) throw outcome; this.paused = false; },
+            setAttribute: (name) => attributes.add(name),
+            removeAttribute: (name) => attributes.delete(name) };
+        surface.video = video;
+        surface.root = { appended: [], appendChild(node) { this.appended.push(node); } };
+
+        assert.equal(await surface.activateProgram(), false);
+        await Promise.resolve();
+        assert.equal(surface.autoplayBlocked, true);
+        assert.equal(surface.audioRecoveryButton, button);
+        assert.equal(button.textContent, "ENABLE AUDIO");
+        assert.equal(video.muted, true);
+        surface.handlePlaying();
+        assert.equal(surface.audioRecoveryButton, button,
+            "muted fallback playing callback must not clear blocked recovery");
+
+        listeners.get("click")();
+        await Promise.resolve(); await Promise.resolve();
+        assert.equal(surface.autoplayBlocked, true);
+        assert.equal(surface.audioRecoveryButton, button);
+        assert.equal(video.currentTime, 73);
+        listeners.get("click")();
+        await Promise.resolve(); await Promise.resolve();
+        assert.equal(surface.video, video);
+        assert.equal(video.currentTime, 73);
+        assert.equal(video.muted, false);
+        assert.equal(surface.autoplayBlocked, false);
+        assert.equal(surface.audioRecoveryButton, null);
+
+        surface.autoplayBlocked = true;
+        surface.audioRecoveryButton = button;
+        surface.transportEnded = false;
+        surface.handleEnded();
+        assert.equal(surface.autoplayBlocked, false);
+        assert.equal(surface.audioRecoveryButton, null);
+    }
+    finally { globalThis.document = previousDocument; }
+});
+
+test("Program VIDEO non-autoplay failure does not expose ENABLE AUDIO", async () => {
+    const surface = new StudioMediaSurface({ sourceId: "video-error",
+        sourceUrl: "/bad.mp4", instanceId: "program-video-error", consumer: "program" });
+    surface.video = { muted: true, defaultMuted: true, ended: false,
+        async play() { throw new Error("decode failed"); },
+        setAttribute() {}, removeAttribute() {} };
+    assert.equal(await surface.activateProgram(), false);
+    assert.equal(surface.autoplayBlocked, false);
+    assert.equal(surface.audioRecoveryButton, null);
+    assert.equal(surface.getHealth().reason, "playback");
+});
+
+test("blocked AUDIO and HLS recovery survives benign callbacks and clears on end", () => {
+    const audio = new StudioAudioSurface({ sourceId: "audio", audioUrl: "/audio.mp3",
+        instanceId: "program-audio", consumer: "program" });
+    const audioButton = { removeEventListener() {}, remove() {} };
+    audio.audio = { paused: true, ended: false };
+    audio.autoplayBlocked = true;
+    audio.audioRecoveryButton = audioButton;
+    audio.startMotionPlayback = () => Promise.resolve(false);
+    audio.checkCurrentReadiness = audio.notifyTransport = () => {};
+    audio.handlePlaying();
+    assert.equal(audio.audioRecoveryButton, audioButton);
+    audio.handleEnded();
+    assert.equal(audio.audioRecoveryButton, null);
+
+    const hls = new StudioHlsSurface({ sourceId: "live", sourceUrl: "/live.m3u8",
+        instanceId: "program-live", consumer: "program" });
+    const hlsButton = { removeEventListener() {}, remove() {} };
+    hls.video = { muted: true, paused: false, ended: false };
+    hls.autoplayBlocked = true;
+    hls.audioRecoveryButton = hlsButton;
+    hls.handlePlaying();
+    assert.equal(hls.audioRecoveryButton, hlsButton);
+    hls.handleEnded();
+    assert.equal(hls.audioRecoveryButton, null);
 });
 
 test("Program AudioSurface resolved play and genuine failures show no recovery", async () => {

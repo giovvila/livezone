@@ -1,4 +1,4 @@
-import { DEFAULT_TIMEZONE } from "../scheduler/ScheduleContract.js";
+import { DEFAULT_TIMEZONE, getScheduleTarget } from "../scheduler/ScheduleContract.js";
 
 export default class StudioScheduleSummaryUI {
     constructor({ root, engine, store, catalog, clockTicker } = {}) {
@@ -82,5 +82,9 @@ function describe(item, catalog, timezone) {
     const time = new Intl.DateTimeFormat("it-IT", { timeZone: timezone,
         hour: "2-digit", minute: "2-digit", second: "2-digit" })
         .format(new Date(item.startMs));
-    return `${time} · ${item.title} · ${catalog.getDefinition(item.sceneId)?.name || "UNRESOLVED"}`;
+    const target = getScheduleTarget(item);
+    const name = target?.kind === "source"
+        ? catalog.getSources().find(({ id }) => id === target.id)?.name
+        : catalog.getDefinition(target?.id)?.name;
+    return `${time} · ${item.title} · ${name || "UNRESOLVED"}`;
 }

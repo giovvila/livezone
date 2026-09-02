@@ -1,7 +1,8 @@
 import EventBus from "../core/EventBus.js";
 import Events from "../core/Events.js";
 import { createEmptySchedule, getActiveInterruptItem, getActiveItem,
-    getActiveNormalItem, getNextBoundary, getNextItem } from "./ScheduleContract.js";
+    getActiveNormalItem, getNextBoundary, getNextItem,
+    getScheduleTarget } from "./ScheduleContract.js";
 import { applyInterruptionShift, calculateEffectiveSchedule,
     RESUME_POLICIES } from "./ScheduleClock.js";
 
@@ -134,7 +135,7 @@ export default class SchedulerEngine {
         if (!active || active.skipped) return Object.freeze({ mode: "none",
             item: null, sceneId: null, effectiveStart: null, effectiveEnd: null });
         return Object.freeze({ mode: "scheduled", item: active,
-            sceneId: active.sceneId, effectiveStart: active.startMs,
+            sceneId: this.getRuntimeSceneId(active), effectiveStart: active.startMs,
             effectiveEnd: active.endMs });
     }
 
@@ -169,7 +170,8 @@ export default class SchedulerEngine {
             this.emit(); return this.interruptionContext;
         }
         const transport = this.programTransportProvider() || null;
-        const definition = this.catalog?.getDefinition(interruptedItem.sceneId);
+        const interruptedSceneId = this.getRuntimeSceneId(interruptedItem);
+        const definition = this.catalog?.getDefinition(interruptedSceneId);
         const sourceId = definition?.renderer?.kind === "source"
             ? definition.renderer.sourceId : null;
         const sourceKind = sourceId ? this.catalog.getSources?.().find(({ id }) =>
@@ -179,7 +181,7 @@ export default class SchedulerEngine {
             transport.currentTime >= 0 ? transport.currentTime : null;
         this.interruptionContext = Object.freeze({
             interruptedItemId: interruptedItem.id,
-            sceneId: interruptedItem.sceneId,
+            sceneId: interruptedSceneId,
             sourceId,
             sourceKind,
             interruptionItemId: interruptionItem?.id || null,
@@ -262,26 +264,25 @@ export default class SchedulerEngine {
             if (allowActivateCurrent && active && this.overrideItemId !== active.id &&
                 this.attemptedKey !== key) {
                 this.attemptedKey = key;
-                if (!this.catalog?.getDefinition(active.sceneId)) {
-                    this.failure = Object.freeze({ itemId: active.id, reason: "unresolved-scene" });
-                }
-                else {
-                    const resumeCue = this.resumeCues.get(active.id);
-                    const scheduledElapsedSeconds = Math.max(0, (now - active.startMs) / 1000);
-                    this.resumingItemId = Number.isFinite(resumeCue) ? active.id : null;
-                    if (this.resumingItemId) this.emit();
-                    const result = await this.command.execute({
-                        sceneId: active.sceneId, transition: active.transition, origin: "scheduler",
-                        scheduledElapsedSeconds,
-                        initialCueSeconds: Number.isFinite(resumeCue)
-                            ? resumeCue : scheduledElapsedSeconds
-                    });
-                    if (result?.ok) this.resumeCues.delete(active.id);
-                    this.resumingItemId = null;
-                    this.failure = result?.ok ? null : Object.freeze({
-                        itemId: active.id, reason: result?.reason || "command-failed"
-                    });
-                }
+                const resumeCue = this.resumeCues.get(active.id);
+                const scheduledElapsedSeconds = Math.max(0, (now - active.startMs) / 1000);
+                this.resumingItemId = Number.isFinite(resumeCue) ? active.id : null;
+                if (this.resumingItemId) this.emit();
+                const result = await this.command.execute({
+                    ...(Object.hasOwn(active, "sceneId")
+                        ? { sceneId: active.sceneId }
+                        : { target: getScheduleTarget(active) }),
+                    transition: active.transition,
+                    origin: "scheduler",
+                    scheduledElapsedSeconds,
+                    initialCueSeconds: Number.isFinite(resumeCue)
+                        ? resumeCue : scheduledElapsedSeconds
+                });
+                if (result?.ok) this.resumeCues.delete(active.id);
+                this.resumingItemId = null;
+                this.failure = result?.ok ? null : Object.freeze({
+                    itemId: active.id, reason: result?.reason || "command-failed"
+                });
             }
         }
         catch {
@@ -316,6 +317,11 @@ export default class SchedulerEngine {
             this.failure = null;
             this.emit();
         }
+    }
+
+    getRuntimeSceneId(item) {
+        return this.command?.getRuntimeSceneId?.(getScheduleTarget(item)) ||
+            item?.sceneId || null;
     }
 
     handleTimer() { this.timerId = null; void this.reconcile(true); }

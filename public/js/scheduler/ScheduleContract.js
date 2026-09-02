@@ -44,9 +44,10 @@ export function validateSchedule(value) {
 
     const sorted = items.filter(Boolean).sort((left, right) =>
         left.startMs - right.startMs || left.id.localeCompare(right.id));
+    const effectiveItems = clipFillerWindows(sorted);
 
-    validateBehaviorOverlaps(sorted, "NORMAL", issues);
-    validateBehaviorOverlaps(sorted, "INTERRUPT", issues);
+    validateBehaviorOverlaps(effectiveItems, "NORMAL", issues);
+    validateBehaviorOverlaps(effectiveItems, "INTERRUPT", issues);
 
     if (issues.length) return Object.freeze({ ok: false, schedule: null, issues: Object.freeze([...new Set(issues)]) });
 
@@ -56,7 +57,7 @@ export function validateSchedule(value) {
         schedule: Object.freeze({
             version: SCHEDULE_VERSION,
             timezone: value.timezone,
-            items: Object.freeze(sorted)
+            items: Object.freeze(effectiveItems)
         })
     });
 }
@@ -107,8 +108,14 @@ export function getNextBoundary(schedule, now = Date.now()) {
 export function resolveScheduleItems(schedule, sceneResolver) {
     return Object.freeze(schedule.items.map((item) => Object.freeze({
         ...item,
-        resolved: Boolean(sceneResolver?.(item.sceneId))
+        resolved: Boolean(sceneResolver?.(getScheduleTarget(item)))
     })));
+}
+
+export function getScheduleTarget(item) {
+    if (item?.target?.kind && item?.target?.id) return item.target;
+    return typeof item?.sceneId === "string"
+        ? Object.freeze({ kind: "scene", id: item.sceneId }) : null;
 }
 
 export function zonedLocalToIso(dateValue, timeValue, timezone = DEFAULT_TIMEZONE) {
@@ -133,9 +140,9 @@ export function zonedLocalToIso(dateValue, timeValue, timezone = DEFAULT_TIMEZON
 }
 
 function canonicalItem(item, index, ids, issues, previousNormal) {
-    const requiredKeys = ["id", "title", "durationSeconds", "sceneId"];
+    const requiredKeys = ["id", "title", "durationSeconds"];
     if (!isPlainObject(item) || !hasAllowedKeys(item, requiredKeys,
-        ["start", "transition", "startMode", "behavior", "resumePolicy"])) {
+        ["sceneId", "target", "start", "transition", "startMode", "behavior", "resumePolicy"])) {
         issues.push(`item-structure:${index}`);
         return null;
     }
@@ -154,7 +161,20 @@ function canonicalItem(item, index, ids, issues, previousNormal) {
 
     if (!ID_PATTERN.test(item.id || "") || ids.has(item.id)) issues.push(`item-id:${index}`);
     if (!title || title.length > MAX_TITLE_LENGTH) issues.push(`item-title:${index}`);
-    if (!ID_PATTERN.test(item.sceneId || "")) issues.push(`item-scene:${index}`);
+    const hasLegacyScene = Object.hasOwn(item, "sceneId");
+    const hasTarget = Object.hasOwn(item, "target");
+    if (hasLegacyScene === hasTarget) issues.push(`item-target:${index}`);
+    let target = null;
+    if (hasLegacyScene && ID_PATTERN.test(item.sceneId || "")) {
+        target = Object.freeze({ kind: "scene", id: item.sceneId });
+    }
+    else if (hasTarget && isPlainObject(item.target) &&
+        hasExactKeys(item.target, ["kind", "id"]) &&
+        ["scene", "source"].includes(item.target.kind) &&
+        ID_PATTERN.test(item.target.id || "")) {
+        target = Object.freeze({ kind: item.target.kind, id: item.target.id });
+    }
+    else issues.push(`item-target:${index}`);
     if (!Number.isInteger(item.durationSeconds) || item.durationSeconds < 1 ||
         item.durationSeconds > MAX_DURATION_SECONDS) issues.push(`item-duration:${index}`);
     if (!TRANSITIONS.has(transition)) issues.push(`item-transition:${index}`);
@@ -176,7 +196,8 @@ function canonicalItem(item, index, ids, issues, previousNormal) {
     return Object.freeze({ id: item.id, title, startMode, behavior, resumePolicy,
         start: startMode === "ABSOLUTE" ? item.start : null,
         effectiveStart: new Date(startMs).toISOString(), durationSeconds: item.durationSeconds,
-        sceneId: item.sceneId, transition, startMs, endMs });
+        ...(hasLegacyScene ? { sceneId: item.sceneId } : {}), target,
+        transition, startMs, endMs });
 }
 
 function getActiveByBehavior(schedule, now, behavior) {
@@ -193,6 +214,19 @@ function validateBehaviorOverlaps(items, behavior, issues) {
             issues.push(`overlap:${filtered[index - 1].id}:${filtered[index].id}`);
         }
     }
+}
+
+function clipFillerWindows(items) {
+    return items.map((item) => {
+        if (item.behavior !== "NORMAL" || item.resumePolicy !== "FILLER") return item;
+        const nextHardStart = items.find((candidate) =>
+            candidate.behavior === "NORMAL" && candidate.startMode === "ABSOLUTE" &&
+            candidate.resumePolicy !== "FILLER" && candidate.startMs > item.startMs)?.startMs;
+        if (!Number.isFinite(nextHardStart) || item.endMs <= nextHardStart) return item;
+        return Object.freeze({ ...item, endMs: nextHardStart,
+            effectiveEnd: new Date(nextHardStart).toISOString(),
+            effectiveDurationSeconds: (nextHardStart - item.startMs) / 1000 });
+    });
 }
 
 function timezoneOffsetMs(timestamp, timezone) {

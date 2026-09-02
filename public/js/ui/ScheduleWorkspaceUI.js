@@ -1,16 +1,22 @@
 import { getActiveItem, getNextItem, validateSchedule,
-    zonedLocalToIso } from "../scheduler/ScheduleContract.js";
+    zonedLocalToIso, getScheduleTarget } from "../scheduler/ScheduleContract.js";
 import { addLocalDays, calculateDayMetrics } from "../scheduler/ScheduleDayMetrics.js";
+import { formatMediaDuration, getFiniteAssetDuration } from "./MediaDuration.js";
 
 export default class ScheduleWorkspaceUI {
-    constructor({ root, store, catalog, assetLibrary = null,
+    constructor({ root, store, catalog, assetLibrary = null, assetResolver = null,
+        mediaLibraryManager = null,
         clock = () => Date.now(), uuidFactory = () => globalThis.crypto?.randomUUID?.(),
         setTimer = globalThis.setTimeout, clearTimer = globalThis.clearTimeout,
-        clockTicker = null, readOnly = false, editorUrl = null } = {}) {
+        clockTicker = null, readOnly = false, editorUrl = null, schedulerEngine = null } = {}) {
         this.root = root;
         this.store = store;
         this.catalog = catalog;
         this.assetLibrary = assetLibrary;
+        this.assetResolver = assetResolver;
+        this.mediaLibraryManager = mediaLibraryManager;
+        this.durationProbeGeneration = 0;
+        this.durationProbes = new Map();
         this.clock = clock;
         this.uuidFactory = uuidFactory;
         this.setTimer = (callback, delay) => setTimer(callback, delay);
@@ -18,6 +24,7 @@ export default class ScheduleWorkspaceUI {
         this.clockTicker = clockTicker;
         this.readOnly = Boolean(readOnly);
         this.editorUrl = editorUrl;
+        this.schedulerEngine = schedulerEngine;
         this.schedule = null;
         this.selectedDate = null;
         this.editingId = null;
@@ -29,6 +36,9 @@ export default class ScheduleWorkspaceUI {
         this.handleBehaviorChange = this.handleBehaviorChange.bind(this);
         this.handleStartModeChange = this.handleStartModeChange.bind(this);
         this.handleSceneChange = this.handleSceneChange.bind(this);
+        this.handleContentChange = this.handleContentChange.bind(this);
+        this.handleTimingRoleChange = this.handleTimingRoleChange.bind(this);
+        this.handleDurationInput = this.handleDurationInput.bind(this);
         this.handleSchedule = this.handleSchedule.bind(this);
         this.renderSources = this.renderSources.bind(this);
         this.tickClock = this.tickClock.bind(this);
@@ -57,6 +67,16 @@ export default class ScheduleWorkspaceUI {
         this.behavior = this.root.querySelector("#schedule-item-behavior");
         this.absoluteFields = this.root.querySelector("#schedule-item-absolute-fields");
         this.sceneSelect = this.root.querySelector("#schedule-item-scene");
+        this.sourceSelect = this.root.querySelector("#schedule-item-source");
+        this.contentKind = Array.from(this.root.querySelectorAll?.(
+            'input[name="targetKind"]') || []);
+        this.sourceTargetFields = this.root.querySelector("#schedule-source-target-fields");
+        this.sceneTargetFields = this.root.querySelector("#schedule-scene-target-fields");
+        this.timingRole = this.root.querySelector("#schedule-timing-role");
+        this.recovery = this.root.querySelector("#schedule-interruption-recovery");
+        this.fillerHelp = this.root.querySelector("#schedule-filler-help");
+        this.recoveryHelp = this.root.querySelector("#schedule-recovery-help");
+        this.mediaDuration = this.root.querySelector("#schedule-media-duration");
         this.sourceList = this.root.querySelector("#schedule-source-list");
         this.liveClock = this.root.querySelector("#schedule-live-clock");
         this.clockTimezone = this.root.querySelector("#schedule-clock-timezone");
@@ -66,7 +86,9 @@ export default class ScheduleWorkspaceUI {
             this.gaps, this.planNowNext, this.list, this.empty, this.liveClock,
             this.clockTimezone];
         const editorNodes = [this.form, this.feedback, this.cancel, this.startMode,
-            this.behavior, this.absoluteFields, this.sceneSelect, this.sourceList];
+            this.behavior, this.absoluteFields, this.sceneSelect, this.sourceSelect,
+            this.sourceTargetFields, this.sceneTargetFields, this.timingRole,
+            this.recovery, this.sourceList];
         if (coreNodes.some((node) => !node) ||
             (!this.readOnly && editorNodes.some((node) => !node))) return false;
 
@@ -85,11 +107,21 @@ export default class ScheduleWorkspaceUI {
         this.startMode?.addEventListener("change", this.handleStartModeChange);
         this.behavior?.addEventListener("change", this.handleBehaviorChange);
         this.sceneSelect?.addEventListener("change", this.handleSceneChange);
+        this.sourceSelect?.addEventListener("change", this.handleSceneChange);
+        this.contentKind.forEach((input) => input.addEventListener("change",
+            this.handleContentChange));
+        this.form?.querySelectorAll?.('input[name="timingRole"]').forEach((input) =>
+            input.addEventListener("change", this.handleTimingRoleChange));
+        this.form?.elements?.duration?.addEventListener("input", this.handleDurationInput);
         this.unsubscribeStore = this.store.subscribe(this.handleSchedule);
+        this.unsubscribeScheduler = this.schedulerEngine?.subscribe?.(() => this.render());
         this.unsubscribeCatalog = this.catalog.subscribe(() => {
-            this.renderScenes(); this.renderSources(); this.render();
+            this.renderScenes(); this.renderSourceTargets(); this.renderSources();
+            this.renderMediaDuration(); this.render();
         });
+        this.renderSourceTargets();
         this.renderSources();
+        this.renderMediaDuration();
         this.unsubscribeClock = this.clockTicker?.subscribe(this.tickClock);
         if (!this.unsubscribeClock) this.tickClock();
         return true;
@@ -103,7 +135,14 @@ export default class ScheduleWorkspaceUI {
         this.startMode?.removeEventListener("change", this.handleStartModeChange);
         this.behavior?.removeEventListener("change", this.handleBehaviorChange);
         this.sceneSelect?.removeEventListener("change", this.handleSceneChange);
+        this.sourceSelect?.removeEventListener("change", this.handleSceneChange);
+        this.contentKind.forEach((input) => input.removeEventListener("change",
+            this.handleContentChange));
+        this.form?.querySelectorAll?.('input[name="timingRole"]').forEach((input) =>
+            input.removeEventListener("change", this.handleTimingRoleChange));
+        this.form?.elements?.duration?.removeEventListener("input", this.handleDurationInput);
         this.unsubscribeStore?.();
+        this.unsubscribeScheduler?.();
         this.unsubscribeCatalog?.();
         this.unsubscribeClock?.();
         if (this.clockTimerId !== null) this.clearTimer(this.clockTimerId);
@@ -119,6 +158,8 @@ export default class ScheduleWorkspaceUI {
         if (this.selectedDateLabel) this.selectedDateLabel.textContent = `· ${this.selectedDate}`;
         if (issues?.length) this.showFeedback("Il palinsesto persistito non è valido.", true);
         this.renderScenes();
+        this.renderSourceTargets();
+        this.renderMediaDuration();
         this.render();
     }
 
@@ -137,6 +178,9 @@ export default class ScheduleWorkspaceUI {
         const data = new FormData(this.form);
         const startMode = String(data.get("startMode") || "ABSOLUTE");
         const behavior = String(data.get("behavior") || "NORMAL");
+        const targetKind = String(data.get("targetKind") || "source");
+        const targetId = String(data.get(targetKind === "source"
+            ? "sourceTargetId" : "sceneTargetId") || "");
         const start = startMode === "ABSOLUTE"
             ? zonedLocalToIso(String(data.get("date")), String(data.get("time")), this.schedule.timezone)
             : null;
@@ -145,12 +189,17 @@ export default class ScheduleWorkspaceUI {
         if (!uuid || !durationSeconds || (startMode === "ABSOLUTE" && !start)) {
             return this.showFeedback("Data, ora o durata non valide.", true);
         }
+        const resumePolicy = behavior === "INTERRUPT" ? "RESUME_FIXED"
+            : String(data.get("timingRole")) === "FILLER" ? "FILLER"
+                : String(data.get("recoveryPolicy") || "RESUME_FIXED");
         const item = {
             id: this.editingId || `schedule-${uuid}`.slice(0, 120),
             title: String(data.get("title") || "").trim(), startMode, behavior,
-            resumePolicy: String(data.get("resumePolicy") || "RESUME_FIXED"),
+            resumePolicy,
             ...(start ? { start } : {}), durationSeconds,
-            sceneId: String(data.get("sceneId") || ""),
+            ...(this.editingId && this.editingLegacySceneId && targetKind === "scene"
+                ? { sceneId: targetId }
+                : { target: { kind: targetKind, id: targetId } }),
             transition: String(data.get("transition") || "CUT")
         };
         const items = this.schedule.items.filter(({ id }) => id !== this.editingId)
@@ -187,68 +236,177 @@ export default class ScheduleWorkspaceUI {
             return this.showFeedback("Elemento rimosso.", false);
         }
         this.editingId = item.id;
+        this.editingLegacySceneId = Object.hasOwn(item, "sceneId");
+        const target = getScheduleTarget(item);
         this.form.elements.title.value = item.title;
         this.form.elements.startMode.value = item.startMode;
         this.form.elements.behavior.value = item.behavior;
-        this.form.elements.resumePolicy.value = item.resumePolicy;
+        this.setCheckedValue("targetKind", target.kind);
+        if (target.kind === "source") this.sourceSelect.value = target.id;
+        else this.sceneSelect.value = target.id;
+        this.setCheckedValue("timingRole", item.resumePolicy === "FILLER"
+            ? "FILLER" : "PROGRAM");
+        this.setCheckedValue("recoveryPolicy", item.resumePolicy === "RESUME_SHIFT"
+            ? "RESUME_SHIFT" : "RESUME_FIXED");
         this.form.elements.date.value = item.start?.slice(0, 10) || this.selectedDate;
         this.form.elements.time.value = item.start?.slice(11, 19) || "";
         this.form.elements.duration.value = formatDuration(item.durationSeconds);
-        this.form.elements.sceneId.value = item.sceneId;
         this.form.elements.transition.value = item.transition;
         this.updateEditorState();
+        this.renderMediaDuration();
         this.showFeedback(`Modifica: ${item.title}`, false);
     }
 
     handleStartModeChange() { this.updateEditorState(); }
+    handleContentChange() { this.updateEditorState(); void this.prefillDuration(); }
+    handleTimingRoleChange() { this.updateEditorState(); }
+    handleDurationInput() { if (this.form.elements.duration.value !== this.autoPrefilledValue) {
+        this.autoPrefilledValue = null;
+    } }
     handleBehaviorChange() {
         if (this.behavior.value === "INTERRUPT") this.startMode.value = "ABSOLUTE";
         this.updateEditorState();
     }
-    handleSceneChange() { this.prefillDuration(); }
+    handleSceneChange() { void this.prefillDuration(); }
 
     updateEditorState() {
         const interrupt = this.behavior.value === "INTERRUPT";
         const afterOption = this.startMode.querySelector('option[value="AFTER_PREVIOUS"]');
-        const fillerOption = this.form.elements.resumePolicy.querySelector('option[value="FILLER"]');
         afterOption.disabled = interrupt;
-        fillerOption.disabled = interrupt;
-        if (interrupt && this.form.elements.resumePolicy.value === "FILLER") {
-            this.form.elements.resumePolicy.value = "RESUME_FIXED";
-        }
+        if (interrupt) this.startMode.value = "ABSOLUTE";
         const absolute = this.startMode.value === "ABSOLUTE";
         this.absoluteFields.hidden = !absolute;
         this.form.elements.date.disabled = !absolute;
         this.form.elements.time.disabled = !absolute;
         this.form.elements.date.required = absolute;
         this.form.elements.time.required = absolute;
+        const targetKind = this.getCheckedValue("targetKind") ||
+            (this.sourceSelect ? "source" : "scene");
+        const sourceTarget = targetKind === "source";
+        this.sourceTargetFields.hidden = !sourceTarget;
+        this.sceneTargetFields.hidden = sourceTarget;
+        this.sourceSelect.disabled = !sourceTarget;
+        this.sceneSelect.disabled = sourceTarget;
+        this.sourceSelect.required = sourceTarget;
+        this.sceneSelect.required = !sourceTarget;
+        this.timingRole.hidden = interrupt;
+        const filler = this.getCheckedValue("timingRole") === "FILLER";
+        this.recovery.hidden = interrupt || filler;
+        if (this.fillerHelp) this.fillerHelp.hidden = interrupt || !filler;
+        if (this.recoveryHelp) this.recoveryHelp.hidden = interrupt || filler;
     }
 
     resetEditor() {
         this.editingId = null;
+        this.editingLegacySceneId = false;
+        this.autoPrefilledValue = null;
         this.form.reset();
         this.form.elements.date.value = this.selectedDate;
         this.form.elements.duration.value = "00:30:00";
-        this.updateEditorState();
         this.renderScenes();
+        this.renderSourceTargets();
+        this.updateEditorState();
+        void this.prefillDuration();
     }
 
-    prefillDuration() {
-        const scene = this.catalog.getDefinition(this.sceneSelect.value);
-        const sourceId = scene?.renderer?.kind === "source" ? scene.renderer.sourceId : null;
-        const source = this.catalog.getSources().find(({ id }) => id === sourceId);
-        if (source?.kind !== "media") return;
-        const asset = source.assetId ? this.assetLibrary?.getAsset(source.assetId)
-            : this.assetLibrary?.getAssets("video").find(({ url }) => url === source.url);
-        if (Number.isFinite(asset?.durationSeconds) && asset.durationSeconds > 0) {
-            this.form.elements.duration.value = formatDuration(Math.ceil(asset.durationSeconds));
-            this.showFeedback("Durata compilata dai metadata MEDIA; resta modificabile.", false);
+    async prefillDuration() {
+        const generation = ++this.durationProbeGeneration;
+        const duration = this.resolveSelectedDuration();
+        this.renderMediaDuration(duration);
+        if (duration !== null) {
+            this.applyDiscoveredDuration(duration);
+            return duration;
         }
+        const selectionKey = this.getDurationSelectionKey();
+        const asset = this.resolveSelectedDurationAsset();
+        this.resetUnavailableAutoPrefill();
+        if (!asset || asset.origin !== "managed" || !this.mediaLibraryManager?.discoverDuration) {
+            return null;
+        }
+        this.renderMediaDuration(null, "probing");
+        let probe = this.durationProbes.get(asset.id);
+        if (!probe) {
+            probe = Promise.resolve(this.mediaLibraryManager.discoverDuration(
+                this.mediaLibraryManager.getAsset?.(asset.id) || asset
+            )).finally(() => this.durationProbes.delete(asset.id));
+            this.durationProbes.set(asset.id, probe);
+        }
+        await probe;
+        if (generation !== this.durationProbeGeneration ||
+            selectionKey !== this.getDurationSelectionKey()) return null;
+        const discovered = this.resolveSelectedDuration();
+        this.renderMediaDuration(discovered);
+        if (discovered !== null) this.applyDiscoveredDuration(discovered);
+        return discovered;
+    }
+
+    applyDiscoveredDuration(duration) {
+        if (this.editingId || duration === null) return;
+        const value = formatDuration(Math.ceil(duration));
+        this.form.elements.duration.value = value;
+        this.autoPrefilledValue = value;
+        this.showFeedback("Durata compilata dai metadata media; resta modificabile.", false);
+    }
+
+    resetUnavailableAutoPrefill() {
+        if (this.editingId || !this.autoPrefilledValue ||
+            this.form.elements.duration.value !== this.autoPrefilledValue) return;
+        this.form.elements.duration.value = "00:30:00";
+        this.autoPrefilledValue = null;
+    }
+
+    renderMediaDuration(duration = this.resolveSelectedDuration(), state = "ready") {
+        if (!this.mediaDuration || !this.form) return;
+        const scheduled = this.editingId ? parseDuration(this.form.elements.duration.value) : null;
+        const value = this.mediaDuration.querySelector?.("strong") || this.mediaDuration;
+        value.textContent = state === "probing" ? "Reading…" : formatMediaDuration(duration);
+        const mismatch = duration !== null && scheduled !== null &&
+            Math.ceil(duration) !== scheduled;
+        this.mediaDuration.classList?.toggle("is-mismatch", mismatch);
+        this.mediaDuration.title = state === "probing" ? "Reading finite media duration metadata."
+            : mismatch
+            ? `Media duration: ${formatMediaDuration(duration)} · Scheduled duration: ${formatMediaDuration(scheduled)}`
+            : duration === null ? "Finite media duration unavailable; enter an editorial duration."
+                : "Finite duration resolved from media asset metadata.";
+    }
+
+    resolveSelectedDuration() {
+        return getFiniteAssetDuration(this.resolveSelectedDurationAsset());
+    }
+
+    resolveSelectedDurationAsset() {
+        const targetKind = this.getCheckedValue("targetKind") ||
+            (this.sourceSelect ? "source" : "scene");
+        const scene = targetKind === "scene"
+            ? this.catalog.getDefinition(this.sceneSelect?.value) : null;
+        const sourceId = targetKind === "source" ? this.sourceSelect?.value
+            : scene?.renderer?.kind === "source" ? scene.renderer.sourceId : null;
+        const source = this.catalog.getSources().find(({ id }) => id === sourceId);
+        if (!source || !["media", "audio"].includes(source.kind)) return null;
+        const assetId = source.kind === "audio" ? source.audioAssetId : source.assetId;
+        let asset = assetId ? this.assetResolver?.getAsset?.(assetId,
+            source.kind === "audio" ? "audio" : "video") : null;
+        if (!asset && assetId) asset = this.assetLibrary?.getAsset(assetId);
+        if (!asset && source.kind === "media") {
+            asset = this.assetLibrary?.getAssets("video").find(({ url }) => url === source.url);
+        }
+        return asset;
+    }
+
+    getDurationSelectionKey() {
+        const targetKind = this.getCheckedValue("targetKind") ||
+            (this.sourceSelect ? "source" : "scene");
+        const id = targetKind === "source" ? this.sourceSelect?.value : this.sceneSelect?.value;
+        return `${targetKind}:${id || ""}`;
     }
 
     render() {
         if (!this.schedule || !this.selectedDate) return;
-        const metrics = calculateDayMetrics(this.schedule, this.selectedDate, this.schedule.timezone);
+        const displaySchedule = this.readOnly
+            ? this.schedulerEngine?.getEffectiveSchedule?.() || this.schedule
+            : this.schedule;
+        const metrics = calculateDayMetrics(displaySchedule, this.selectedDate,
+            displaySchedule.timezone);
         if (!metrics) return;
         this.dateInput.value = this.selectedDate;
         this.covered.textContent = formatDuration(metrics.coveredSeconds);
@@ -257,8 +415,8 @@ export default class ScheduleWorkspaceUI {
         this.dayStatus.textContent = metrics.status;
         this.renderWeek();
         this.renderTimeline(metrics);
-        this.renderItems(metrics);
-        this.renderPlanStatus(metrics);
+        this.renderItems(metrics, displaySchedule);
+        this.renderPlanStatus(metrics, displaySchedule);
         if (this.form && !this.editingId && !this.form.elements.date.value) this.resetEditor();
     }
 
@@ -316,10 +474,10 @@ export default class ScheduleWorkspaceUI {
         this.gaps.replaceChildren(...gaps);
     }
 
-    renderItems(metrics) {
+    renderItems(metrics, displaySchedule = this.schedule) {
         const now = this.clock();
         const current = this.selectedDate === todayInTimezone(this.schedule.timezone, now)
-            ? getActiveItem(this.schedule, now) : null;
+            ? getActiveItem(displaySchedule, now) : null;
         const rows = [...metrics.items].sort((a, b) => a.startMs - b.startMs)
             .map((item) => this.createItem(item, current?.id === item.id));
         this.list.replaceChildren(...rows);
@@ -339,8 +497,9 @@ export default class ScheduleWorkspaceUI {
         const actions = document.createElement("div");
         const edit = document.createElement("button");
         const remove = document.createElement("button");
-        const scene = this.catalog.getDefinition(item.sceneId);
-        row.className = `schedule-item${active ? " is-active" : ""}${scene ? "" : " is-unresolved"}`;
+        const target = getScheduleTarget(item);
+        const content = this.describeTarget(target);
+        row.className = `schedule-item${active ? " is-active" : ""}${content.resolved ? "" : " is-unresolved"}`;
         row.dataset.behavior = item.behavior;
         row.dataset.policy = item.resumePolicy;
         row.dataset.transition = item.transition;
@@ -353,11 +512,11 @@ export default class ScheduleWorkspaceUI {
         title.className = "schedule-item__title";
         title.textContent = item.title;
         sceneName.className = "schedule-item__scene";
-        sceneName.textContent = `${scene?.name || "UNRESOLVED"} · ${item.sceneId}`;
+        sceneName.textContent = `${target.kind.toUpperCase()} · ${content.name} · ${target.id}`;
         type.className = "schedule-item__type";
         [active ? "NOW" : null, item.behavior === "INTERRUPT" ? "INTERRUPT" : "NORMAL",
             item.startMode === "AFTER_PREVIOUS" ? "AFTER PREV" : null,
-            scene ? null : "UNRESOLVED"].filter(Boolean).forEach((label) => {
+            content.resolved ? null : "UNRESOLVED"].filter(Boolean).forEach((label) => {
             const badge = document.createElement("strong");
             badge.textContent = label;
             type.appendChild(badge);
@@ -393,13 +552,13 @@ export default class ScheduleWorkspaceUI {
             Math.max(1, 1000 - now % 1000));
     }
 
-    renderPlanStatus(metrics) {
+    renderPlanStatus(metrics, displaySchedule = this.schedule) {
         const today = todayInTimezone(this.schedule.timezone, this.clock());
         let nowItem;
         let nextItem;
         if (this.selectedDate === today) {
-            nowItem = getActiveItem(this.schedule, this.clock());
-            nextItem = getNextItem(this.schedule, this.clock());
+            nowItem = getActiveItem(displaySchedule, this.clock());
+            nextItem = getNextItem(displaySchedule, this.clock());
         }
         else {
             [nowItem, nextItem] = metrics.items.filter(({ behavior }) => behavior === "NORMAL");
@@ -420,6 +579,47 @@ export default class ScheduleWorkspaceUI {
         });
         this.sceneSelect.replaceChildren(...options);
         if (options.some(({ value }) => value === selected)) this.sceneSelect.value = selected;
+    }
+
+    renderSourceTargets() {
+        if (!this.sourceSelect) return;
+        const selected = this.sourceSelect.value;
+        const fragment = document.createDocumentFragment?.();
+        const groups = new Map();
+        this.catalog.getSources().filter((source) => source.available !== false &&
+            !(source.kind === "hls" && source.enabled === false)).forEach((source) => {
+            const label = sourceLabel(source.kind);
+            let group = groups.get(label);
+            if (!group) {
+                group = document.createElement("optgroup"); group.label = label;
+                groups.set(label, group); fragment?.appendChild(group);
+            }
+            const option = document.createElement("option"); option.value = source.id;
+            option.textContent = `${label} — ${source.name}`; group.appendChild(option);
+        });
+        this.sourceSelect.replaceChildren(...(fragment ? [fragment] : Array.from(groups.values())));
+        if (this.catalog.getSources().some(({ id }) => id === selected)) {
+            this.sourceSelect.value = selected;
+        }
+    }
+
+    describeTarget(target) {
+        if (target?.kind === "source") {
+            const source = this.catalog.getSources().find(({ id }) => id === target.id);
+            return { resolved: Boolean(source), name: source?.name || "UNRESOLVED" };
+        }
+        const scene = target?.kind === "scene" ? this.catalog.getDefinition(target.id) : null;
+        return { resolved: Boolean(scene), name: scene?.name || "UNRESOLVED" };
+    }
+
+    getCheckedValue(name) {
+        return this.form?.querySelector?.(`input[name="${name}"]:checked`)?.value || null;
+    }
+
+    setCheckedValue(name, value) {
+        this.form?.querySelectorAll?.(`input[name="${name}"]`).forEach((input) => {
+            input.checked = input.value === value;
+        });
     }
 
     renderSources() {
@@ -451,10 +651,18 @@ export default class ScheduleWorkspaceUI {
     }
 }
 
-function stripDerived({ id, title, startMode, behavior, resumePolicy, start,
-    durationSeconds, sceneId, transition }) {
-    return { id, title, startMode, behavior, resumePolicy,
-        ...(startMode === "ABSOLUTE" ? { start } : {}), durationSeconds, sceneId, transition };
+function stripDerived(item) {
+    return { id: item.id, title: item.title, startMode: item.startMode,
+        behavior: item.behavior, resumePolicy: item.resumePolicy,
+        ...(item.startMode === "ABSOLUTE" ? { start: item.start } : {}),
+        durationSeconds: item.durationSeconds,
+        ...(Object.hasOwn(item, "sceneId") ? { sceneId: item.sceneId }
+            : { target: { kind: item.target.kind, id: item.target.id } }),
+        transition: item.transition };
+}
+function sourceLabel(kind) {
+    return ({ media: "VIDEO", audio: "AUDIO", hls: "LIVE", image: "IMAGE" })[kind] ||
+        String(kind || "SOURCE").toUpperCase();
 }
 function parseDuration(value) {
     const match = /^(\d{2,3}):(\d{2}):(\d{2})$/.exec(String(value || ""));

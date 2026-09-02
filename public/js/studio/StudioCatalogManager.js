@@ -40,6 +40,7 @@ export default class StudioCatalogManager {
         this.eventTarget = eventTarget;
         this.sources = new Map();
         this.definitions = new Map();
+        this.runtimeDefinitions = new Map();
         this.operatorSourceIds = new Set();
         this.operatorSceneIds = new Set();
         this.baseSourceIds = new Set();
@@ -153,7 +154,8 @@ export default class StudioCatalogManager {
 
     getDefinition(sceneId) {
         const id = this.normalizeString(sceneId, MAX_ID_LENGTH);
-        const definition = id ? this.definitions.get(id) || null : null;
+        const definition = id ? this.definitions.get(id) ||
+            this.runtimeDefinitions.get(id) || null : null;
         const source = definition?.renderer?.kind === "source"
             ? this.sources.get(definition.renderer.sourceId) : null;
         return source?.available === false || source?.kind === "hls" && source.enabled === false
@@ -167,6 +169,25 @@ export default class StudioCatalogManager {
             return source?.available !== false &&
                 !(source?.kind === "hls" && source.enabled === false);
         }));
+    }
+
+    registerRuntimeDefinition(candidate) {
+        const definition = this.createSceneDefinition(candidate, "runtime");
+        if (!definition || this.definitions.has(definition.id)) return null;
+        const current = this.runtimeDefinitions.get(definition.id);
+        if (current) {
+            if (current.renderer.kind !== "source" ||
+                current.renderer.sourceId !== definition.renderer.sourceId) return null;
+            if (current.name !== definition.name || current.type !== definition.type) {
+                if (!this.studioStateManager.replaceScene(definition)) return null;
+                this.runtimeDefinitions.set(definition.id, definition);
+            }
+            return this.getDefinition(definition.id);
+        }
+        if (!this.sources.has(definition.renderer.sourceId) ||
+            !this.studioStateManager.registerScene(definition)) return null;
+        this.runtimeDefinitions.set(definition.id, definition);
+        return this.getDefinition(definition.id);
     }
 
     getMediaSources() {

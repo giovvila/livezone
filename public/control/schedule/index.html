@@ -74,7 +74,23 @@
                 <form id="schedule-item-form" class="schedule-form">
                     <label for="schedule-item-title">Titolo</label>
                     <input id="schedule-item-title" name="title" maxlength="120" required>
-                    <label for="schedule-item-start-mode">Avvio</label>
+                    <fieldset id="schedule-content-kind" class="schedule-choice-group">
+                        <legend>CONTENT</legend>
+                        <label><input type="radio" name="targetKind" value="source" checked> SOURCE</label>
+                        <label><input type="radio" name="targetKind" value="scene"> SCENE</label>
+                    </fieldset>
+                    <div id="schedule-source-target-fields">
+                        <label for="schedule-item-source">Source</label>
+                        <select id="schedule-item-source" name="sourceTargetId"></select>
+                    </div>
+                    <div id="schedule-scene-target-fields" hidden>
+                        <label for="schedule-item-scene">Scene</label>
+                        <select id="schedule-item-scene" name="sceneTargetId" disabled></select>
+                    </div>
+                    <label for="schedule-item-behavior">EVENT CLASS</label>
+                    <select id="schedule-item-behavior" name="behavior"><option>NORMAL</option><option>INTERRUPT</option></select>
+                    <p class="schedule-field-help">NORMAL = regular scheduled content · INTERRUPT = temporary scheduled interruption.</p>
+                    <label for="schedule-item-start-mode">START</label>
                     <select id="schedule-item-start-mode" name="startMode">
                         <option value="ABSOLUTE">DATA E ORA</option>
                         <option value="AFTER_PREVIOUS">AL TERMINE DEL PRECEDENTE</option>
@@ -83,20 +99,23 @@
                         <div><label for="schedule-item-date">Data</label><input id="schedule-item-date" name="date" type="date" required></div>
                         <div><label for="schedule-item-time">Ora</label><input id="schedule-item-time" name="time" type="time" step="1" required></div>
                     </div>
+                    <fieldset id="schedule-timing-role" class="schedule-choice-group">
+                        <legend>TIMING ROLE</legend>
+                        <label><input type="radio" name="timingRole" value="PROGRAM" checked> PROGRAM ITEM</label>
+                        <label><input type="radio" name="timingRole" value="FILLER"> FILLER</label>
+                    </fieldset>
+                    <p id="schedule-filler-help" class="schedule-field-help" hidden>FILLER is flexible content that may shrink or be skipped to respect the next fixed schedule boundary.</p>
+                    <fieldset id="schedule-interruption-recovery" class="schedule-choice-group">
+                        <legend>IF INTERRUPTED</legend>
+                        <label><input type="radio" name="recoveryPolicy" value="RESUME_FIXED" checked> FIXED</label>
+                        <label><input type="radio" name="recoveryPolicy" value="RESUME_SHIFT"> SHIFT</label>
+                    </fieldset>
+                    <p id="schedule-recovery-help" class="schedule-field-help">FIXED keeps the hard boundary. SHIFT moves following soft items until the next hard boundary.</p>
                     <label for="schedule-item-duration">Durata (HH:MM:SS)</label>
+                    <div id="schedule-media-duration" class="schedule-media-duration"><span>MEDIA DURATION</span><strong>Unavailable</strong></div>
                     <input id="schedule-item-duration" name="duration" value="00:30:00" pattern="[0-9]{2,3}:[0-9]{2}:[0-9]{2}" required>
-                    <label for="schedule-item-scene">Scena</label>
-                    <select id="schedule-item-scene" name="sceneId" required></select>
-                    <div class="schedule-form-grid">
-                        <div><label for="schedule-item-transition">Transizione</label><select id="schedule-item-transition" name="transition"><option>CUT</option><option>DISSOLVE</option></select></div>
-                        <div><label for="schedule-item-behavior">Comportamento</label><select id="schedule-item-behavior" name="behavior"><option>NORMAL</option><option>INTERRUPT</option></select></div>
-                    </div>
-                    <label for="schedule-item-resume-policy">Gestione interruzione</label>
-                    <select id="schedule-item-resume-policy" name="resumePolicy">
-                        <option value="RESUME_FIXED">RIPRENDI FINO AL PROSSIMO ORARIO</option>
-                        <option value="RESUME_SHIFT">RIPRENDI E SPOSTA</option>
-                        <option value="FILLER">CUSCINETTO</option>
-                    </select>
+                    <label for="schedule-item-transition">TRANSITION</label>
+                    <select id="schedule-item-transition" name="transition"><option>CUT</option><option>DISSOLVE</option></select>
                     <div class="schedule-form-actions"><button type="submit">SALVA ELEMENTO</button><button id="schedule-item-cancel" type="button">ANNULLA MODIFICA</button></div>
                 </form>
                 <p id="schedule-feedback" class="schedule-feedback" role="status" aria-live="polite"></p>

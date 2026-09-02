@@ -52,6 +52,23 @@ export default class MediaAssetRepository {
         return ID_PATTERN.test(String(id || "")) && this.assets.has(id) ? this.snapshot(this.assets.get(id)) : null;
     }
 
+    async updateMetadata(id, metadata) {
+        return this.serialize(async () => {
+            if (!ID_PATTERN.test(String(id || ""))) {
+                throw this.error("ASSET_ID_INVALID", "Asset ID is invalid.");
+            }
+            const current = this.assets.get(id);
+            if (!current) throw this.error("ASSET_NOT_FOUND", "Asset was not found.");
+            const normalized = this.validateMetadata(metadata, current.kind);
+            const updated = Object.freeze({ ...current, metadata: normalized,
+                updatedAt: this.clock() });
+            this.assets.set(id, updated);
+            try { await this.writeManifest(); }
+            catch (error) { this.assets.set(id, current); throw error; }
+            return this.snapshot(updated);
+        });
+    }
+
     async importTempFile({ tempPath, originalName, mimeType, size }) {
         return this.serialize(async () => {
             this.validateOriginalName(originalName);
@@ -130,7 +147,27 @@ export default class MediaAssetRepository {
             typeof value.updatedAt !== "string") return null;
         try { this.safeFilePath(value.kind, value.storedName); }
         catch { return null; }
-        return Object.freeze({ ...value, metadata: value.metadata ?? null });
+        const metadata = this.validateMetadata(value.metadata ?? null, value.kind, false);
+        if (metadata === undefined) return null;
+        return Object.freeze({ ...value, metadata });
+    }
+
+    validateMetadata(value, kind, throwOnInvalid = true) {
+        const invalid = () => {
+            if (throwOnInvalid) {
+                throw this.error("ASSET_METADATA_INVALID", "Asset metadata is invalid.");
+            }
+            return undefined;
+        };
+        if (value === null) return null;
+        if (!value || typeof value !== "object" || Array.isArray(value) ||
+            Object.getPrototypeOf(value) !== Object.prototype ||
+            Object.keys(value).length !== 1 ||
+            !Object.hasOwn(value, "durationSeconds") ||
+            !["video", "audio"].includes(kind)) return invalid();
+        const durationSeconds = value.durationSeconds;
+        if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return invalid();
+        return Object.freeze({ durationSeconds });
     }
 
     snapshot(asset) { return Object.freeze({ ...asset, metadata: asset.metadata && Object.freeze({ ...asset.metadata }) }); }

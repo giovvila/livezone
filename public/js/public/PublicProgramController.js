@@ -10,6 +10,7 @@ export default class PublicProgramController {
         this.retiredPublisherSessions = new Set();
         this.generation = 0;
         this.audioEnabled = false;
+        this.audioBlockedElement = null;
         this.current = null;
         this.handleSnapshot = this.handleSnapshot.bind(this);
         this.enableAudio = this.enableAudio.bind(this);
@@ -119,6 +120,7 @@ export default class PublicProgramController {
         }
         this.renderGraphics(snapshot.graphics.items);
         this.renderOverlays(snapshot.overlays);
+        this.syncCurrentAudioButton();
         this.setStatus(
             snapshot.playback.state === "error" ? "PROGRAM UNAVAILABLE"
                 : snapshot.playback.ended ? "PROGRAM ENDED" : "PROGRAM",
@@ -136,6 +138,7 @@ export default class PublicProgramController {
             (snapshot.playback.playing && !snapshot.playback.ended);
         video.muted = !this.audioEnabled;
         video.defaultMuted = video.muted;
+        if (video.muted) video.setAttribute?.("muted", "");
         video.playsInline = true;
         root.appendChild(video);
         let hls = null;
@@ -147,7 +150,7 @@ export default class PublicProgramController {
             hls.attachMedia(video);
             hls.on(globalThis.Hls.Events.MANIFEST_PARSED, () => {
                 void video.play().catch((error) =>
-                    this.handleAutoplayRejection(error));
+                    this.handleAutoplayRejection(error, video));
             });
         }
         else video.src = source.url;
@@ -164,11 +167,19 @@ export default class PublicProgramController {
         if (source.kind === "hls" || snapshot.playback.playing) {
             try { await video.play(); }
             catch (error) {
-                this.handleAutoplayRejection(error);
+                this.handleAutoplayRejection(error, video);
             }
         }
-        if (source.kind === "hls" && !this.audioEnabled) this.showAudioButton();
-        return () => { hls?.destroy(); video.pause(); video.removeAttribute("src"); video.load(); };
+        const handleEnded = () => {
+            if (this.audioBlockedElement === video) this.audioBlockedElement = null;
+            if (this.getCurrentMedia() === video) this.hideAudioButton();
+        };
+        video.addEventListener("ended", handleEnded);
+        if (["media", "hls"].includes(source.kind) && !this.audioEnabled &&
+            snapshot.playback.playing && !snapshot.playback.ended) this.showAudioButton();
+        return () => { video.removeEventListener("ended", handleEnded); hls?.destroy();
+            if (this.audioBlockedElement === video) this.audioBlockedElement = null;
+            video.pause(); video.removeAttribute("src"); video.load(); };
     }
 
     async createAudio(root, snapshot) {
@@ -230,6 +241,8 @@ export default class PublicProgramController {
         };
         const handleAudioPlaying = () => { void handleMotionReady(); };
         const handleAudioEnded = () => {
+            if (this.audioBlockedElement === audio) this.audioBlockedElement = null;
+            if (this.getCurrentMedia() === audio) this.hideAudioButton();
             if (!motion) return;
             motion.pause();
             try { motion.currentTime = 0; }
@@ -348,13 +361,17 @@ export default class PublicProgramController {
             this.resetAudioMotion(entry);
         }
         if (!snapshot.playback.playing || snapshot.playback.ended) media.pause();
+        if (snapshot.playback.ended) {
+            if (this.audioBlockedElement === media) this.audioBlockedElement = null;
+            this.hideAudioButton();
+        }
         try { await this.seekRecordedMedia(media, snapshot); }
         catch { return; }
         if (this.current !== entry || entry.snapshot !== snapshot) return;
         if (snapshot.playback.playing && !snapshot.playback.ended) {
             if (snapshot.source.kind !== "audio" || this.audioEnabled) {
                 try { await media.play(); }
-                catch { this.showAudioButton(); }
+                catch (error) { this.handleAutoplayRejection(error, media); }
             }
             else this.showAudioButton();
         }
@@ -442,25 +459,48 @@ export default class PublicProgramController {
             return;
         }
         media.muted = false;
+        media.defaultMuted = false;
+        media.removeAttribute?.("muted");
         const playback = this.current?.snapshot.playback;
         if (playback?.playing && !playback.ended) {
             void media.play().then(() => {
-                if (this.audioButton) this.audioButton.hidden = true;
-            }).catch((error) => this.handleAutoplayRejection(error));
+                if (this.getCurrentMedia() !== media) return;
+                if (this.audioBlockedElement === media) this.audioBlockedElement = null;
+                this.hideAudioButton();
+            }).catch((error) => {
+                if (!this.handleAutoplayRejection(error, media) &&
+                    this.getCurrentMedia() === media) this.hideAudioButton();
+            });
         }
-        else if (this.audioButton) this.audioButton.hidden = true;
+        else this.hideAudioButton();
     }
 
     showAudioButton() { if (this.audioButton) this.audioButton.hidden = false; }
+    hideAudioButton() { if (this.audioButton) this.audioButton.hidden = true; }
 
-    handleAutoplayRejection(error) {
+    handleAutoplayRejection(error, media = null) {
         if (error?.name !== "NotAllowedError") return false;
+        if (media) this.audioBlockedElement = media;
         this.showAudioButton();
         this.setStatus("TAP TO START PROGRAM", "error");
         return true;
     }
+    getCurrentMedia() {
+        const kind = this.current?.snapshot?.source?.kind;
+        if (!this.current || !["audio", "media", "hls"].includes(kind)) return null;
+        return this.current.layer.querySelector(kind === "audio" ? "audio" : "video");
+    }
+    syncCurrentAudioButton() {
+        const media = this.getCurrentMedia();
+        const playback = this.current?.snapshot?.playback;
+        if (!media || !playback?.playing || playback.ended) return this.hideAudioButton();
+        if (!this.audioEnabled || this.audioBlockedElement === media) this.showAudioButton();
+        else this.hideAudioButton();
+    }
     renderWaiting(message = "WAITING FOR PROGRAM") {
         this.releaseCurrent();
+        this.audioBlockedElement = null;
+        this.hideAudioButton();
         const waiting = document.createElement("div");
         waiting.className = "public-program__waiting";
         waiting.textContent = message;

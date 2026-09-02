@@ -322,7 +322,7 @@ export default class StudioAudioSurface {
 
     handlePlaying() {
         this.transportEnded = false;
-        this.clearAudioRecovery();
+        if (this.audio?.paused !== true) this.clearAudioRecovery();
         void this.startMotionPlayback();
         this.setHealth("ready", null);
         this.checkCurrentReadiness();
@@ -347,6 +347,7 @@ export default class StudioAudioSurface {
 
     handleEnded() {
         this.transportEnded = true;
+        this.clearAudioRecovery();
         this.resetMotionPlayback();
         this.setHealth("ended", null);
         this.notifyTransport();

@@ -48,6 +48,46 @@ test("manifest restores list, get and kind filters", () => withRoot(async (root)
     assert.equal(second.get(asset.id).id, asset.id); assert.equal(second.list({ kind: "audio" }).length, 1); assert.equal(second.list({ kind: "video" }).length, 0);
 }));
 
+test("finite VIDEO and AUDIO duration metadata persists while null remains valid", () => withRoot(async (root) => {
+    const repository = new MediaAssetRepository({ root }); await repository.initialize();
+    const video = await importFixture(repository, root, { name: "x.mp4",
+        mime: "video/mp4", bytes: fixtures.mp4 });
+    const audio = await importFixture(repository, root, { name: "x.mp3",
+        mime: "audio/mpeg", bytes: fixtures.mp3 });
+    assert.equal(video.metadata, null); assert.equal(audio.metadata, null);
+    await repository.updateMetadata(video.id, { durationSeconds: 33.8 });
+    await repository.updateMetadata(audio.id, { durationSeconds: 222.25 });
+    const restored = new MediaAssetRepository({ root }); await restored.initialize();
+    assert.equal(restored.get(video.id).metadata.durationSeconds, 33.8);
+    assert.equal(restored.get(audio.id).metadata.durationSeconds, 222.25);
+}));
+
+test("long decimal media duration remains valid metadata", () => withRoot(async (root) => {
+    const repository = new MediaAssetRepository({ root }); await repository.initialize();
+    const audio = await importFixture(repository, root, { name: "long.mp3",
+        mime: "audio/mpeg", bytes: fixtures.mp3 });
+    const updated = await repository.updateMetadata(audio.id,
+        { durationSeconds: 43140.005465 });
+    assert.equal(updated.metadata.durationSeconds, 43140.005465);
+    const restored = new MediaAssetRepository({ root }); await restored.initialize();
+    assert.equal(restored.get(audio.id).metadata.durationSeconds, 43140.005465);
+}));
+
+test("duration metadata rejects invalid values and non-timeline IMAGE assets", () => withRoot(async (root) => {
+    const repository = new MediaAssetRepository({ root }); await repository.initialize();
+    const video = await importFixture(repository, root, { name: "x.mp4",
+        mime: "video/mp4", bytes: fixtures.mp4 });
+    const image = await importFixture(repository, root, { name: "x.png",
+        mime: "image/png", bytes: fixtures.png });
+    for (const durationSeconds of [0, -1, Infinity, NaN, "22"]) {
+        await assert.rejects(repository.updateMetadata(video.id, { durationSeconds }),
+            { code: "ASSET_METADATA_INVALID" });
+    }
+    await assert.rejects(repository.updateMetadata(image.id, { durationSeconds: 22 }),
+        { code: "ASSET_METADATA_INVALID" });
+    assert.equal(repository.get(image.id).metadata, null);
+}));
+
 test("extension, MIME, signature and client paths are independently rejected", () => withRoot(async (root) => {
     const repository = new MediaAssetRepository({ root }); await repository.initialize();
     for (const candidate of [
@@ -100,6 +140,21 @@ test("HTTP upload/list/get/serve/range/delete use structured API", () => withSer
     assert.equal((await fetch(`${base}/api/media-library/assets/${asset.id}`, { method: "DELETE" })).status, 200);
 }));
 
+test("HTTP metadata update exposes persisted finite duration", () => withServer(async (base) => {
+    const form = new FormData(); form.append("file",
+        new Blob([fixtures.mp3], { type: "audio/mpeg" }), "clip.mp3");
+    const uploaded = await fetch(`${base}/api/media-library/assets`, { method: "POST", body: form });
+    const { asset } = await uploaded.json();
+    const updated = await fetch(`${base}/api/media-library/assets/${asset.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ metadata: { durationSeconds: 42.75 } })
+    });
+    assert.equal(updated.status, 200);
+    assert.equal((await updated.json()).asset.metadata.durationSeconds, 42.75);
+    assert.equal((await fetch(`${base}/api/media-library/assets/${asset.id}`)
+        .then((response) => response.json())).asset.metadata.durationSeconds, 42.75);
+}));
+
 test("HTTP upload limit returns 413 and cleans temporary files", () => withServer(async (base, root) => {
     const form = new FormData(); form.append("file", new Blob([fixtures.mp4], { type: "video/mp4" }), "clip.mp4");
     const response = await fetch(`${base}/api/media-library/assets`, { method: "POST", body: form });
@@ -135,6 +190,25 @@ test("manager snapshots, subscription, progress and guarded deletion", async () 
     await assert.rejects(manager.deleteAsset(asset.id), { code: "REFERENCE_GUARD_REQUIRED" });
     await manager.deleteAsset(asset.id, { referenceGuard: () => false }); unsubscribe();
     assert.ok(events.includes("uploading")); assert.ok(events.length >= 6);
+});
+
+test("manager probes imported finite media once and persists its duration", async () => {
+    const id = "asset-00000000-0000-4000-8000-000000000001";
+    const asset = { id, kind: "audio", url: "/managed.mp3", metadata: null };
+    const updates = [];
+    const client = { list: async () => ({ assets: [] }),
+        import: async () => ({ asset }),
+        updateMetadata: async (assetId, metadata) => {
+            updates.push({ assetId, metadata });
+            return { asset: { ...asset, metadata } };
+        } };
+    const manager = new MediaLibraryManager(client, { durationProbe: async () => 43140.005465 });
+    const result = await manager.importAsset(Object.assign(new Blob(["x"]), { name: "x.mp3" }));
+    assert.deepEqual(updates, [{ assetId: id, metadata: { durationSeconds: 43140.005465 } }]);
+    assert.equal(result.metadata.durationSeconds, 43140.005465);
+    assert.equal(manager.getAsset(id).metadata.durationSeconds, 43140.005465);
+    assert.equal((await manager.discoverDuration(result)).metadata.durationSeconds, 43140.005465);
+    assert.equal(updates.length, 1);
 });
 
 function mediaUiHarness({ stored = null } = {}) {

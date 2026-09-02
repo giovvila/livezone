@@ -10,6 +10,7 @@ import SchedulerEngine from "../public/js/scheduler/SchedulerEngine.js";
 import SchedulerRuntimeState, { SCHEDULER_RUNTIME_STORAGE_KEY } from
     "../public/js/scheduler/SchedulerRuntimeState.js";
 import StudioProgramCommand from "../public/js/scheduler/StudioProgramCommand.js";
+import ScheduleTargetResolver from "../public/js/scheduler/ScheduleTargetResolver.js";
 import { calculateEffectiveSchedule, isHardClock,
     RESUME_POLICIES } from "../public/js/scheduler/ScheduleClock.js";
 import { getScheduleEditorTime } from "../public/js/ui/StudioScheduleUI.js";
@@ -134,6 +135,69 @@ test("FILLER absorbs drift and hard clock remains fixed", () => {
     assert.equal(skipped.items.find(({ id }) => id === "f").effectiveDurationSeconds, 0);
     assert.equal(skipped.items.find(({ id }) => id === "f").skipped, true);
     assert.equal(isHardClock(skipped.items.find(({ id }) => id === "hard")), true);
+});
+
+test("long AFTER_PREVIOUS FILLER is accepted and clipped by the next hard clock", () => {
+    const afterFiller = { ...item("b", null, 43141), startMode: "AFTER_PREVIOUS",
+        resumePolicy: "FILLER" };
+    delete afterFiller.start;
+    const values = [
+        { ...item("a", "2026-08-24T00:39:00+02:00", 34),
+            resumePolicy: "RESUME_FIXED" },
+        afterFiller,
+        { ...item("c", "2026-08-24T00:42:32+02:00", 34),
+            resumePolicy: "RESUME_FIXED" }
+    ];
+    const result = validateSchedule({ version: 1, timezone: "Europe/Rome", items: values });
+    assert.equal(result.ok, true, result.issues.join(","));
+    assert.equal(result.schedule.items.find(({ id }) => id === "b").endMs,
+        Date.parse("2026-08-24T00:42:32+02:00"));
+    assert.equal(result.schedule.items.find(({ id }) => id === "b").durationSeconds, 43141);
+    const storedBefore = JSON.stringify(result.schedule);
+    const effective = calculateEffectiveSchedule(result.schedule);
+    const [a, b, c] = ["a", "b", "c"].map((id) =>
+        effective.items.find((entry) => entry.id === id));
+    assert.equal(a.startMs, Date.parse("2026-08-24T00:39:00+02:00"));
+    assert.equal(a.endMs, Date.parse("2026-08-24T00:39:34+02:00"));
+    assert.equal(b.startMs, Date.parse("2026-08-24T00:39:34+02:00"));
+    assert.equal(b.durationSeconds, 43141);
+    assert.equal(b.endMs, Date.parse("2026-08-24T00:42:32+02:00"));
+    assert.equal(c.startMs, Date.parse("2026-08-24T00:42:32+02:00"));
+    assert.equal(JSON.stringify(result.schedule), storedBefore);
+
+    const reordered = validateSchedule({ version: 1, timezone: "Europe/Rome",
+        items: [values[2], values[0], values[1]] });
+    assert.equal(reordered.ok, true, reordered.issues.join(","));
+    assert.deepEqual(calculateEffectiveSchedule(reordered.schedule).items.map(
+        ({ id, startMs, endMs }) => ({ id, startMs, endMs })),
+    effective.items.map(({ id, startMs, endMs }) => ({ id, startMs, endMs })));
+});
+
+test("FILLER boundary exception preserves natural gaps and genuine overlap rejection", () => {
+    const filler = { ...item("f", null, 30), startMode: "AFTER_PREVIOUS",
+        resumePolicy: "FILLER" };
+    delete filler.start;
+    const short = validateSchedule({ version: 1, timezone: "Europe/Rome", items: [
+        item("a", "2026-08-24T00:39:00+02:00", 34), filler,
+        item("c", "2026-08-24T00:42:32+02:00", 34)
+    ] });
+    assert.equal(short.ok, true);
+    assert.equal(calculateEffectiveSchedule(short.schedule).items.find(
+        ({ id }) => id === "f").endMs, Date.parse("2026-08-24T00:40:04+02:00"));
+
+    const withoutHardClock = validateSchedule({ version: 1, timezone: "Europe/Rome",
+        items: [item("a", "2026-08-24T00:39:00+02:00", 34),
+            { ...filler, durationSeconds: 43141 }] });
+    assert.equal(withoutHardClock.ok, true);
+    assert.equal(calculateEffectiveSchedule(withoutHardClock.schedule).items.find(
+        ({ id }) => id === "f").durationSeconds, 43141);
+
+    const overlap = validateSchedule({ version: 1, timezone: "Europe/Rome", items: [
+        item("program-a", "2026-08-24T00:39:00+02:00", 300),
+        item("program-c", "2026-08-24T00:42:32+02:00", 34)
+    ] });
+    assert.equal(overlap.ok, false);
+    assert.match(overlap.issues.join(","), /overlap:program-a:program-c/);
 });
 
 test("RESUME_FIXED leaves the base hard-clock window unchanged", () => {
@@ -395,6 +459,89 @@ test("store rejects untrusted persistence and round-trips canonical data", () =>
     const value = schedule(item("a", "2026-08-23T20:00:00+02:00"));
     assert.equal(store.save(value).ok, true);
     assert.equal(store.load().schedule.items[0].id, "a");
+});
+
+test("schedule target contract accepts direct sources without rewriting legacy scenes", () => {
+    const direct = validateSchedule({ version: 1, timezone: "Europe/Rome", items: [{
+        id: "direct", title: "Direct", target: { kind: "source", id: "source-a" },
+        start: "2026-08-23T20:00:00+02:00", durationSeconds: 60
+    }] });
+    assert.equal(direct.ok, true);
+    assert.deepEqual(direct.schedule.items[0].target, { kind: "source", id: "source-a" });
+
+    const values = new Map();
+    const storage = { getItem: (key) => values.get(key), setItem: (key, value) => values.set(key, value) };
+    const store = new ScheduleStore({ storage });
+    const legacy = schedule(item("legacy", "2026-08-23T20:00:00+02:00"));
+    assert.equal(store.save(legacy).ok, true);
+    const persisted = JSON.parse(values.get("livezone.scheduler.schedule.v1"));
+    assert.equal(persisted.items[0].sceneId, "legacy");
+    assert.equal(Object.hasOwn(persisted.items[0], "target"), false);
+
+    const ambiguous = validateSchedule({ version: 1, timezone: "Europe/Rome", items: [{
+        ...item("bad", "2026-08-23T21:00:00+02:00"), target: { kind: "source", id: "source-a" }
+    }] });
+    assert.equal(ambiguous.ok, false);
+    assert.ok(ambiguous.issues.includes("item-target:0"));
+});
+
+test("direct source resolver creates deterministic runtime-only scene definitions", async () => {
+    const registered = [];
+    const catalog = {
+        getSources: () => [
+            { id: "video-a", name: "Video A", kind: "media" },
+            { id: "audio-a", name: "Audio A", kind: "audio" },
+            { id: "live-a", name: "Live A", kind: "hls", enabled: true },
+            { id: "image-a", name: "Image A", kind: "image" }
+        ],
+        registerRuntimeDefinition(candidate) { registered.push(candidate); return Object.freeze(candidate); }
+    };
+    const resolver = new ScheduleTargetResolver({ catalog });
+    for (const [id, type] of [["video-a", "MEDIA"], ["audio-a", "AUDIO"],
+        ["live-a", "LIVE"], ["image-a", "IMAGE"]]) {
+        const first = resolver.resolve({ kind: "source", id });
+        const second = resolver.resolve({ kind: "source", id });
+        assert.equal(first.sceneId, second.sceneId);
+        assert.equal(first.definition.type, type);
+        assert.deepEqual(first.definition.renderer, { kind: "source", sourceId: id });
+    }
+    assert.equal(resolver.resolve({ kind: "source", id: "missing" }), null);
+    assert.ok(registered.every(({ id }) => id.startsWith("schedule-source-")));
+    const dominant = new ScheduleTargetResolver({ catalog, namespace: "dominant-live-source" });
+    assert.match(dominant.getRuntimeSceneId({ kind: "source", id: "live-a" }),
+        /^dominant-live-source-live-a-[0-9a-f]{8}$/);
+    assert.equal(dominant.getRuntimeSceneId({ kind: "source", id: "live-a" }),
+        dominant.getRuntimeSceneId({ kind: "source", id: "live-a" }));
+});
+
+test("Studio command resolves direct sources through the canonical transition path", async () => {
+    const transitions = [];
+    const state = { preview: null, program: null };
+    const targetResolver = {
+        resolve: ({ id }) => id === "missing" ? null : ({ sceneId: `runtime-${id}`,
+            definition: { id: `runtime-${id}`, renderer: { kind: "source", sourceId: id } } }),
+        getRuntimeSceneId: ({ id }) => `runtime-${id}`
+    };
+    const command = new StudioProgramCommand({ targetResolver,
+        stateManager: {
+            getProgramSceneId: () => state.program,
+            getPreviewSceneId: () => state.preview,
+            setPreviewScene: (id) => { state.preview = id; return {}; }
+        },
+        catalog: { getSources: () => [{ id: "video-a", kind: "media" }] },
+        transitionCoordinator: { isBusy: () => false,
+            transition: async (options) => { transitions.push(options); state.program = state.preview; return {}; } }
+    });
+    assert.equal((await command.execute({ target: { kind: "source", id: "video-a" },
+        transition: "CUT" })).ok, true);
+    assert.equal(state.program, "runtime-video-a");
+    assert.equal(transitions[0].type, "cut");
+    state.program = "other";
+    assert.equal((await command.execute({ target: { kind: "source", id: "video-a" },
+        transition: "DISSOLVE" })).ok, true);
+    assert.equal(transitions[1].type, "dissolve");
+    assert.equal((await command.execute({ target: { kind: "source", id: "missing" } })).reason,
+        "unresolved-source");
 });
 
 test("late wake activates only the item active now", async () => {

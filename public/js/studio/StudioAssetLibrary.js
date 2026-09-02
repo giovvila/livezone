@@ -266,7 +266,7 @@ export default class StudioAssetLibrary {
         if (!id || !/^[a-z0-9][a-z0-9-]*$/.test(id) || !name || !kind || !url) {
             return null;
         }
-        if (durationSeconds !== null && (kind !== "video" ||
+        if (durationSeconds !== null && (!["video", "audio"].includes(kind) ||
             !Number.isFinite(durationSeconds) || durationSeconds <= 0 ||
             durationSeconds > 7 * 24 * 60 * 60)) {
             return null;

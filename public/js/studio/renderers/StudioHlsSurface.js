@@ -24,6 +24,8 @@ export default class StudioHlsSurface {
         this.handleLoadedData = this.handleLoadedData.bind(this);
         this.handleCanPlay = this.handleCanPlay.bind(this);
         this.handleWaiting = this.handleWaiting.bind(this);
+        this.handlePlaying = this.handlePlaying.bind(this);
+        this.handlePause = this.handlePause.bind(this);
         this.handleEnded = this.handleEnded.bind(this);
         this.handleNativeError = this.handleNativeError.bind(this);
         this.handleAudioRecovery = this.handleAudioRecovery.bind(this);
@@ -43,6 +45,8 @@ export default class StudioHlsSurface {
         this.video.addEventListener("loadeddata", this.handleLoadedData);
         this.video.addEventListener("canplay", this.handleCanPlay);
         this.video.addEventListener("waiting", this.handleWaiting);
+        this.video.addEventListener("playing", this.handlePlaying);
+        this.video.addEventListener("pause", this.handlePause);
         this.video.addEventListener("ended", this.handleEnded);
         this.video.addEventListener("error", this.handleNativeError);
         this.requestFirstVideoFrame();
@@ -204,7 +208,17 @@ export default class StudioHlsSurface {
         }
     }
 
+    handlePlaying() {
+        if (!this.video?.muted && this.video?.paused !== true) this.clearAudioRecovery();
+    }
+
+    handlePause() {
+        if (this.consumer === "program" && !this.destroyed && !this.autoplayBlocked &&
+            !this.video?.ended) void this.activateProgram();
+    }
+
     handleEnded() {
+        this.clearAudioRecovery();
         this.setHealth("ended", null);
     }
 
@@ -405,6 +419,8 @@ export default class StudioHlsSurface {
             this.video.removeEventListener("loadeddata", this.handleLoadedData);
             this.video.removeEventListener("canplay", this.handleCanPlay);
             this.video.removeEventListener("waiting", this.handleWaiting);
+            this.video.removeEventListener("playing", this.handlePlaying);
+            this.video.removeEventListener("pause", this.handlePause);
             this.video.removeEventListener("ended", this.handleEnded);
             this.video.removeEventListener("error", this.handleNativeError);
             this.video.pause();

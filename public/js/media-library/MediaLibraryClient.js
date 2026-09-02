@@ -5,6 +5,13 @@ export default class MediaLibraryClient {
     }
     async list(kind = null) { return this.request(`${this.baseUrl}${kind ? `?kind=${encodeURIComponent(kind)}` : ""}`); }
     async get(id) { return this.request(`${this.baseUrl}/${encodeURIComponent(id)}`); }
+    async updateMetadata(id, metadata) {
+        return this.request(`${this.baseUrl}/${encodeURIComponent(id)}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ metadata })
+        });
+    }
     async remove(id) { return this.request(`${this.baseUrl}/${encodeURIComponent(id)}`, { method: "DELETE" }); }
     import(file, { onProgress = () => {} } = {}) {
         return new Promise((resolve, reject) => {

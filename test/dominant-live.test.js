@@ -29,7 +29,8 @@ function timers() { let next = 1; const values = new Map(); return {
         values.delete(entry[0]); entry[1].fn(); return true; }, size: () => values.size }; }
 function harness({ armed = true, authorizedSourceId = "live-a", enabled = true,
     schedulerEnabled = true, hasCurrentItem = true, commandResult = { ok: true },
-    sceneIds = ["scene-live-a"], beginMode = "context", commandThrows = false } = {}) {
+    sceneIds = ["scene-live-a"], beginMode = "context", commandThrows = false,
+    runtimeFallback = false } = {}) {
     const setting = { armed, authorizedSourceId }; const configListeners = new Set();
     const config = { getSnapshot: () => Object.freeze({ ...setting }), subscribe(fn) {
         configListeners.add(fn); fn(setting); return () => configListeners.delete(fn); },
@@ -40,7 +41,12 @@ function harness({ armed = true, authorizedSourceId = "live-a", enabled = true,
         enabled, sceneIds }]; const catalogListeners = new Set();
     const catalog = { getSources: () => sources, subscribe(fn) { catalogListeners.add(fn);
         fn(sources); return () => catalogListeners.delete(fn); },
-    getDefinition(id) { return id === "scene-live-a" ? { id } : null; } };
+    getDefinition(id) { return id === "scene-live-a" || id === "dominant-live-source-live-a"
+        ? { id } : null; } };
+    const targetResolver = runtimeFallback ? { resolve(target) { return target.id === "live-a"
+        ? { sceneId: "dominant-live-source-live-a", definition: {
+            id: "dominant-live-source-live-a", renderer: { kind: "source", sourceId: target.id }
+        } } : null; } } : null;
     const schedulerListeners = new Set(); const schedulerSnapshot = { enabled: schedulerEnabled,
         activeItem: schedulerEnabled && hasCurrentItem ? { id: "item-a" } : null,
         interruptionContext: null, status: schedulerEnabled ? hasCurrentItem ? "ACTIVE" : "ARMED" : "OFF" };
@@ -66,6 +72,7 @@ function harness({ armed = true, authorizedSourceId = "live-a", enabled = true,
         calls: [], async execute(request) { this.calls.push(request);
             if (commandThrows) throw new Error("command"); return commandResult; } };
     const controller = new DominantLiveController({ config, catalog, monitor, scheduler,
+        targetResolver,
         command, eventBus: bus, clock: () => 10000, setTimer: clockTimers.set,
         clearTimer: clockTimers.clear, uuidFactory: () => "session-1" });
     controller.start(); return { controller, config, catalog, sources, scheduler, monitor,
@@ -209,9 +216,23 @@ test("missing scene and changed generation produce explicit blocks without silen
     const missing = harness({ sceneIds: [] });
     missing.monitor.emit({ sourceId: "live-a", state: "ONLINE" }); missing.timers.run(3000);
     await Promise.resolve(); assert.equal(missing.controller.getSnapshot().status, "ARMED — BLOCKED");
-    assert.equal(missing.controller.getSnapshot().diagnostics.blockReason, "SCENE_MISSING");
+    assert.equal(missing.controller.getSnapshot().diagnostics.blockReason, "TARGET_UNAVAILABLE");
     const stale = harness(); await stale.controller.begin(stale.sources[0], stale.controller.generation - 1);
     assert.equal(stale.controller.getSnapshot().diagnostics.blockReason, "GENERATION");
+});
+
+test("authorized LIVE Source without Scene uses deterministic runtime-only target", async () => {
+    const h = harness({ sceneIds: [], runtimeFallback: true });
+    const originalSceneIds = [...h.sources[0].sceneIds];
+    assert.equal(h.controller.getSnapshot().diagnostics.resolvedTarget, "runtime-source");
+    assert.equal(h.controller.getSnapshot().diagnostics.resolvedSceneId,
+        "dominant-live-source-live-a");
+    h.monitor.emit({ sourceId: "live-a", state: "ONLINE" }); h.timers.run(3000);
+    await Promise.resolve(); await Promise.resolve();
+    assert.deepEqual(h.command.calls[0], { sceneId: "dominant-live-source-live-a",
+        transition: "CUT", origin: "dominant-live" });
+    assert.deepEqual(h.sources[0].sceneIds, originalSceneIds);
+    assert.notEqual(h.controller.getSnapshot().diagnostics.blockReason, "SCENE_MISSING");
 });
 
 test("every acquisition precondition exits with an explicit block reason", async () => {

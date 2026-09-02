@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { validateSchedule } from "../public/js/scheduler/ScheduleContract.js";
 import { calculateDayMetrics, getDayWindow } from
     "../public/js/scheduler/ScheduleDayMetrics.js";
+import { calculateEffectiveSchedule } from "../public/js/scheduler/ScheduleClock.js";
 import ScheduleStore from "../public/js/scheduler/ScheduleStore.js";
 import ControlDeskLayoutManager from "../public/js/ui/ControlDeskLayoutManager.js";
 import StudioScheduleSummaryUI from "../public/js/ui/StudioScheduleSummaryUI.js";
@@ -13,6 +14,7 @@ import ScheduleClock from "../public/js/ui/ScheduleClock.js";
 import StudioCatalogManager from "../public/js/studio/StudioCatalogManager.js";
 import StudioAssetResolver from "../public/js/studio/StudioAssetResolver.js";
 import StudioProgramCommand from "../public/js/scheduler/StudioProgramCommand.js";
+import { formatMediaDuration } from "../public/js/ui/MediaDuration.js";
 
 const createSchedule = (items) => validateSchedule({
     version: 1, timezone: "Europe/Rome", items
@@ -72,6 +74,225 @@ function baseCatalog() {
         ]
     };
 }
+
+test("finite media duration formatter uses compact ceil policy", () => {
+    assert.equal(formatMediaDuration(42), "00:42");
+    assert.equal(formatMediaDuration(221.01), "03:42");
+    assert.equal(formatMediaDuration(5537), "01:32:17");
+    assert.equal(formatMediaDuration(null), "Unavailable");
+});
+
+test("Schedule Workspace resolves VIDEO and true AUDIO durations without artwork", () => {
+    const sources = [
+        { id: "video-source", kind: "media", assetId: "video" },
+        { id: "audio-source", kind: "audio", audioAssetId: "audio",
+            stillAssetId: "still", motionAssetId: "motion" },
+        { id: "live-source", kind: "hls", url: "https://studio.test/live.m3u8" }
+    ];
+    const definitions = new Map([
+        ["video-scene", { renderer: { kind: "source", sourceId: "video-source" } }],
+        ["audio-scene", { renderer: { kind: "source", sourceId: "audio-source" } }],
+        ["live-scene", { renderer: { kind: "source", sourceId: "live-source" } }]
+    ]);
+    const assets = new Map([
+        ["video", { metadata: { durationSeconds: 33.8 } }],
+        ["audio", { metadata: { durationSeconds: 221.01 } }],
+        ["still", { metadata: null }],
+        ["motion", { metadata: { durationSeconds: 999 } }]
+    ]);
+    const ui = new ScheduleWorkspaceUI({
+        catalog: { getDefinition: (id) => definitions.get(id), getSources: () => sources },
+        assetResolver: { getAsset: (id) => assets.get(id) || null }
+    });
+    ui.sceneSelect = { value: "video-scene" };
+    assert.equal(ui.resolveSelectedDuration(), 33.8);
+    ui.sceneSelect.value = "audio-scene";
+    assert.equal(ui.resolveSelectedDuration(), 221.01,
+        "still and motion durations must not define AUDIO duration");
+    ui.sceneSelect.value = "live-scene";
+    assert.equal(ui.resolveSelectedDuration(), null);
+});
+
+test("Schedule Workspace resolves the same finite duration for direct Source and Scene targets", () => {
+    const source = { id: "video-source", name: "Video", kind: "media", assetId: "video" };
+    const ui = new ScheduleWorkspaceUI({
+        catalog: { getDefinition: () => ({ renderer: { kind: "source", sourceId: source.id } }),
+            getSources: () => [source] },
+        assetResolver: { getAsset: () => ({ metadata: { durationSeconds: 85.25 } }) }
+    });
+    ui.sourceSelect = { value: source.id };
+    ui.sceneSelect = { value: "video-scene" };
+    ui.getCheckedValue = () => "source";
+    assert.equal(ui.resolveSelectedDuration(), 85.25);
+    ui.getCheckedValue = () => "scene";
+    assert.equal(ui.resolveSelectedDuration(), 85.25);
+});
+
+test("Scheduler editorial form keeps Source default and exposes explicit editorial controls", async () => {
+    const html = await readFile(new URL("../public/control/schedule/index.html", import.meta.url), "utf8");
+    assert.match(html, /name="targetKind" value="source" checked/);
+    assert.match(html, /id="schedule-item-source"/);
+    assert.match(html, /name="targetKind" value="scene"/);
+    assert.match(html, />EVENT CLASS</);
+    assert.match(html, /<option>NORMAL<\/option>/);
+    assert.match(html, /<option>INTERRUPT<\/option>/);
+    assert.match(html, /value="AFTER_PREVIOUS"/);
+    assert.match(html, /name="timingRole" value="PROGRAM" checked/);
+    assert.match(html, /name="timingRole" value="FILLER"/);
+    assert.match(html, /name="recoveryPolicy" value="RESUME_FIXED" checked/);
+    assert.match(html, /name="recoveryPolicy" value="RESUME_SHIFT"/);
+});
+
+test("Schedule Workspace prefills new media but preserves edited scheduled duration", () => {
+    const ui = new ScheduleWorkspaceUI({
+        catalog: { getDefinition: () => ({ renderer: { kind: "source", sourceId: "audio" } }),
+            getSources: () => [{ id: "audio", kind: "audio", audioAssetId: "asset" }] },
+        assetResolver: { getAsset: () => ({ metadata: { durationSeconds: 221.01 } }) }
+    });
+    const strong = { textContent: "" };
+    ui.mediaDuration = { title: "", classList: { mismatch: false,
+        toggle(_name, value) { this.mismatch = value; } }, querySelector: () => strong };
+    ui.sceneSelect = { value: "audio-scene" };
+    ui.form = { elements: { duration: { value: "00:30:00" } } };
+    ui.feedback = { textContent: "", classList: { toggle() {} } };
+    ui.prefillDuration();
+    assert.equal(ui.form.elements.duration.value, "00:03:42");
+    assert.equal(strong.textContent, "03:42");
+    ui.editingId = "existing";
+    ui.form.elements.duration.value = "00:04:00";
+    ui.prefillDuration();
+    assert.equal(ui.form.elements.duration.value, "00:04:00");
+    assert.equal(ui.mediaDuration.classList.mismatch, true);
+    assert.match(ui.mediaDuration.title, /Scheduled duration: 04:00/);
+});
+
+function durationProbeHarness({ sourceKind = "media", targetKind = "source",
+    discoveredDuration = 42.25 } = {}) {
+    const source = { id: "source-a", kind: sourceKind,
+        ...(sourceKind === "audio" ? { audioAssetId: "asset-a", stillAssetId: "still-a",
+            motionAssetId: "motion-a" } : { assetId: "asset-a" }) };
+    let asset = { id: "asset-a", kind: sourceKind === "audio" ? "audio" : "video",
+        origin: "managed", metadata: null };
+    let resolveProbe;
+    let probes = 0;
+    const probeResult = new Promise((resolve) => { resolveProbe = () => {
+        asset = { ...asset, metadata: discoveredDuration === null ? null
+            : { durationSeconds: discoveredDuration } };
+        resolve(asset);
+    }; });
+    const manager = { getAsset: () => asset,
+        discoverDuration: () => { probes += 1; return probeResult; } };
+    const ui = new ScheduleWorkspaceUI({
+        catalog: { getDefinition: () => ({ renderer: { kind: "source", sourceId: source.id } }),
+            getSources: () => [source, { id: "live", kind: "hls" },
+                { id: "image", kind: "image", assetId: "still-a" }] },
+        assetResolver: { getAsset: (id) => id === "asset-a" ? asset : null },
+        mediaLibraryManager: manager
+    });
+    const strong = { textContent: "" };
+    ui.mediaDuration = { title: "", classList: { toggle() {} }, querySelector: () => strong };
+    ui.form = { elements: { duration: { value: "00:30:00" } } };
+    ui.feedback = { textContent: "", classList: { toggle() {} } };
+    ui.sourceSelect = { value: source.id };
+    ui.sceneSelect = { value: "scene-a" };
+    ui.getCheckedValue = () => targetKind;
+    return { ui, strong, source, get probes() { return probes; }, resolveProbe,
+        setSource(id) { ui.sourceSelect.value = id; } };
+}
+
+for (const [label, sourceKind, targetKind] of [
+    ["direct VIDEO Source", "media", "source"],
+    ["direct AUDIO Source", "audio", "source"],
+    ["Scene VIDEO Source", "media", "scene"],
+    ["Scene AUDIO Source", "audio", "scene"]
+]) test(`Schedule Workspace probes missing duration for ${label}`, async () => {
+    const h = durationProbeHarness({ sourceKind, targetKind });
+    const pending = h.ui.prefillDuration();
+    assert.equal(h.probes, 1);
+    assert.equal(h.strong.textContent, "Reading…");
+    h.resolveProbe();
+    assert.equal(await pending, 42.25);
+    assert.equal(h.strong.textContent, "00:43");
+    assert.equal(h.ui.form.elements.duration.value, "00:00:43");
+});
+
+test("Schedule Workspace skips cached probes and preserves edited duration mismatch", async () => {
+    const h = durationProbeHarness();
+    h.resolveProbe();
+    await h.ui.prefillDuration();
+    const firstCount = h.probes;
+    h.ui.editingId = "existing";
+    h.ui.form.elements.duration.value = "00:01:00";
+    await h.ui.prefillDuration();
+    assert.equal(h.probes, firstCount);
+    assert.equal(h.ui.form.elements.duration.value, "00:01:00");
+    assert.match(h.ui.mediaDuration.title, /Scheduled duration: 01:00/);
+});
+
+test("Schedule Workspace leaves failed probes retryable and manual duration editable", async () => {
+    const h = durationProbeHarness({ discoveredDuration: null });
+    const pending = h.ui.prefillDuration(); h.resolveProbe();
+    assert.equal(await pending, null);
+    assert.equal(h.strong.textContent, "Unavailable");
+    assert.equal(h.ui.form.elements.duration.value, "00:30:00");
+    await h.ui.prefillDuration();
+    assert.equal(h.probes, 2, "a later operator selection may retry a failed probe");
+});
+
+test("Schedule Workspace deduplicates in-flight probes and ignores stale selections", async () => {
+    const h = durationProbeHarness();
+    const first = h.ui.prefillDuration();
+    const duplicate = h.ui.prefillDuration();
+    assert.equal(h.probes, 1);
+    h.setSource("live");
+    await h.ui.prefillDuration();
+    assert.equal(h.strong.textContent, "Unavailable");
+    h.resolveProbe();
+    assert.equal(await first, null);
+    assert.equal(await duplicate, null);
+    assert.equal(h.strong.textContent, "Unavailable");
+});
+
+test("Schedule Workspace never probes LIVE or IMAGE duration artwork", async () => {
+    const h = durationProbeHarness();
+    h.setSource("live"); await h.ui.prefillDuration();
+    h.setSource("image"); await h.ui.prefillDuration();
+    assert.equal(h.probes, 0);
+});
+
+test("Schedule Workspace clears only stale auto-owned duration when selection is unavailable", async () => {
+    const h = durationProbeHarness(); h.resolveProbe();
+    await h.ui.prefillDuration();
+    assert.equal(h.ui.form.elements.duration.value, "00:00:43");
+    h.setSource("live"); await h.ui.prefillDuration();
+    assert.equal(h.ui.form.elements.duration.value, "00:30:00");
+    h.setSource("source-a"); await h.ui.prefillDuration();
+    h.ui.form.elements.duration.value = "00:05:00";
+    h.ui.handleDurationInput();
+    h.setSource("live"); await h.ui.prefillDuration();
+    assert.equal(h.ui.form.elements.duration.value, "00:05:00");
+});
+
+test("Schedule Workspace replaces prior auto-owned value with a new finite duration", () => {
+    const h = durationProbeHarness();
+    h.ui.applyDiscoveredDuration(33.8);
+    assert.equal(h.ui.form.elements.duration.value, "00:00:34");
+    h.ui.applyDiscoveredDuration(85.2);
+    assert.equal(h.ui.form.elements.duration.value, "00:01:26");
+});
+
+for (const [label, sourceKind, duration, panel, input] of [
+    ["managed VIDEO", "media", 778, "12:58", "00:12:58"],
+    ["managed AUDIO", "audio", 43140.005465, "11:59:01", "11:59:01"]
+]) test(`${label} auto-prefill keeps the complete duration without a 30-minute clamp`, async () => {
+    const h = durationProbeHarness({ sourceKind, discoveredDuration: duration });
+    const pending = h.ui.prefillDuration();
+    h.resolveProbe();
+    assert.equal(await pending, duration);
+    assert.equal(h.strong.textContent, panel);
+    assert.equal(h.ui.form.elements.duration.value, input);
+    assert.notEqual(h.ui.form.elements.duration.value, "00:30:00");
+});
 
 test("day window follows Europe/Rome DST day lengths", () => {
     assert.equal(getDayWindow("2026-03-29", "Europe/Rome").durationSeconds, 23 * 3600);
@@ -540,6 +761,64 @@ test("Control summary applies external store snapshots to its scheduler authorit
     storeListener({ schedule: external, issues: [] });
     assert.equal(applied.at(-1), external);
     ui.destroy();
+});
+
+test("Control daily program uses the same shifted runtime start as NEXT", () => {
+    const after = { ...item("b", null, 600), startMode: "AFTER_PREVIOUS" };
+    delete after.start;
+    const stored = createSchedule([
+        { ...item("a", "2026-08-23T20:00:00+02:00", 1800),
+            resumePolicy: "RESUME_SHIFT" },
+        { ...item("interrupt", "2026-08-23T20:10:00+02:00", 300, "INTERRUPT") },
+        after,
+        item("hard", "2026-08-23T21:00:00+02:00", 600)
+    ]);
+    const persistedBefore = JSON.stringify(stored);
+    const effective = calculateEffectiveSchedule(stored, new Map([["a", 300000]]));
+    const shiftedB = effective.items.find(({ id }) => id === "b");
+    const hard = effective.items.find(({ id }) => id === "hard");
+    const now = Date.parse("2026-08-23T20:15:00+02:00");
+    const engine = {
+        getEffectiveSchedule: () => effective,
+        getSnapshot: () => ({ enabled: true,
+            activeItem: effective.items.find(({ id }) => id === "a"), nextItem: shiftedB }),
+        subscribe: () => () => {}, setSchedule() {}
+    };
+
+    const nodes = new Map(["#studio-schedule-toggle", "#studio-schedule-status",
+        "#studio-schedule-now", "#studio-schedule-current", "#studio-schedule-next"]
+        .map((selector) => [selector, { textContent: "", addEventListener() {},
+            removeEventListener() {}, setAttribute() {} }]));
+    const summary = new StudioScheduleSummaryUI({
+        root: { querySelector: (selector) => nodes.get(selector) }, engine,
+        store: { subscribe: () => () => {} },
+        catalog: { getDefinition: () => ({ name: "MAIN" }) }
+    });
+    assert.equal(summary.start(), true);
+    summary.schedule = stored;
+    summary.render();
+
+    const daily = new ScheduleWorkspaceUI({ readOnly: true, schedulerEngine: engine,
+        clock: () => now });
+    daily.schedule = stored;
+    daily.selectedDate = "2026-08-23";
+    daily.dateInput = { value: "" };
+    daily.covered = daily.uncovered = daily.coverage = daily.dayStatus = { textContent: "" };
+    daily.renderWeek = daily.renderTimeline = daily.renderPlanStatus = () => {};
+    let dailyB;
+    daily.renderItems = (metrics) => { dailyB = metrics.items.find(({ id }) => id === "b"); };
+    daily.render();
+
+    assert.equal(shiftedB.startMs, Date.parse("2026-08-23T20:35:00+02:00"));
+    assert.equal(dailyB.startMs, shiftedB.startMs);
+    assert.match(nodes.get("#studio-schedule-next").textContent, /^20:35:00 /);
+    assert.equal(hard.startMs, Date.parse("2026-08-23T21:00:00+02:00"));
+    assert.equal(JSON.stringify(stored), persistedBefore,
+        "runtime display derivation must not rewrite ScheduleStore data");
+    assert.equal(calculateEffectiveSchedule(stored).items.find(({ id }) => id === "b").startMs,
+        Date.parse("2026-08-23T20:30:00+02:00"),
+        "a new runtime session derives again from the canonical schedule");
+    summary.destroy();
 });
 
 test("Scheduler label reflects enabled state instead of the inverse action", () => {

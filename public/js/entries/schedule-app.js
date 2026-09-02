@@ -53,7 +53,9 @@ const scheduleUI = new ScheduleWorkspaceUI({
     root: workspace,
     store: scheduleStore,
     catalog,
-    assetLibrary
+    assetLibrary,
+    assetResolver,
+    mediaLibraryManager
 });
 const assetsUI = new StudioAssetsUI(workspace, assetLibrary);
 const liveSourcesUI = new StudioLiveSourcesUI(

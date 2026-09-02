@@ -29,6 +29,16 @@ export default class MediaLibraryRoutes {
             const asset = this.repository.get(id);
             return asset ? this.success(response, 200, { asset }) : this.failure(response, 404, "ASSET_NOT_FOUND", "Asset was not found.");
         }
+        if (match && request.method === "PATCH") {
+            try {
+                const id = decodeURIComponent(match[1]);
+                if (!ID_PATTERN.test(id)) return this.failure(response, 400, "ASSET_ID_INVALID", "Asset ID is invalid.");
+                const body = await this.readJson(request);
+                const asset = await this.repository.updateMetadata(id, body?.metadata);
+                return this.success(response, 200, { asset });
+            }
+            catch (error) { return this.repositoryFailure(response, error); }
+        }
         if (match && request.method === "DELETE") {
             try {
                 const id = decodeURIComponent(match[1]);
@@ -103,11 +113,33 @@ export default class MediaLibraryRoutes {
         return { start, end: Math.min(end, size - 1) };
     }
 
+    async readJson(request, maxBytes = 4096) {
+        const type = String(request.headers["content-type"] || "").toLowerCase();
+        if (!type.startsWith("application/json")) {
+            throw Object.assign(new Error("Expected application/json."), {
+                code: "CONTENT_TYPE_INVALID"
+            });
+        }
+        const chunks = []; let size = 0;
+        for await (const chunk of request) {
+            size += chunk.length;
+            if (size > maxBytes) throw Object.assign(new Error("Metadata payload is too large."), {
+                code: "METADATA_TOO_LARGE"
+            });
+            chunks.push(chunk);
+        }
+        try { return JSON.parse(Buffer.concat(chunks).toString("utf8")); }
+        catch { throw Object.assign(new Error("Metadata JSON is invalid."), {
+            code: "ASSET_METADATA_INVALID"
+        }); }
+    }
+
     repositoryFailure(response, error) {
         const status = ({ UPLOAD_TOO_LARGE: 413, ASSET_NOT_FOUND: 404, ASSET_REFERENCED: 409,
             MIME_MISMATCH: 415, UNSUPPORTED_TYPE: 415, SIGNATURE_MISMATCH: 422,
             CLIENT_PATH_REJECTED: 400, PATH_INVALID: 400, ASSET_ID_INVALID: 400,
-            UPLOAD_INVALID: 400, UPLOAD_ABORTED: 400 })[error?.code] || 500;
+            UPLOAD_INVALID: 400, UPLOAD_ABORTED: 400, CONTENT_TYPE_INVALID: 415,
+            METADATA_TOO_LARGE: 413, ASSET_METADATA_INVALID: 400 })[error?.code] || 500;
         return this.failure(response, status, error?.code || "INTERNAL_ERROR", error?.message || "Internal error.");
     }
     success(response, status, value) { response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" }); response.end(JSON.stringify({ ok: true, ...value })); return true; }

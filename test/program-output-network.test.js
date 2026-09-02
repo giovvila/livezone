@@ -393,6 +393,92 @@ test("Public HLS uses the canonical audio gate and preserves permission across r
     finally { globalThis.document = previousDocument; }
 });
 
+test("Public VIDEO exposes the page audio gate and unlocks the same element", async () => {
+    const previousDocument = globalThis.document;
+    const created = [];
+    globalThis.document = { createElement(tagName) {
+        const element = new FakePublicElement(tagName);
+        created.push(element);
+        return element;
+    } };
+    try {
+        const audioButton = { hidden: true };
+        const controller = new PublicProgramController({ root: null, status: null,
+            audioButton, transport: {}, now: () => Date.parse("2026-08-21T10:00:05Z") });
+        controller.waitForReady = async () => {};
+        controller.seekRecordedMedia = async () => {};
+        const value = { ...snapshot(),
+            scene: { id: "video", name: "VIDEO", type: "MEDIA" },
+            source: { id: "video", kind: "media", url: "/video.mp4" },
+            playback: { initialTime: 40, duration: 120, playing: true, ended: false,
+                state: "playing", startedAt: "2026-08-21T10:00:00Z" } };
+        const root = new FakePublicElement("div");
+        const cleanup = await controller.createSource(root, value);
+        const video = created[0];
+        video.currentTime = 45;
+        controller.current = { snapshot: value,
+            layer: { querySelector: () => video }, cleanup };
+        controller.syncCurrentAudioButton();
+        assert.equal(video.muted, true);
+        assert.equal(video.defaultMuted, true);
+        assert.equal(audioButton.hidden, false,
+            "visible VIDEO must not omit ENABLE AUDIO before authorization");
+
+        controller.enableAudio();
+        await Promise.resolve(); await Promise.resolve();
+        assert.equal(controller.current.layer.querySelector("video"), video);
+        assert.equal(video.currentTime, 45);
+        assert.equal(video.muted, false);
+        assert.equal(video.defaultMuted, false);
+        assert.equal(controller.audioEnabled, true);
+        assert.equal(audioButton.hidden, true);
+        cleanup();
+    }
+    finally { globalThis.document = previousDocument; }
+});
+
+test("Public VIDEO repeated NotAllowed recovery survives replacement and clears on end", async () => {
+    const blocked = () => { const error = new Error("gesture required");
+        error.name = "NotAllowedError"; return error; };
+    const audioButton = { hidden: false };
+    const controller = new PublicProgramController({ root: null, status: null,
+        audioButton, transport: {} });
+    const first = new FakePublicElement("video");
+    first.currentTime = 61;
+    first.play = async () => { first.playCalls += 1; throw blocked(); };
+    const firstSnapshot = { ...snapshot(), source: { id: "one", kind: "media", url: "/one.mp4" },
+        playback: { initialTime: 0, duration: 120, playing: true, ended: false,
+            state: "playing", startedAt: "2026-08-21T10:00:00Z" } };
+    controller.current = { snapshot: firstSnapshot, layer: { querySelector: () => first } };
+    controller.enableAudio();
+    await Promise.resolve(); await Promise.resolve();
+    assert.equal(controller.audioEnabled, true);
+    assert.equal(controller.audioBlockedElement, first);
+    assert.equal(audioButton.hidden, false);
+    assert.equal(first.currentTime, 61);
+    controller.enableAudio();
+    await Promise.resolve(); await Promise.resolve();
+    assert.equal(controller.audioBlockedElement, first);
+    assert.equal(audioButton.hidden, false);
+
+    const second = new FakePublicElement("video");
+    second.play = async () => { second.playCalls += 1; throw blocked(); };
+    const secondSnapshot = { ...firstSnapshot,
+        source: { id: "two", kind: "media", url: "/two.mp4" } };
+    controller.current = { snapshot: secondSnapshot, layer: { querySelector: () => second } };
+    try { await second.play(); }
+    catch (error) { controller.handleAutoplayRejection(error, second); }
+    controller.syncCurrentAudioButton();
+    assert.equal(second.playCalls, 1);
+    assert.equal(controller.audioBlockedElement, second);
+    assert.equal(audioButton.hidden, false);
+
+    second.dispatchEvent(new Event("ended"));
+    secondSnapshot.playback.ended = true;
+    controller.syncCurrentAudioButton();
+    assert.equal(audioButton.hidden, true);
+});
+
 test("Public HLS exposes only NotAllowedError and fullscreen does not unlock audio", async () => {
     const controller = new PublicProgramController({ root: null, status: null,
         audioButton: { hidden: true }, transport: {} });

@@ -34,6 +34,7 @@ import ScheduleStore from "../scheduler/ScheduleStore.js";
 import SchedulerEngine from "../scheduler/SchedulerEngine.js";
 import SchedulerRuntimeState from "../scheduler/SchedulerRuntimeState.js";
 import StudioProgramCommand from "../scheduler/StudioProgramCommand.js";
+import ScheduleTargetResolver from "../scheduler/ScheduleTargetResolver.js";
 import { createProgramOutputTransport } from
     "../program-output/ProgramOutputTransportFactory.js";
 import LiveSourceMonitor from "../studio/LiveSourceMonitor.js";
@@ -178,10 +179,18 @@ runtime.start({
         );
         studioUI.start();
 
+        const scheduleTargetResolver = new ScheduleTargetResolver({
+            catalog: studioCatalogManager
+        });
+        const dominantLiveTargetResolver = new ScheduleTargetResolver({
+            catalog: studioCatalogManager,
+            namespace: "dominant-live-source"
+        });
         const studioProgramCommand = new StudioProgramCommand({
             stateManager: StudioStateManager,
             catalog: studioCatalogManager,
-            transitionCoordinator: studioTransitionCoordinator
+            transitionCoordinator: studioTransitionCoordinator,
+            targetResolver: scheduleTargetResolver
         });
         schedulerEngine = new SchedulerEngine({
             command: studioProgramCommand,
@@ -205,7 +214,8 @@ runtime.start({
             catalog: studioCatalogManager,
             clockTicker: scheduleClock,
             readOnly: true,
-            editorUrl: "./schedule/"
+            editorUrl: "./schedule/",
+            schedulerEngine
         });
         scheduleWorkspaceUI.start();
         programRemainingTimeUI = new ProgramRemainingTimeUI({
@@ -267,6 +277,7 @@ runtime.start({
             monitor: dominantHealthMonitor,
             scheduler: schedulerEngine,
             command: studioProgramCommand,
+            targetResolver: dominantLiveTargetResolver,
             probeDiagnosticsProvider: () => dominantProbeDiagnostics
         });
         dominantLiveController.start();

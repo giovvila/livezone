@@ -5,13 +5,15 @@ export const ONLINE_STABLE_MS = 3000;
 export const LOSS_GRACE_MS = 3000;
 
 export default class DominantLiveController {
-    constructor({ config, catalog, monitor, scheduler, command, eventBus = EventBus,
+    constructor({ config, catalog, monitor, scheduler, command, targetResolver = null,
+        eventBus = EventBus,
         clock = () => Date.now(), setTimer = globalThis.setTimeout,
         clearTimer = globalThis.clearTimeout, onlineStableMs = ONLINE_STABLE_MS,
         lossGraceMs = LOSS_GRACE_MS, uuidFactory = () => globalThis.crypto?.randomUUID?.(),
         probeDiagnosticsProvider = () => ({}), monotonicClock = () =>
             globalThis.performance?.now?.() ?? Date.now() } = {}) {
-        Object.assign(this, { config, catalog, monitor, scheduler, command, eventBus, clock,
+        Object.assign(this, { config, catalog, monitor, scheduler, command, targetResolver,
+            eventBus, clock,
             onlineStableMs, lossGraceMs, uuidFactory });
         this.probeDiagnosticsProvider = typeof probeDiagnosticsProvider === "function"
             ? probeDiagnosticsProvider : () => ({});
@@ -91,7 +93,8 @@ export default class DominantLiveController {
             onlineElapsedMs: elapsed(this.timeline.onlineAt) }); }
     getPreflightDiagnostics() { const setting = this.config?.getSnapshot?.() || {};
         const source = this.getAuthorizedSource(); const scheduler = this.schedulerSnapshot;
-        const sceneId = source?.sceneIds?.[0] || null; let waitingReason = null;
+        const target = this.resolveTarget(source); const sceneId = target?.sceneId || null;
+        let waitingReason = null;
         if (!this.started) waitingReason = "WAITING_NOT_STARTED";
         else if (!setting.armed) waitingReason = "WAITING_ARMED_FALSE";
         else if (!source) waitingReason = "WAITING_SOURCE_INVALID";
@@ -104,7 +107,8 @@ export default class DominantLiveController {
         else if (this.stableTimer !== null) waitingReason = "WAITING_STABILIZING";
         else if (this.attemptGeneration === this.generation) waitingReason = "WAITING_ATTEMPT_RECORDED";
         return Object.freeze({ resolvedSourceId: source?.id || null,
-            resolvedSceneId: sceneId, schedulerEnabled: scheduler?.enabled === true,
+            resolvedSceneId: sceneId, resolvedTarget: target?.kind || null,
+            schedulerEnabled: scheduler?.enabled === true,
             schedulerStatus: scheduler?.status || null,
             activeItemId: scheduler?.activeItem?.id || null,
             interruptionState: scheduler?.interruptionContext ? "ACTIVE" : "NONE",
@@ -131,6 +135,15 @@ export default class DominantLiveController {
     getAuthorizedSource() { const id = this.config?.getSnapshot?.().authorizedSourceId;
         return this.catalog?.getSources?.().find((source) => source.id === id &&
             source.kind === "hls" && source.enabled !== false) || null; }
+    resolveTarget(source) {
+        const persistentSceneId = source?.sceneIds?.find((id) => this.catalog.getDefinition(id)) || null;
+        if (persistentSceneId) return Object.freeze({ kind: "persistent-scene",
+            sceneId: persistentSceneId });
+        if (!source || source.kind !== "hls") return null;
+        const runtime = this.targetResolver?.resolve?.({ kind: "source", id: source.id });
+        return runtime?.sceneId ? Object.freeze({ kind: "runtime-source",
+            sceneId: runtime.sceneId }) : null;
+    }
     handleHealth(snapshot) { if (!this.started || snapshot.sourceId !== this.getAuthorizedSource()?.id) return;
         const previousState = this.health.state;
         this.health = snapshot;
@@ -170,12 +183,14 @@ export default class DominantLiveController {
         this.attemptGeneration = generation; this.acquisitionState = "ACQUIRING";
         this.timeline = Object.freeze({ ...this.timeline, acquisitionAt: this.monotonicClock() });
         const setting = this.config.getSnapshot(); const scheduler = this.scheduler.getSnapshot();
-        const resolvedSource = this.getAuthorizedSource(); const sceneId = source?.sceneIds?.[0] || null;
+        const resolvedSource = this.getAuthorizedSource(); const target = this.resolveTarget(source);
+        const sceneId = target?.sceneId || null;
         const busy = this.command?.transitionCoordinator?.isBusy?.() === true;
         this.attemptDiagnostics = Object.freeze({ healthGeneration: this.health.generation ?? null,
             attemptGeneration: generation, armedAtAttempt: setting.armed === true,
             authorizedSourceIdAtAttempt: setting.authorizedSourceId || null,
             resolvedSourceId: resolvedSource?.id || null, resolvedSceneId: sceneId,
+            resolvedTarget: target?.kind || null,
             latchedAtAttempt: this.latched, schedulerEnabled: scheduler?.enabled === true,
             schedulerStatus: scheduler?.status || null, activeItemId: scheduler?.activeItem?.id || null,
             interruptionState: scheduler?.interruptionContext ? "ACTIVE" : "NONE",
@@ -189,7 +204,7 @@ export default class DominantLiveController {
         if (!setting.armed) return this.block("ARMED_FALSE");
         if (this.latched) return this.block("LATCHED");
         if (!resolvedSource || resolvedSource.id !== source?.id) return this.block("SOURCE_INVALID");
-        if (!sceneId || !this.catalog.getDefinition(sceneId)) return this.block("SCENE_MISSING");
+        if (!sceneId || !this.catalog.getDefinition(sceneId)) return this.block("TARGET_UNAVAILABLE");
         if (!scheduler?.enabled) return this.block("SCHEDULER_DISABLED");
         if (scheduler.interruptionContext) return this.block("EXISTING_INTERRUPTION");
         const eligibility = this.scheduler.getInterruptionEligibility?.({
@@ -212,7 +227,8 @@ export default class DominantLiveController {
         this.pendingSession = session; this.emit();
         this.updateAttempt({ commandAttempted: true, commandResult: "CALLED" });
         let result;
-        try { result = await this.command.execute({ sceneId, transition: "CUT", origin: "dominant-live" }); }
+        try { result = await this.command.execute({ sceneId,
+            transition: "CUT", origin: "dominant-live" }); }
         catch (error) { this.pendingSession = null; this.scheduler.endInterruption(this.clock());
             this.error = "command-threw"; this.acquisitionState = "ERROR"; this.latched = true;
             this.lastError = this.error;

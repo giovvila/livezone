@@ -38,6 +38,8 @@ export default class StudioMediaSurface {
         this.transportListeners = new Set();
         this.transportError = false;
         this.transportEnded = false;
+        this.autoplayBlocked = false;
+        this.audioRecoveryButton = null;
         this.handleLoadedData = this.handleLoadedData.bind(this);
         this.handleCanPlay = this.handleCanPlay.bind(this);
         this.handlePlaying = this.handlePlaying.bind(this);
@@ -48,6 +50,7 @@ export default class StudioMediaSurface {
         this.handleLoadedMetadata = this.handleLoadedMetadata.bind(this);
         this.handleSeeked = this.handleSeeked.bind(this);
         this.handleTransportUpdate = this.handleTransportUpdate.bind(this);
+        this.handleAudioRecovery = this.handleAudioRecovery.bind(this);
     }
 
     async start(root) {
@@ -93,6 +96,7 @@ export default class StudioMediaSurface {
 
     handlePlaying() {
         this.transportEnded = false;
+        if (!this.video?.muted && this.video?.paused !== true) this.clearAudioRecovery();
         this.markReadyIfFrameAvailable();
         this.notifyTransport();
     }
@@ -109,6 +113,7 @@ export default class StudioMediaSurface {
 
     handleEnded() {
         this.transportEnded = true;
+        this.clearAudioRecovery();
         this.setHealth("ended", null);
         this.notifyTransport();
     }
@@ -206,6 +211,72 @@ export default class StudioMediaSurface {
             this.setHealth("connecting", "autoplay");
             return false;
         }
+    }
+
+    async activateProgram() {
+        if (this.consumer !== "program" || !this.video || this.destroyed ||
+            this.transportEnded || this.video.ended) return false;
+        const video = this.video;
+        this.setMuted(false);
+        try {
+            await video.play();
+            if (this.destroyed || this.video !== video) return false;
+            this.clearAudioRecovery();
+            this.setHealth("ready", null);
+            return true;
+        }
+        catch (error) {
+            if (this.destroyed || this.video !== video) return false;
+            if (error?.name === "NotAllowedError") {
+                this.autoplayBlocked = true;
+                this.setMuted(true);
+                this.showAudioRecovery();
+                this.setHealth("connecting", "autoplay");
+                void video.play().catch(() => {});
+            }
+            else this.setHealth("error", "playback");
+            return false;
+        }
+    }
+
+    deactivateProgram() {
+        if (this.consumer !== "program" || !this.video) return false;
+        this.setMuted(true);
+        return true;
+    }
+
+    async handleAudioRecovery() {
+        if (!this.autoplayBlocked || this.consumer !== "program" || !this.video ||
+            this.destroyed || this.transportEnded || this.video.ended) return;
+        await this.activateProgram();
+    }
+
+    setMuted(muted) {
+        if (!this.video) return;
+        this.video.muted = muted;
+        this.video.defaultMuted = muted;
+        if (muted) this.video.setAttribute?.("muted", "");
+        else this.video.removeAttribute?.("muted");
+    }
+
+    showAudioRecovery() {
+        if (this.consumer !== "program" || this.destroyed || this.transportEnded ||
+            this.video?.ended || this.audioRecoveryButton) return;
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "studio-render-audio-recovery";
+        button.textContent = "ENABLE AUDIO";
+        button.addEventListener("click", this.handleAudioRecovery);
+        this.root?.appendChild(button);
+        this.audioRecoveryButton = button;
+    }
+
+    clearAudioRecovery() {
+        this.autoplayBlocked = false;
+        if (!this.audioRecoveryButton) return;
+        this.audioRecoveryButton.removeEventListener("click", this.handleAudioRecovery);
+        this.audioRecoveryButton.remove();
+        this.audioRecoveryButton = null;
     }
 
     completeInitialCue() {
@@ -430,6 +501,7 @@ export default class StudioMediaSurface {
         }
 
         this.destroyed = true;
+        this.clearAudioRecovery();
         this.failReadiness("destroyed-before-ready");
         this.notifyTransport();
 
