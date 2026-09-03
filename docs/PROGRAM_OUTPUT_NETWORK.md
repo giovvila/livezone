@@ -45,6 +45,29 @@ Studio TAKE.
   Control-PC-only `localhost`, `file:` paths, or private paths inaccessible to
   viewers.
 
+## Runtime configuration and health
+
+The Node listener defaults remain development-compatible: `LIVEZONE_HTTP_HOST`
+defaults to `0.0.0.0` and `PORT` defaults to `8080`. Set the host to
+`127.0.0.1` when a same-host reverse proxy is introduced in a later Phase 2C
+block. Invalid host or port values fail startup instead of falling back.
+
+`GET /healthz` is pure Node process liveness. It returns HTTP 200 whenever the
+server can answer, regardless of MediaMTX, OBS or HLS state.
+
+`GET /readyz` checks application readiness. Writable Media Library storage is
+required and its failure returns HTTP 503. Program Output is ready once the
+server is initialized. MediaMTX Control API availability is an optional ingest
+dependency: its failure returns a sanitized HTTP 200 `degraded` result because
+the web/control and recorded-media application remains usable. An offline OBS
+publisher, including the expected HLS 404 while no publisher exists, does not
+make the application unready. Live ingest state remains available separately
+from `GET /api/media-ingest/status`.
+
+Neither endpoint returns configured URLs, filesystem paths, environment values,
+credentials, tokens or stack traces. See `.env.example` for the supported
+non-secret runtime configuration contract.
+
 Retention is in memory. A server restart loses the retained snapshot. Connected
 viewers keep their last valid Program while EventSource reconnects; Control must
 publish another meaningful revision (or restart its publisher session) after a

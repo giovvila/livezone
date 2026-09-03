@@ -3,12 +3,14 @@ import { createReadStream, statSync } from "node:fs";
 import { extname, join, normalize, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { timingSafeEqual } from "node:crypto";
+import { isIP } from "node:net";
 import ProgramOutputStore from "./program-output/ProgramOutputStore.js";
 import MediaAssetRepository from "./media-library/MediaAssetRepository.js";
 import MediaLibraryRoutes from "./media-library/MediaLibraryRoutes.js";
 import MediaIngestConfig from "./media-ingest/MediaIngestConfig.js";
 import MediaIngestStatusClient from "./media-ingest/MediaIngestStatusClient.js";
 import MediaIngestRoutes from "./media-ingest/MediaIngestRoutes.js";
+import RuntimeReadiness from "./runtime/RuntimeReadiness.js";
 
 const MAX_BODY_BYTES = 64 * 1024;
 const SSE_KEEPALIVE_MS = 15000;
@@ -27,19 +29,29 @@ export function createProgramOutputServer({
     allowedOrigins = parseOrigins(process.env.LIVEZONE_ALLOWED_ORIGINS),
     store = new ProgramOutputStore(),
     mediaLibraryRoot = process.env.LIVEZONE_MEDIA_LIBRARY_ROOT || DEFAULT_MEDIA_LIBRARY_ROOT,
-    mediaLibraryMaxBytes = Number.parseInt(process.env.LIVEZONE_MEDIA_LIBRARY_MAX_BYTES || String(2 * 1024 ** 3), 10),
+    mediaLibraryMaxBytes = parseMediaLibraryMaxBytes(
+        process.env.LIVEZONE_MEDIA_LIBRARY_MAX_BYTES),
     mediaAssetRepository = new MediaAssetRepository({ root: mediaLibraryRoot }),
     mediaIngestConfig = MediaIngestConfig.fromEnvironment(),
-    mediaIngestStatusClient = new MediaIngestStatusClient({ config: mediaIngestConfig })
+    mediaIngestStatusClient = new MediaIngestStatusClient({ config: mediaIngestConfig }),
+    readiness
 } = {}) {
     if (typeof publisherToken !== "string" || publisherToken.length < 16) {
         throw new Error("LIVEZONE_PROGRAM_OUTPUT_TOKEN must contain at least 16 characters.");
     }
+    if (!Number.isSafeInteger(mediaLibraryMaxBytes) || mediaLibraryMaxBytes < 1) {
+        throw new TypeError("LIVEZONE_MEDIA_LIBRARY_MAX_BYTES must be a positive integer.");
+    }
     const clients = new Set();
     const mediaReady = mediaAssetRepository.initialize();
+    // Readiness and Media Library requests still observe this rejection. Attach a
+    // handler immediately so delayed probes cannot produce an unhandled rejection.
+    mediaReady.catch(() => {});
     const mediaRoutes = new MediaLibraryRoutes({ repository: mediaAssetRepository,
         maxUploadBytes: mediaLibraryMaxBytes });
     const mediaIngestRoutes = new MediaIngestRoutes({ statusClient: mediaIngestStatusClient });
+    const runtimeReadiness = readiness || new RuntimeReadiness({ mediaReady,
+        mediaAssetRepository, mediaIngestStatusClient });
     const unsubscribe = store.subscribe((envelope) => {
         const event = formatSse(envelope);
         clients.forEach((response) => {
@@ -54,6 +66,15 @@ export function createProgramOutputServer({
     const server = createServer(async (request, response) => {
         try {
             const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
+            if (url.pathname === "/healthz" && request.method === "GET") {
+                sendJson(response, 200, { ok: true, service: "livezone", status: "alive" });
+                return;
+            }
+            if (url.pathname === "/readyz" && request.method === "GET") {
+                const result = await runtimeReadiness.evaluate();
+                sendJson(response, result.ok ? 200 : 503, result);
+                return;
+            }
             if (await mediaIngestRoutes.handle(request, response, url)) return;
             if (url.pathname.startsWith("/api/media-library/") ||
                 url.pathname.startsWith("/media-library/files/")) {
@@ -91,6 +112,53 @@ export function createProgramOutputServer({
         clients.clear();
     });
     return { server, store, clients };
+}
+
+export function parseHttpBindConfig(environment = process.env) {
+    const host = environment.LIVEZONE_HTTP_HOST === undefined
+        ? "0.0.0.0" : validateBindHost(environment.LIVEZONE_HTTP_HOST);
+    const rawPort = environment.PORT === undefined ? "8080" : environment.PORT;
+    if (typeof rawPort !== "string" || !/^[0-9]{1,5}$/.test(rawPort)) {
+        throw new TypeError("PORT must be an integer between 1 and 65535.");
+    }
+    const port = Number(rawPort);
+    if (port < 1 || port > 65535) {
+        throw new TypeError("PORT must be an integer between 1 and 65535.");
+    }
+    return Object.freeze({ host, port });
+}
+
+function parseMediaLibraryMaxBytes(value) {
+    if (value === undefined || value === "") return 2 * 1024 ** 3;
+    if (typeof value !== "string" || !/^[0-9]+$/.test(value)) return Number.NaN;
+    return Number(value);
+}
+
+export function startProgramOutputServer({ environment = process.env,
+    serverFactory = createProgramOutputServer, logger = console } = {}) {
+    const { host, port } = parseHttpBindConfig(environment);
+    const result = serverFactory();
+    result.server.listen(port, host, () => {
+        logger.log(`LIVEZONE Program Output server listening on http://${host}:${port}`);
+    });
+    return result;
+}
+
+function validateBindHost(value) {
+    if (typeof value !== "string" || value !== value.trim() || !value ||
+        value.length > 253 || /\s/.test(value)) {
+        throw new TypeError("LIVEZONE_HTTP_HOST must be an IP address or hostname.");
+    }
+    if (isIP(value) || value === "localhost") return value;
+    if (/[/:?#@\[\]]/.test(value)) {
+        throw new TypeError("LIVEZONE_HTTP_HOST must be an IP address or hostname.");
+    }
+    const labels = value.split(".");
+    if (labels.some((label) => !label || label.length > 63 ||
+        !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(label))) {
+        throw new TypeError("LIVEZONE_HTTP_HOST must be an IP address or hostname.");
+    }
+    return value;
 }
 
 async function handlePublish(request, response, { publisherToken, allowedOrigins, store }) {
@@ -285,9 +353,5 @@ function publishCorsHeaders(request, allowedOrigins) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-    const port = Number.parseInt(process.env.PORT || "8080", 10);
-    const { server } = createProgramOutputServer();
-    server.listen(port, "0.0.0.0", () => {
-        console.log(`LIVEZONE Program Output server listening on http://0.0.0.0:${port}`);
-    });
+    startProgramOutputServer();
 }
