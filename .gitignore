@@ -1,5 +1,7 @@
 /var/media-library/*
 /var/runtime/mediamtx/*
+/var/runtime/winsw/*
+/var/log/livezone/*
 /node_modules/
 .env
 .env.local

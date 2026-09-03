@@ -1,0 +1,21 @@
+<service>
+  <id>LivezoneNode</id>
+  <name>LIVEZONE Node</name>
+  <description>LIVEZONE Program Output web, API and SSE server.</description>
+  <executable>__NODE_EXECUTABLE__</executable>
+  <arguments>--env-file-if-exists=__ENV_PATH__ __NODE_SERVER__</arguments>
+  <workingdirectory>__REPOSITORY_ROOT__</workingdirectory>
+  <hidewindow>true</hidewindow>
+  <startmode>Automatic</startmode>
+  <delayedAutoStart>true</delayedAutoStart>
+  <stoptimeout>15 sec</stoptimeout>
+  <onfailure action="restart" delay="10 sec" />
+  <onfailure action="restart" delay="30 sec" />
+  <onfailure action="none" />
+  <resetfailure>1 hour</resetfailure>
+  <logpath>__LOG_DIRECTORY__</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>8</keepFiles>
+  </log>
+</service>
