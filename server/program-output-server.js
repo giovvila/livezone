@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { createReadStream, statSync } from "node:fs";
-import { extname, join, normalize, relative } from "node:path";
+import { extname, join, normalize, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { timingSafeEqual } from "node:crypto";
 import { isIP } from "node:net";
@@ -13,11 +13,15 @@ import MediaIngestRoutes from "./media-ingest/MediaIngestRoutes.js";
 import RuntimeReadiness from "./runtime/RuntimeReadiness.js";
 import OperatorAuth from "./auth/OperatorAuth.js";
 import OperatorRequestGuard from "./auth/OperatorRequestGuard.js";
+import AuthoritativeStateRepository from "./studio/AuthoritativeStateRepository.js";
+import StudioStateCoordinator from "./studio/StudioStateCoordinator.js";
+import StudioStateRoutes from "./studio/StudioStateRoutes.js";
 
 const MAX_BODY_BYTES = 64 * 1024;
 const SSE_KEEPALIVE_MS = 15000;
 const PUBLIC_ROOT = fileURLToPath(new URL("../public/", import.meta.url));
 const DEFAULT_MEDIA_LIBRARY_ROOT = fileURLToPath(new URL("../var/media-library/", import.meta.url));
+const DEFAULT_STUDIO_STATE_PATH = fileURLToPath(new URL("../var/studio-state/state.json", import.meta.url));
 const MIME_TYPES = new Map([
     [".html", "text/html; charset=utf-8"], [".js", "text/javascript; charset=utf-8"],
     [".css", "text/css; charset=utf-8"], [".json", "application/json; charset=utf-8"],
@@ -38,8 +42,12 @@ export function createProgramOutputServer({
     mediaIngestStatusClient = new MediaIngestStatusClient({ config: mediaIngestConfig }),
     operatorAuth = OperatorAuth.fromEnvironment(),
     operatorAllowedOrigins = parseOrigins(process.env.LIVEZONE_OPERATOR_ALLOWED_ORIGINS),
+    studioStatePath = process.env.LIVEZONE_STUDIO_STATE_PATH || DEFAULT_STUDIO_STATE_PATH,
+    authoritativeStateRepository = new AuthoritativeStateRepository({ path: studioStatePath }),
+    studioStateCoordinator = new StudioStateCoordinator({ repository: authoritativeStateRepository }),
     readiness
 } = {}) {
+    assertPrivateStudioStatePath(studioStatePath);
     if (typeof publisherToken !== "string" || publisherToken.length < 16) {
         throw new Error("LIVEZONE_PROGRAM_OUTPUT_TOKEN must contain at least 16 characters.");
     }
@@ -56,6 +64,9 @@ export function createProgramOutputServer({
     const mediaIngestRoutes = new MediaIngestRoutes({ statusClient: mediaIngestStatusClient });
     const operatorGuard = new OperatorRequestGuard({ auth: operatorAuth,
         allowedOrigins: operatorAllowedOrigins });
+    const studioStateReady = studioStateCoordinator.initialize();
+    studioStateReady.catch(() => {});
+    const studioStateRoutes = new StudioStateRoutes({ coordinator: studioStateCoordinator });
     const runtimeReadiness = readiness || new RuntimeReadiness({ mediaReady,
         mediaAssetRepository, mediaIngestStatusClient });
     const unsubscribe = store.subscribe((envelope) => {
@@ -83,7 +94,10 @@ export function createProgramOutputServer({
             }
             if (url.pathname === "/readyz" && request.method === "GET") {
                 const result = await runtimeReadiness.evaluate();
-                sendJson(response, result.ok ? 200 : 503, result);
+                await studioStateReady.catch(() => {});
+                const studioState = studioStateCoordinator.getStatus().status.toLowerCase();
+                sendJson(response, result.ok ? 200 : 503, { ...result,
+                    checks: { ...result.checks, studioState } });
                 return;
             }
             if (url.pathname === "/api/operator/session" && request.method === "GET") {
@@ -120,6 +134,14 @@ export function createProgramOutputServer({
                 await mediaReady;
                 if (await mediaRoutes.handle(request, response, url)) return;
             }
+            if (url.pathname.startsWith("/api/studio/state")) {
+                const authorized = request.method === "POST"
+                    ? operatorGuard.authorizeMutation(request, response)
+                    : operatorGuard.authorize(request, response);
+                if (!authorized) return;
+                await studioStateReady;
+                if (await studioStateRoutes.handle(request, response, url)) return;
+            }
             if (url.pathname === "/api/program-output" && request.method === "OPTIONS") {
                 handlePublishOptions(request, response, allowedOrigins);
                 return;
@@ -148,10 +170,19 @@ export function createProgramOutputServer({
     });
     server.on("close", () => {
         unsubscribe();
+        studioStateRoutes.close();
         clients.forEach((response) => response.end());
         clients.clear();
     });
-    return { server, store, clients };
+    return { server, store, clients, studioStateCoordinator };
+}
+
+function assertPrivateStudioStatePath(path) {
+    const target = resolve(path);
+    const relation = relative(PUBLIC_ROOT, target);
+    if (!relation || !relation.startsWith("..") && !relation.includes(":")) {
+        throw new TypeError("LIVEZONE_STUDIO_STATE_PATH must be outside the public web root.");
+    }
 }
 
 function handleOperatorSession(request, response, guard) {

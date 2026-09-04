@@ -26,7 +26,8 @@ test("readyz reports usable dependencies and OBS offline remains ready", async (
         assert.equal(response.status, 200);
         assert.deepEqual(await response.json(), {
             ok: true, service: "livezone", status: "ready", checks: {
-                mediaLibrary: "ok", programOutput: "ok", mediaIngestControl: "ok"
+                mediaLibrary: "ok", programOutput: "ok", mediaIngestControl: "ok",
+                studioState: "uninitialized"
             }
         });
     }, { mediaIngestStatusClient: statusClient("offline") });
@@ -39,7 +40,7 @@ test("readyz degrades safely when optional MediaMTX control is unavailable", asy
         assert.deepEqual(await response.json(), {
             ok: true, service: "livezone", status: "degraded", checks: {
                 mediaLibrary: "ok", programOutput: "ok",
-                mediaIngestControl: "degraded"
+                mediaIngestControl: "degraded", studioState: "uninitialized"
             }
         });
     }, { mediaIngestStatusClient: statusClient("error") });
@@ -58,7 +59,7 @@ test("readyz returns sanitized 503 when Media Library storage is unavailable", a
         assert.deepEqual(JSON.parse(body), {
             ok: false, service: "livezone", status: "not-ready", checks: {
                 mediaLibrary: "unavailable", programOutput: "ok",
-                mediaIngestControl: "ok"
+                mediaIngestControl: "ok", studioState: "uninitialized"
             }
         });
         assert.equal(body.includes(secret), false);
