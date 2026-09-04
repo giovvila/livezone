@@ -14,7 +14,11 @@ test("Control Room entry loads its production dependency graph", async () => {
         getItem() { return null; },
         setItem() {}
     };
+    let fetchCount = 0;
     globalThis.fetch = async () => {
+        fetchCount += 1;
+        if (fetchCount === 1) return { ok: true,
+            json: async () => ({ authenticated: true, csrfToken: "test-csrf" }) };
         throw new Error("controlled boot stop");
     };
 

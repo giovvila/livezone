@@ -11,6 +11,8 @@ import MediaIngestConfig from "./media-ingest/MediaIngestConfig.js";
 import MediaIngestStatusClient from "./media-ingest/MediaIngestStatusClient.js";
 import MediaIngestRoutes from "./media-ingest/MediaIngestRoutes.js";
 import RuntimeReadiness from "./runtime/RuntimeReadiness.js";
+import OperatorAuth from "./auth/OperatorAuth.js";
+import OperatorRequestGuard from "./auth/OperatorRequestGuard.js";
 
 const MAX_BODY_BYTES = 64 * 1024;
 const SSE_KEEPALIVE_MS = 15000;
@@ -34,6 +36,8 @@ export function createProgramOutputServer({
     mediaAssetRepository = new MediaAssetRepository({ root: mediaLibraryRoot }),
     mediaIngestConfig = MediaIngestConfig.fromEnvironment(),
     mediaIngestStatusClient = new MediaIngestStatusClient({ config: mediaIngestConfig }),
+    operatorAuth = OperatorAuth.fromEnvironment(),
+    operatorAllowedOrigins = parseOrigins(process.env.LIVEZONE_OPERATOR_ALLOWED_ORIGINS),
     readiness
 } = {}) {
     if (typeof publisherToken !== "string" || publisherToken.length < 16) {
@@ -50,6 +54,8 @@ export function createProgramOutputServer({
     const mediaRoutes = new MediaLibraryRoutes({ repository: mediaAssetRepository,
         maxUploadBytes: mediaLibraryMaxBytes });
     const mediaIngestRoutes = new MediaIngestRoutes({ statusClient: mediaIngestStatusClient });
+    const operatorGuard = new OperatorRequestGuard({ auth: operatorAuth,
+        allowedOrigins: operatorAllowedOrigins });
     const runtimeReadiness = readiness || new RuntimeReadiness({ mediaReady,
         mediaAssetRepository, mediaIngestStatusClient });
     const unsubscribe = store.subscribe((envelope) => {
@@ -65,7 +71,12 @@ export function createProgramOutputServer({
     });
     const server = createServer(async (request, response) => {
         try {
-            const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
+            const url = parseRequestUrl(request.url, request.headers.host || "localhost");
+            const securityPath = classifySecurityPath(url.pathname);
+            if (securityPath === "noncanonical-protected") {
+                sendJson(response, 404, { ok: false, error: "not-found" });
+                return;
+            }
             if (url.pathname === "/healthz" && request.method === "GET") {
                 sendJson(response, 200, { ok: true, service: "livezone", status: "alive" });
                 return;
@@ -75,9 +86,37 @@ export function createProgramOutputServer({
                 sendJson(response, result.ok ? 200 : 503, result);
                 return;
             }
-            if (await mediaIngestRoutes.handle(request, response, url)) return;
-            if (url.pathname.startsWith("/api/media-library/") ||
-                url.pathname.startsWith("/media-library/files/")) {
+            if (url.pathname === "/api/operator/session" && request.method === "GET") {
+                handleOperatorSession(request, response, operatorGuard);
+                return;
+            }
+            if (url.pathname === "/api/operator/login" && request.method === "POST") {
+                await handleOperatorLogin(request, response, operatorGuard, operatorAuth);
+                return;
+            }
+            if (url.pathname === "/api/operator/logout" && request.method === "POST") {
+                handleOperatorLogout(request, response, operatorGuard, operatorAuth);
+                return;
+            }
+            if (securityPath === "operator" && !operatorGuard.session(request)) {
+                redirectToLogin(response, url.pathname);
+                return;
+            }
+            if (url.pathname === "/api/media-ingest/status") {
+                if (!operatorGuard.authorize(request, response)) return;
+                if (await mediaIngestRoutes.handle(request, response, url)) return;
+            }
+            if (securityPath === "private-config" &&
+                !operatorGuard.authorize(request, response)) return;
+            if (url.pathname.startsWith("/media-library/files/")) {
+                await mediaReady;
+                if (await mediaRoutes.handle(request, response, url)) return;
+            }
+            if (url.pathname.startsWith("/api/media-library/")) {
+                const authorized = ["POST", "PUT", "PATCH", "DELETE"].includes(request.method)
+                    ? operatorGuard.authorizeMutation(request, response)
+                    : operatorGuard.authorize(request, response);
+                if (!authorized) return;
                 await mediaReady;
                 if (await mediaRoutes.handle(request, response, url)) return;
             }
@@ -102,8 +141,9 @@ export function createProgramOutputServer({
             }
             serveStatic(url.pathname, request, response);
         }
-        catch {
-            sendJson(response, 500, { ok: false, error: "internal-error" });
+        catch (error) {
+            sendJson(response, error?.statusCode === 400 ? 400 : 500,
+                { ok: false, error: error?.statusCode === 400 ? "invalid-path" : "internal-error" });
         }
     });
     server.on("close", () => {
@@ -112,6 +152,66 @@ export function createProgramOutputServer({
         clients.clear();
     });
     return { server, store, clients };
+}
+
+function handleOperatorSession(request, response, guard) {
+    const session = guard.session(request);
+    sendJson(response, 200, session ? { ok: true, authenticated: true,
+        csrfToken: session.csrfToken || null, expiresAt: Number.isFinite(session.expiresAt)
+            ? new Date(session.expiresAt).toISOString() : null,
+        developmentBypass: session.developmentBypass === true }
+        : { ok: true, authenticated: false });
+}
+
+async function handleOperatorLogin(request, response, guard, auth) {
+    if (!guard.authorizeLogin(request, response)) return;
+    if (!String(request.headers["content-type"] || "").toLowerCase()
+        .startsWith("application/json")) {
+        sendJson(response, 415, { ok: false, error: "content-type" }); return;
+    }
+    let body;
+    try { body = JSON.parse(await readBody(request)); }
+    catch { sendJson(response, 400, { ok: false, error: "invalid-request" }); return; }
+    const session = auth.authenticate(body?.username, body?.password);
+    if (!session) {
+        sendJson(response, auth.configured ? 401 : 503,
+            { ok: false, error: auth.configured ? "invalid-credentials" : "operator-auth-unavailable" });
+        return;
+    }
+    const returnTo = safeOperatorReturn(body?.returnTo);
+    sendJson(response, 200, { ok: true, authenticated: true,
+        csrfToken: session.csrfToken || null, returnTo },
+    { "Set-Cookie": auth.createCookie(session) });
+}
+
+function handleOperatorLogout(request, response, guard, auth) {
+    const session = guard.authorizeMutation(request, response);
+    if (!session) return;
+    if (session.id) auth.sessions.delete(session.id);
+    sendJson(response, 200, { ok: true, authenticated: false },
+        { "Set-Cookie": auth.clearCookie() });
+}
+
+function classifySecurityPath(pathname) {
+    const folded = pathname.toLowerCase();
+    const control = folded === "/control" || folded.startsWith("/control/");
+    const config = folded === "/config" || folded.startsWith("/config/");
+    if ((control || config) && pathname !== folded) return "noncanonical-protected";
+    if (control) return "operator";
+    if (config && pathname !== "/config/program-output.json") return "private-config";
+    return "public";
+}
+
+function safeOperatorReturn(value) {
+    return typeof value === "string" && ["/control/", "/control/schedule/"].includes(value)
+        ? value : "/control/";
+}
+
+function redirectToLogin(response, returnTo) {
+    const safe = returnTo.startsWith("/control/schedule") ? "/control/schedule/" : "/control/";
+    response.writeHead(302, { Location: `/login/?return=${encodeURIComponent(safe)}`,
+        "Cache-Control": "no-store" });
+    response.end();
 }
 
 export function parseHttpBindConfig(environment = process.env) {
@@ -237,7 +337,7 @@ function handleEvents(request, response, clients, store) {
 function serveStatic(pathname, request, response) {
     const requested = pathname === "/" ? "/index.html"
         : pathname.endsWith("/") ? `${pathname}index.html` : pathname;
-    const path = normalize(join(PUBLIC_ROOT, decodeURIComponent(requested)));
+    const path = normalize(join(PUBLIC_ROOT, requested));
     if (relative(PUBLIC_ROOT, path).startsWith("..")) {
         sendJson(response, 403, { ok: false, error: "forbidden" }); return;
     }
@@ -274,6 +374,25 @@ function serveStatic(pathname, request, response) {
         else createReadStream(path).pipe(response);
     }
     catch { sendJson(response, 404, { ok: false, error: "not-found" }); }
+}
+
+function parseRequestUrl(target, host) {
+    if (typeof target !== "string" || !target.startsWith("/")) {
+        throw Object.assign(new Error("invalid-request-target"), { statusCode: 400 });
+    }
+    const queryIndex = target.indexOf("?");
+    const encodedPath = queryIndex < 0 ? target : target.slice(0, queryIndex);
+    const query = queryIndex < 0 ? "" : target.slice(queryIndex);
+    if (encodedPath.startsWith("//") || /\\/.test(encodedPath) || /%(?:2f|5c|2e)/i.test(encodedPath) ||
+        /%25(?:2f|5c|2e)/i.test(encodedPath) || /%(?![0-9a-f]{2})/i.test(encodedPath)) {
+        throw Object.assign(new Error("invalid-path"), { statusCode: 400 });
+    }
+    const pathname = decodeURIComponent(encodedPath);
+    if (pathname.includes("\\") || pathname.split("/").some((part) => part === "." || part === "..")) {
+        throw Object.assign(new Error("invalid-path"), { statusCode: 400 });
+    }
+    const parsed = new URL(`${pathname}${query}`, `http://${host}`);
+    return Object.freeze({ pathname, searchParams: parsed.searchParams });
 }
 
 function parseByteRange(value, size) {

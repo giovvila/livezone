@@ -48,6 +48,13 @@ import MediaLibraryClient from "../media-library/MediaLibraryClient.js";
 import MediaLibraryManager from "../media-library/MediaLibraryManager.js";
 import MediaLibraryUI from "../ui/MediaLibraryUI.js";
 import MediaLibraryPickerUI from "../ui/MediaLibraryPickerUI.js";
+import { requireOperatorSession } from "../auth/OperatorSessionClient.js";
+import OperatorSessionUI from "../ui/OperatorSessionUI.js";
+
+await requireOperatorSession();
+const operatorSessionUI = new OperatorSessionUI(
+    document.getElementById("operator-logout"));
+operatorSessionUI.start();
 
 BroadcastStateManager.initialize();
 StudioStateManager.initialize();

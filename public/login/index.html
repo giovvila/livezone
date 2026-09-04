@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>LIVEZONE Operator Login</title>
+    <link rel="icon" href="../favicon.ico">
+    <link rel="stylesheet" href="../css/operator-login.css">
+</head>
+<body>
+    <main class="operator-login">
+        <section class="operator-login__card" aria-labelledby="operator-login-title">
+            <img src="../assets/logo/logo-lz.svg" alt="LIVEZONE" class="operator-login__logo">
+            <p class="operator-login__kicker">SECURE OPERATOR ACCESS</p>
+            <h1 id="operator-login-title">CONTROL ROOM</h1>
+            <form id="operator-login-form" autocomplete="on">
+                <label for="operator-username">Username</label>
+                <input id="operator-username" name="username" autocomplete="username" required maxlength="120">
+                <label for="operator-password">Password</label>
+                <input id="operator-password" name="password" type="password" autocomplete="current-password" required maxlength="1024">
+                <button id="operator-login-submit" type="submit">LOGIN</button>
+            </form>
+            <p id="operator-login-status" class="operator-login__status" role="status" aria-live="polite"></p>
+            <a href="/">RETURN TO PUBLIC VIEWER</a>
+        </section>
+    </main>
+    <script type="module" src="../js/entries/login-app.js"></script>
+</body>
+</html>

@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { request as httpRequest } from "node:http";
 import MediaAssetRepository from "../server/media-library/MediaAssetRepository.js";
 import { createProgramOutputServer } from "../server/program-output-server.js";
+import OperatorAuth from "../server/auth/OperatorAuth.js";
 import MediaLibraryManager from "../public/js/media-library/MediaLibraryManager.js";
 import MediaLibraryUI from "../public/js/ui/MediaLibraryUI.js";
 
@@ -127,7 +128,7 @@ test("physical delete failure leaves manifest authority unchanged", () => withRo
     await assert.rejects(repository.delete(asset.id), { code: "ENOENT" }); assert.equal(repository.get(asset.id).id, asset.id);
 }));
 
-async function withServer(operation, options = {}) { return withRoot(async (root) => { const repository = new MediaAssetRepository({ root }); const { server } = createProgramOutputServer({ publisherToken: "0123456789abcdef", mediaAssetRepository: repository, ...options }); await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve)); const base = `http://127.0.0.1:${server.address().port}`; try { return await operation(base, root); } finally { await new Promise((resolve) => server.close(resolve)); } }); }
+async function withServer(operation, options = {}) { return withRoot(async (root) => { const repository = new MediaAssetRepository({ root }); const { server } = createProgramOutputServer({ publisherToken: "0123456789abcdef", mediaAssetRepository: repository, operatorAuth: new OperatorAuth({ disabled: true }), ...options }); await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve)); const base = `http://127.0.0.1:${server.address().port}`; try { return await operation(base, root); } finally { await new Promise((resolve) => server.close(resolve)); } }); }
 
 test("HTTP upload/list/get/serve/range/delete use structured API", () => withServer(async (base) => {
     const form = new FormData(); form.append("file", new Blob([fixtures.mp4], { type: "video/mp4" }), "clip.mp4");
