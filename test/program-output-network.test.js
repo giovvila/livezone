@@ -882,6 +882,148 @@ function audioSnapshot({ stillUrl, motionUrl, revision = 1 } = {}) {
     };
 }
 
+function imageSnapshot({ url = "https://example.test/image.jpg", revision = 1 } = {}) {
+    const base = snapshot({ revision });
+    return { ...base,
+        scene: { id: "image-scene", name: "IMAGE", type: "IMAGE" },
+        source: { id: "image-source", kind: "image", url },
+        overlays: { textCrawl: { enabled: true, mode: "fixed", text: "IMAGE",
+            direction: "rtl", speed: "slow", position: "bottom", background: true } },
+        transition: { type: "dissolve", durationMs: 400 }
+    };
+}
+
+test("Program Output v1 accepts strict resolved IMAGE snapshots and envelopes", () => {
+    for (const url of ["https://example.test/image.jpg", "http://127.0.0.1/image.jpg"]) {
+        const valid = validateProgramOutputSnapshot(imageSnapshot({ url }));
+        assert.equal(valid.source.kind, "image");
+        assert.equal(valid.source.url, url);
+        assert.equal(valid.playback.playing, false);
+        assert.equal(valid.transition.type, "dissolve");
+        assert.equal(valid.overlays.textCrawl.text, "IMAGE");
+        assert.ok(createProgramOutputEnvelope(valid));
+    }
+});
+
+test("Program Output v1 rejects malformed and cross-kind IMAGE snapshots", () => {
+    assert.equal(validateProgramOutputSnapshot(imageSnapshot({ url: "file:///private.jpg" })), null);
+    assert.equal(validateProgramOutputSnapshot({ ...imageSnapshot(), source: {
+        id: "image-source", kind: "image" } }), null);
+    for (const extra of [
+        { audioUrl: "https://example.test/audio.mp3" },
+        { title: "wrong-kind" }, { enabled: true }, { assetId: "private-asset" }
+    ]) assert.equal(validateProgramOutputSnapshot({ ...imageSnapshot(), source: {
+        ...imageSnapshot().source, ...extra } }), null);
+});
+
+test("Program Output store retains an IMAGE envelope without local asset provenance", () => {
+    const store = new ProgramOutputStore();
+    const envelope = createProgramOutputEnvelope(imageSnapshot());
+    assert.equal(store.accept(envelope).accepted, true);
+    assert.deepEqual(store.getCurrent(), envelope);
+    assert.deepEqual(Object.keys(store.getCurrent().snapshot.source).sort(),
+        ["id", "kind", "url"]);
+});
+
+test("ProgramOutputManager projects managed and legacy IMAGE sources as resolved URLs", () => {
+    for (const source of [
+        { id: "managed-image", kind: "image", assetId: "asset-image",
+            url: "http://127.0.0.1:8080/media-library/files/image/managed.jpg" },
+        { id: "legacy-image", kind: "image", url: "https://example.test/legacy.jpg" }
+    ]) {
+        const published = [];
+        const manager = new ProgramOutputManager({
+            stateManager: { getProgramSceneId: () => "image-scene",
+                getScene: () => ({ id: "image-scene", name: "IMAGE", type: "IMAGE" }) },
+            catalog: { getDefinition: () => ({ id: "image-scene", name: "IMAGE", type: "IMAGE",
+                renderer: { kind: "source", sourceId: source.id } }), subscribe: () => () => {} },
+            sourceManager: { getSource: () => source },
+            renderer: { subscribeProgramTransport: () => () => {},
+                getProgramTransport: () => null },
+            graphicsManager: { subscribe: () => () => {}, getVisibleGraphics: () => [] },
+            transitionCoordinator: { getSnapshot: () => ({ state: "idle", type: null }) },
+            transport: { start() {}, publish: (value) => published.push(value), destroy() {} },
+            now: () => Date.parse("2026-08-21T10:00:00.000Z")
+        });
+        manager.start();
+        assert.deepEqual(published[0].source, { id: source.id, kind: "image", url: source.url });
+        manager.destroy();
+    }
+});
+
+test("Public renderer selects a silent contained IMAGE surface", async () => {
+    const previousDocument = globalThis.document;
+    const created = [];
+    globalThis.document = { createElement(tagName) {
+        const element = new FakePublicElement(tagName); created.push(element); return element;
+    } };
+    try {
+        const root = new FakePublicElement("div");
+        const controller = new PublicProgramController({ root: null, status: null,
+            audioButton: null, transport: {} });
+        const pending = controller.createSource(root, imageSnapshot());
+        const image = created[0];
+        image.dispatchEvent(new Event("load"));
+        const cleanup = await pending;
+        assert.equal(image.tagName, "IMG");
+        assert.equal(image.className, "public-program__media");
+        assert.equal(image.alt, "");
+        assert.equal(created.some(({ tagName }) => ["AUDIO", "VIDEO"].includes(tagName)), false);
+        cleanup();
+        assert.equal(image.src, "");
+    }
+    finally { globalThis.document = previousDocument; }
+});
+
+test("Public IMAGE load failure clears its resource", async () => {
+    const previousDocument = globalThis.document;
+    const image = new FakePublicElement("img");
+    globalThis.document = { createElement: () => image };
+    try {
+        const controller = new PublicProgramController({ root: null, status: null,
+            audioButton: null, transport: {} });
+        const pending = controller.createImage(new FakePublicElement("div"),
+            imageSnapshot().source);
+        image.dispatchEvent(new Event("error"));
+        await assert.rejects(pending, /unavailable/);
+        assert.equal(image.src, "");
+    }
+    finally { globalThis.document = previousDocument; }
+});
+
+test("Public rapid IMAGE IMAGE VIDEO preparation owns independent cleanup", async () => {
+    const previousDocument = globalThis.document;
+    const created = [];
+    globalThis.document = { createElement(tagName) {
+        const element = new FakePublicElement(tagName); created.push(element); return element;
+    } };
+    try {
+        const controller = new PublicProgramController({ root: null, status: null,
+            audioButton: null, transport: {} });
+        const rootA = new FakePublicElement("div");
+        const rootB = new FakePublicElement("div");
+        const rootVideo = new FakePublicElement("div");
+        const pendingA = controller.createSource(rootA, imageSnapshot({
+            url: "https://example.test/a.jpg", revision: 1 }));
+        const pendingB = controller.createSource(rootB, imageSnapshot({
+            url: "https://example.test/b.jpg", revision: 2 }));
+        const videoSnapshot = { ...snapshot({ revision: 3 }),
+            scene: { id: "video-scene", name: "VIDEO", type: "VIDEO" },
+            source: { id: "video", kind: "media", url: "https://example.test/video.mp4" } };
+        const pendingVideo = controller.createSource(rootVideo, videoSnapshot);
+        const [imageA, imageB, video] = created;
+        imageA.dispatchEvent(new Event("load"));
+        imageB.dispatchEvent(new Event("load"));
+        video.dispatchEvent(new Event("loadeddata"));
+        const cleanups = await Promise.all([pendingA, pendingB, pendingVideo]);
+        cleanups.forEach((cleanup) => cleanup());
+        assert.equal(imageA.src, "");
+        assert.equal(imageB.src, "");
+        assert.equal(video.src, "");
+    }
+    finally { globalThis.document = previousDocument; }
+});
+
 test("public AUDIO contract accepts every optional artwork combination", () => {
     const audioOnly = validateProgramOutputSnapshot(audioSnapshot());
     const still = validateProgramOutputSnapshot(audioSnapshot({
@@ -1393,6 +1535,313 @@ test("network adapter publishes once and subscriber validates/cleans up", async 
     assert.equal(eventSource.closed, true);
 });
 
+test("publisher retries one transient failure with conservative backoff", async () => {
+    const timers = fakeTimers();
+    const requests = [];
+    const transport = recoveryTransport({ timers, fetchImplementation: async (_url, options) => {
+        requests.push(JSON.parse(options.body));
+        if (requests.length === 1) throw new Error("server unavailable");
+        return { ok: true, status: 202 };
+    } });
+    transport.start();
+    transport.publish(snapshot());
+    await transport.publishQueue;
+    assert.equal(transport.status, "publishing-error");
+    assert.deepEqual(timers.delays, [8000, 1000]);
+    timers.runNext();
+    await transport.publishQueue;
+    assert.equal(requests.length, 2);
+    assert.equal(transport.status, "connected");
+    transport.destroy();
+});
+
+test("publisher does not retry permanent client and protocol failures", async () => {
+    for (const status of [400, 404, 405, 415, 422]) {
+        const timers = fakeTimers(); let attempts = 0;
+        const transport = recoveryTransport({ timers, fetchImplementation: async () => {
+            attempts += 1; return { ok: false, status };
+        } });
+        transport.start(); transport.publish(snapshot()); await transport.publishQueue;
+        assert.equal(attempts, 1, `status ${status}`);
+        assert.equal(timers.pending(), 0, `status ${status}`);
+        assert.equal(transport.status, "protocol-error", `status ${status}`);
+        transport.destroy();
+    }
+});
+
+test("publisher distinguishes stale retired and unknown 409 conflicts", async () => {
+    for (const [reason, expectedStatus, synchronized] of [
+        ["stale-revision", "connected", true],
+        ["retired-session", "publisher-conflict", false],
+        ["unexpected-conflict", "protocol-error", false],
+        [null, "protocol-error", false]
+    ]) {
+        const timers = fakeTimers();
+        const transport = recoveryTransport({ timers, fetchImplementation: async () => ({
+            ok: false, status: 409,
+            json: async () => reason === null ? Promise.reject(new Error("malformed"))
+                : { ok: false, error: reason }
+        }) });
+        transport.start(); transport.publish(snapshot());
+        const result = await transport.publishQueue;
+        assert.equal(result, synchronized, String(reason));
+        assert.equal(transport.status, expectedStatus, String(reason));
+        assert.equal(timers.pending(), 0, String(reason));
+        assert.equal(transport.latestEnvelope.revision, 1);
+        transport.destroy();
+    }
+});
+
+test("publisher retries only explicitly transient HTTP and network failures", async () => {
+    for (const failure of [408, 429, 500, 502, 503, 504, "network"]) {
+        const timers = fakeTimers();
+        const transport = recoveryTransport({ timers, fetchImplementation: async () => {
+            if (failure === "network") throw new Error("connection refused");
+            return { ok: false, status: failure };
+        } });
+        transport.start(); transport.publish(snapshot()); await transport.publishQueue;
+        assert.equal(transport.status, "publishing-error", String(failure));
+        assert.deepEqual(timers.activeDelays(), [1000], String(failure));
+        transport.destroy();
+    }
+});
+
+test("publisher timeout releases the queue and newest Program eventually wins", async () => {
+    const timers = fakeTimers(); const revisions = []; let first = true;
+    const transport = recoveryTransport({ timers, fetchImplementation: async (_url, options) => {
+        const revision = JSON.parse(options.body).revision; revisions.push(revision);
+        if (!first) return { ok: true, status: 202 };
+        first = false;
+        return new Promise((_resolve, reject) => options.signal.addEventListener("abort", () =>
+            reject(Object.assign(new Error("timeout"), { name: "AbortError" })), { once: true }));
+    } });
+    transport.start();
+    transport.publish(snapshot({ revision: 1 }));
+    await new Promise((resolve) => setImmediate(resolve));
+    transport.publish(snapshot({ revision: 2 }));
+    transport.publish(snapshot({ revision: 3 }));
+    assert.deepEqual(revisions, [1]);
+    timers.runDelay(8000);
+    await transport.publishQueue;
+    assert.deepEqual(revisions, [1, 2, 3]);
+    assert.equal(revisions.at(-1), 3);
+    assert.equal(transport.status, "connected");
+    assert.equal(timers.pending(), 0);
+    transport.publish(snapshot({ revision: 4 })); await transport.publishQueue;
+    assert.equal(revisions.at(-1), 4);
+    transport.destroy();
+});
+
+test("publisher timeout is transient and follows the configured backoff", async () => {
+    const timers = fakeTimers(); let first = true; let attempts = 0;
+    const transport = recoveryTransport({ timers, fetchImplementation: async (_url, options) => {
+        attempts += 1;
+        if (!first) return { ok: true, status: 202 };
+        first = false;
+        return new Promise((_resolve, reject) => options.signal.addEventListener("abort", () =>
+            reject(Object.assign(new Error("timeout"), { name: "AbortError" })), { once: true }));
+    } });
+    transport.start(); transport.publish(snapshot());
+    await new Promise((resolve) => setImmediate(resolve));
+    timers.runDelay(8000); await transport.publishQueue;
+    assert.equal(transport.status, "publishing-error");
+    assert.deepEqual(timers.activeDelays(), [1000]);
+    timers.runDelay(1000); await transport.publishQueue;
+    assert.equal(attempts, 2);
+    assert.equal(transport.status, "connected");
+    assert.equal(timers.pending(), 0);
+    transport.destroy();
+});
+
+test("failed in-flight and scheduled retry always select the newest envelope", async () => {
+    const timers = fakeTimers(); const revisions = []; let rejectFirst;
+    const transport = recoveryTransport({ timers, fetchImplementation: async (_url, options) => {
+        revisions.push(JSON.parse(options.body).revision);
+        if (revisions.length === 1) return new Promise((_resolve, reject) => { rejectFirst = reject; });
+        return { ok: true, status: 202 };
+    } });
+    transport.start(); transport.publish(snapshot({ revision: 1 }));
+    await new Promise((resolve) => setImmediate(resolve));
+    transport.publish(snapshot({ revision: 2 }));
+    rejectFirst(new Error("offline"));
+    await transport.publishQueue;
+    assert.deepEqual(revisions, [1, 2]);
+    assert.equal(timers.pending(), 0);
+    transport.destroy();
+
+    const retryTimers = fakeTimers(); const retried = []; let available = false;
+    const retryTransport = recoveryTransport({ timers: retryTimers,
+        fetchImplementation: async (_url, options) => {
+            retried.push(JSON.parse(options.body).revision);
+            if (!available) throw new Error("offline");
+            return { ok: true, status: 202 };
+        } });
+    retryTransport.start(); retryTransport.publish(snapshot({ revision: 1 }));
+    await retryTransport.publishQueue;
+    retryTransport.publish(snapshot({ revision: 2 }));
+    available = true; retryTimers.runDelay(1000); await retryTransport.publishQueue;
+    assert.deepEqual(retried, [1, 2]);
+    retryTransport.destroy();
+});
+
+test("retry and repeated false SSE reconnects remain bounded and latest-wins", async () => {
+    const timers = fakeTimers(); const source = new FakeEventSource();
+    const revisions = []; let available = false;
+    const transport = recoveryTransport({ timers, eventSourceFactory: () => source,
+        fetchImplementation: async (_url, options) => {
+            revisions.push(JSON.parse(options.body).revision);
+            if (!available) throw new Error("offline");
+            return { ok: true, status: 202 };
+        } });
+    transport.start(); source.emit("open", {});
+    transport.publish(snapshot({ revision: 1 })); await transport.publishQueue;
+    transport.publish(snapshot({ revision: 2 })); available = true;
+    timers.runDelay(1000); source.emit("error", {}); source.emit("open", {});
+    await transport.publishQueue;
+    assert.deepEqual(revisions, [1, 2, 2]);
+    for (let index = 0; index < 3; index += 1) {
+        source.emit("error", {}); source.emit("open", {}); await transport.publishQueue;
+    }
+    assert.deepEqual(revisions, [1, 2, 2, 2, 2, 2]);
+    assert.equal(timers.pending(), 0);
+    transport.destroy();
+});
+
+test("destroy aborts a hung publish and prevents queued or retry publication", async () => {
+    const timers = fakeTimers(); let attempts = 0; let aborted = false;
+    const transport = recoveryTransport({ timers, fetchImplementation: async (_url, options) => {
+        attempts += 1;
+        return new Promise((_resolve, reject) => options.signal.addEventListener("abort", () => {
+            aborted = true;
+            reject(Object.assign(new Error("destroyed"), { name: "AbortError" }));
+        }, { once: true }));
+    } });
+    transport.start(); transport.publish(snapshot());
+    await new Promise((resolve) => setImmediate(resolve));
+    transport.destroy(); await transport.publishQueue;
+    timers.runAll(); await transport.publishQueue;
+    assert.equal(aborted, true);
+    assert.equal(attempts, 1);
+    assert.equal(timers.pending(), 0);
+});
+
+test("publisher recovery coalesces unavailable Program changes to the newest snapshot", async () => {
+    const timers = fakeTimers();
+    let available = false;
+    const revisions = [];
+    const transport = recoveryTransport({ timers, fetchImplementation: async (_url, options) => {
+        revisions.push(JSON.parse(options.body).revision);
+        if (!available) throw new Error("server unavailable");
+        return { ok: true, status: 202 };
+    } });
+    transport.start();
+    transport.publish(snapshot({ revision: 1 }));
+    await transport.publishQueue;
+    transport.publish(snapshot({ revision: 2 }));
+    transport.publish(snapshot({ revision: 3 }));
+    transport.publish(imageSnapshot({ revision: 4 }));
+    assert.deepEqual(revisions, [1]);
+    available = true;
+    timers.runNext();
+    await transport.publishQueue;
+    assert.deepEqual(revisions, [1, 4]);
+    assert.equal(transport.latestEnvelope.snapshot.source.kind, "image");
+    transport.destroy();
+});
+
+test("publisher SSE reconnection restores a Node store from the latest Program", async () => {
+    const source = new FakeEventSource();
+    const revisions = [];
+    const transport = recoveryTransport({ eventSourceFactory: () => source,
+        fetchImplementation: async (_url, options) => {
+            revisions.push(JSON.parse(options.body).revision);
+            return { ok: true, status: 202 };
+        } });
+    transport.start();
+    transport.publish(snapshot({ revision: 1 }));
+    await transport.publishQueue;
+    source.emit("open", {});
+    source.emit("error", {});
+    source.emit("open", {});
+    await transport.publishQueue;
+    assert.deepEqual(revisions, [1, 1]);
+    assert.equal(transport.status, "connected");
+    transport.destroy();
+    assert.equal(source.closed, true);
+});
+
+test("publisher recovery preserves BREAK VIDEO AUDIO IMAGE and LIVE payloads", async () => {
+    const variants = [
+        snapshot(),
+        { ...snapshot(), scene: { id: "video-scene", name: "VIDEO", type: "VIDEO" },
+            source: { id: "video", kind: "media", url: "https://example.test/video.mp4" } },
+        audioSnapshot(), imageSnapshot(),
+        { ...snapshot(), scene: { id: "live-scene", name: "LIVE", type: "LIVE" },
+            source: { id: "live", kind: "hls", url: "https://example.test/live.m3u8" },
+            playback: { ...snapshot().playback, playing: true, state: "playing" } }
+    ];
+    for (const [index, variant] of variants.entries()) {
+        const timers = fakeTimers();
+        let attempt = 0; let recovered = null;
+        const candidate = { ...variant, revision: index + 1 };
+        const transport = recoveryTransport({ timers, fetchImplementation: async (_url, options) => {
+            attempt += 1;
+            if (attempt === 1) throw new Error("offline");
+            recovered = JSON.parse(options.body).snapshot;
+            return { ok: true, status: 202 };
+        } });
+        transport.start(); transport.publish(candidate); await transport.publishQueue;
+        timers.runNext(); await transport.publishQueue;
+        assert.deepEqual(recovered.source, candidate.source);
+        transport.destroy();
+    }
+});
+
+test("publisher auth failures do not retry until an explicit credential refresh", async () => {
+    const timers = fakeTimers();
+    const source = new FakeEventSource();
+    let token = TOKEN; let attempts = 0;
+    const transport = recoveryTransport({ timers, tokenProvider: () => token,
+        eventSourceFactory: () => source,
+        fetchImplementation: async () => {
+            attempts += 1;
+            return attempts === 1 ? { ok: false, status: 401 } : { ok: true, status: 202 };
+        } });
+    transport.start(); transport.publish(snapshot()); await transport.publishQueue;
+    assert.equal(transport.status, "auth-error");
+    assert.equal(timers.pending(), 0);
+    transport.publish(snapshot({ revision: 2 }));
+    await transport.publishQueue;
+    assert.equal(attempts, 1);
+    source.emit("open", {});
+    source.emit("error", {});
+    assert.equal(transport.status, "auth-error");
+    source.emit("open", {});
+    await transport.publishQueue;
+    assert.equal(attempts, 1);
+    token = "replacement-test-token-12345";
+    transport.refreshPublisherCredential();
+    await transport.publishQueue;
+    assert.equal(attempts, 2);
+    assert.equal(transport.latestEnvelope.revision, 2);
+    transport.destroy();
+});
+
+test("destroy cancels publisher recovery and prevents delayed publication", async () => {
+    const timers = fakeTimers();
+    let attempts = 0;
+    const transport = recoveryTransport({ timers, fetchImplementation: async () => {
+        attempts += 1; throw new Error("offline");
+    } });
+    transport.start(); transport.publish(snapshot()); await transport.publishQueue;
+    assert.equal(timers.pending(), 1);
+    transport.destroy();
+    timers.runNext();
+    await transport.publishQueue;
+    assert.equal(attempts, 1);
+    assert.equal(timers.pending(), 0);
+});
+
 test("factory preserves explicit local development mode", async () => {
     const config = encodeURIComponent(JSON.stringify({ version: 1, mode: "local",
         network: { publishUrl: "/api/program-output",
@@ -1770,6 +2219,50 @@ function publish(base, body) {
         method: "POST",
         headers: { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "application/json" },
         body: JSON.stringify(body)
+    });
+}
+
+function fakeTimers() {
+    const timers = [];
+    return {
+        delays: [],
+        set(callback, delay) {
+            const timer = { callback, delay, cleared: false, unref() {} };
+            timers.push(timer); this.delays.push(delay); return timer;
+        },
+        clear(timer) { timer.cleared = true; },
+        runNext() {
+            const timer = timers.find((candidate) => !candidate.cleared);
+            if (timer) { timer.cleared = true; timer.callback(); }
+        },
+        runDelay(delay) {
+            const timer = timers.find((candidate) => !candidate.cleared &&
+                candidate.delay === delay);
+            if (timer) { timer.cleared = true; timer.callback(); }
+        },
+        runAll() {
+            for (const timer of timers.filter((candidate) => !candidate.cleared)) {
+                timer.cleared = true; timer.callback();
+            }
+        },
+        activeDelays() {
+            return timers.filter((timer) => !timer.cleared).map(({ delay }) => delay);
+        },
+        pending() { return timers.filter((timer) => !timer.cleared).length; }
+    };
+}
+
+function recoveryTransport({ timers = fakeTimers(), tokenProvider = () => TOKEN,
+    fetchImplementation, eventSourceFactory = null } = {}) {
+    return new NetworkProgramOutputTransport({
+        role: "publisher",
+        publishUrl: "https://livezone.test/api/program-output",
+        subscribeUrl: "https://livezone.test/api/program-output/events",
+        tokenProvider,
+        fetchImplementation,
+        eventSourceFactory,
+        setTimer: timers.set.bind(timers),
+        clearTimer: timers.clear.bind(timers)
     });
 }
 

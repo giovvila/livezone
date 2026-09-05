@@ -1,5 +1,5 @@
 const VERSION = 1;
-const SOURCE_KINDS = new Set(["hls", "media", "audio", "break"]);
+const SOURCE_KINDS = new Set(["hls", "media", "image", "audio", "break"]);
 const POSITIONS = new Set([
     "top-left", "top-right", "bottom-left", "bottom-right"
 ]);
@@ -71,7 +71,10 @@ function validateSource(value) {
     if (!isObject(value) || !isText(value.id, 120) ||
         !SOURCE_KINDS.has(value.kind)) return null;
     const source = { id: value.id.trim(), kind: value.kind };
-    if (["hls", "media"].includes(value.kind)) {
+    if (["hls", "media", "image"].includes(value.kind)) {
+        if (value.kind === "image" && !hasOnlyKeys(value, ["id", "kind", "url"])) {
+            return null;
+        }
         const url = validateUrl(value.url);
         return url ? { ...source, url } : null;
     }
@@ -178,6 +181,10 @@ function isText(value, limit) {
 
 function isObject(value) {
     return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function hasOnlyKeys(value, allowed) {
+    return Object.keys(value).every((key) => allowed.includes(key));
 }
 
 function deepFreeze(value) {

@@ -132,6 +132,7 @@ export default class PublicProgramController {
         const { source } = snapshot;
         if (source.kind === "break") return this.createBreak(root, source);
         if (source.kind === "audio") return this.createAudio(root, snapshot);
+        if (source.kind === "image") return this.createImage(root, source);
         const video = document.createElement("video");
         video.className = "public-program__media";
         video.autoplay = source.kind === "hls" ||
@@ -180,6 +181,24 @@ export default class PublicProgramController {
         return () => { video.removeEventListener("ended", handleEnded); hls?.destroy();
             if (this.audioBlockedElement === video) this.audioBlockedElement = null;
             video.pause(); video.removeAttribute("src"); video.load(); };
+    }
+
+    async createImage(root, source) {
+        const image = document.createElement("img");
+        image.className = "public-program__media";
+        image.alt = "";
+        root.appendChild(image);
+        const cleanup = () => { image.removeAttribute("src"); };
+        try {
+            const ready = this.waitForReady(image, ["load"]);
+            image.src = source.url;
+            await ready;
+            return cleanup;
+        }
+        catch (error) {
+            cleanup();
+            throw error;
+        }
     }
 
     async createAudio(root, snapshot) {

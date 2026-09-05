@@ -3,10 +3,15 @@ import {
     validateProgramOutputEnvelope
 } from "./ProgramOutputEnvelope.js";
 
+const PUBLISH_TIMEOUT_MS = 8000;
+
 export default class NetworkProgramOutputTransport {
     constructor({ role, publishUrl, subscribeUrl, tokenProvider = null,
         fetchImplementation = globalThis.fetch?.bind(globalThis),
-        eventSourceFactory = (url) => new EventSource(url),
+        eventSourceFactory = globalThis.EventSource
+            ? (url) => new globalThis.EventSource(url) : null,
+        setTimer = globalThis.setTimeout, clearTimer = globalThis.clearTimeout,
+        retryDelays = [1000, 2000, 5000, 10000],
         baseUrl = globalThis.location?.href } = {}) {
         if (!["publisher", "subscriber"].includes(role)) {
             throw new TypeError("Network transport requires a valid role.");
@@ -19,6 +24,9 @@ export default class NetworkProgramOutputTransport {
         this.tokenProvider = typeof tokenProvider === "function" ? tokenProvider : null;
         this.fetchImplementation = fetchImplementation;
         this.eventSourceFactory = eventSourceFactory;
+        this.setTimer = (callback, delay) => setTimer(callback, delay);
+        this.clearTimer = (timer) => clearTimer(timer);
+        this.retryDelays = retryDelays;
         this.listeners = new Set();
         this.statusListeners = new Set();
         this.status = "disconnected";
@@ -27,6 +35,12 @@ export default class NetworkProgramOutputTransport {
         this.publishQueue = Promise.resolve();
         this.abortController = null;
         this.eventSource = null;
+        this.latestEnvelope = null;
+        this.retryTimer = null;
+        this.retryAttempt = 0;
+        this.publisherMonitorOpened = false;
+        this.publisherMonitorDisconnected = false;
+        this.publisherBlockedByCredential = false;
         this.handleProgram = this.handleProgram.bind(this);
         this.handleOpen = this.handleOpen.bind(this);
         this.handleError = this.handleError.bind(this);
@@ -41,13 +55,20 @@ export default class NetworkProgramOutputTransport {
             this.setStatus("connecting");
             if (this.listeners.size > 0) this.startSubscriber();
         }
-        else this.refreshPublisherCredential();
+        else {
+            this.refreshPublisherCredential();
+            this.startPublisherMonitor();
+        }
     }
 
     publish(snapshot) {
         const envelope = createProgramOutputEnvelope(snapshot);
         if (!this.started || this.role !== "publisher" || !envelope ||
             !this.fetchImplementation || !this.publishUrl) return false;
+        this.latestEnvelope = envelope;
+        if (this.retryTimer !== null || this.status === "auth-error") {
+            return true;
+        }
         const generation = this.generation;
         this.publishQueue = this.publishQueue
             .catch(() => {})
@@ -79,6 +100,8 @@ export default class NetworkProgramOutputTransport {
         this.eventSource?.removeEventListener("error", this.handleError);
         this.eventSource?.close();
         this.eventSource = null;
+        this.cancelRetry();
+        this.latestEnvelope = null;
         this.abortController = null;
         this.listeners.clear();
         this.statusListeners.clear();
@@ -96,10 +119,18 @@ export default class NetworkProgramOutputTransport {
         this.setStatus("connecting");
     }
 
+    startPublisherMonitor() {
+        if (!this.subscribeUrl || this.eventSource || !this.eventSourceFactory) return;
+        this.eventSource = this.eventSourceFactory(this.subscribeUrl.href);
+        this.eventSource.addEventListener("open", this.handleOpen);
+        this.eventSource.addEventListener("error", this.handleError);
+    }
+
     async sendEnvelope(envelope, generation) {
         if (!this.started || generation !== this.generation) return false;
         const token = this.tokenProvider?.();
         if (typeof token !== "string" || !token.trim()) {
+            this.publisherBlockedByCredential = true;
             this.setStatus("token-missing");
             console.error(
                 "[ProgramOutput] Network publish blocked: " +
@@ -107,6 +138,16 @@ export default class NetworkProgramOutputTransport {
             );
             return false;
         }
+        const lifecycleSignal = this.abortController?.signal;
+        const requestController = new AbortController();
+        let timedOut = false;
+        const abortRequest = () => requestController.abort();
+        lifecycleSignal?.addEventListener("abort", abortRequest, { once: true });
+        const timeoutTimer = this.setTimer(() => {
+            timedOut = true;
+            requestController.abort();
+        }, PUBLISH_TIMEOUT_MS);
+        timeoutTimer?.unref?.();
         try {
             const response = await this.fetchImplementation(this.publishUrl.href, {
                 method: "POST",
@@ -116,20 +157,62 @@ export default class NetworkProgramOutputTransport {
                 },
                 body: JSON.stringify(envelope),
                 cache: "no-store",
-                signal: this.abortController?.signal
+                signal: requestController.signal
             });
             if (response.status === 401 || response.status === 403) {
+                this.cancelRetry();
+                this.publisherBlockedByCredential = true;
                 this.setStatus("auth-error");
                 return false;
             }
-            if (!response.ok) throw new Error("Program publish rejected");
+            if (response.status === 409) {
+                const reason = await this.readErrorReason(response);
+                this.cancelRetry();
+                if (reason === "stale-revision") {
+                    this.retryAttempt = 0;
+                    this.publisherBlockedByCredential = false;
+                    this.setStatus("connected");
+                    return true;
+                }
+                this.setStatus(reason === "retired-session"
+                    ? "publisher-conflict" : "protocol-error");
+                return false;
+            }
+            if (!response.ok) {
+                if (response.status === 408 || response.status === 429 ||
+                    response.status >= 500) {
+                    throw new Error("Program publish temporarily unavailable");
+                }
+                this.cancelRetry();
+                this.setStatus("protocol-error");
+                return false;
+            }
+            this.cancelRetry();
+            this.retryAttempt = 0;
+            this.publisherBlockedByCredential = false;
             this.setStatus("connected");
             return true;
         }
         catch (error) {
-            if (error?.name !== "AbortError") this.setStatus("publishing-error");
+            if (timedOut || error?.name !== "AbortError") {
+                this.setStatus("publishing-error");
+                this.scheduleRetry(generation);
+            }
             return false;
         }
+        finally {
+            this.clearTimer(timeoutTimer);
+            lifecycleSignal?.removeEventListener("abort", abortRequest);
+        }
+    }
+
+    async readErrorReason(response) {
+        try {
+            const payload = await response.json();
+            return payload && typeof payload === "object" &&
+                typeof payload.error === "string" ? payload.error : null;
+        }
+        catch { return null; }
     }
 
     handleProgram(event) {
@@ -143,13 +226,58 @@ export default class NetworkProgramOutputTransport {
         catch { /* Malformed network input is ignored. */ }
     }
 
-    handleOpen() { this.setStatus("connected"); }
-    handleError() { this.setStatus("disconnected"); }
+    handleOpen() {
+        if (this.role === "subscriber") return this.setStatus("connected");
+        const shouldRecover = this.publisherMonitorOpened && this.publisherMonitorDisconnected;
+        this.publisherMonitorOpened = true;
+        this.publisherMonitorDisconnected = false;
+        if (shouldRecover && !this.publisherBlockedByCredential) this.queueLatest();
+    }
+    handleError() {
+        if (this.role === "publisher") {
+            this.publisherMonitorDisconnected = true;
+            if (this.publisherBlockedByCredential) return;
+        }
+        this.setStatus("disconnected");
+    }
     refreshPublisherCredential() {
         if (this.role !== "publisher") return;
         const token = this.tokenProvider?.();
-        this.setStatus(typeof token === "string" && token.trim()
-            ? "token-ready" : "token-missing");
+        if (typeof token === "string" && token.trim()) {
+            this.publisherBlockedByCredential = false;
+            this.setStatus("token-ready");
+            if (this.latestEnvelope) this.queueLatest();
+        }
+        else {
+            this.cancelRetry();
+            this.publisherBlockedByCredential = true;
+            this.setStatus("token-missing");
+        }
+    }
+    queueLatest() {
+        if (!this.started || this.role !== "publisher" || !this.latestEnvelope) return false;
+        this.cancelRetry();
+        const envelope = this.latestEnvelope;
+        const generation = this.generation;
+        this.publishQueue = this.publishQueue.catch(() => {})
+            .then(() => this.sendEnvelope(envelope, generation));
+        return true;
+    }
+    scheduleRetry(generation) {
+        if (this.retryTimer !== null || !this.started || generation !== this.generation ||
+            !this.latestEnvelope) return;
+        const index = Math.min(this.retryAttempt, this.retryDelays.length - 1);
+        const delay = this.retryDelays[index];
+        this.retryAttempt += 1;
+        this.retryTimer = this.setTimer(() => {
+            this.retryTimer = null;
+            if (this.started && generation === this.generation) this.queueLatest();
+        }, delay);
+        this.retryTimer?.unref?.();
+    }
+    cancelRetry() {
+        if (this.retryTimer !== null) this.clearTimer(this.retryTimer);
+        this.retryTimer = null;
     }
     setStatus(status) {
         if (this.status === status) return;
