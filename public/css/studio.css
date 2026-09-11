@@ -698,6 +698,7 @@
     padding-inline: 12px;
     font-size: 9px;
 }
+
 .dominant-live-control label { display: flex; align-items: center; gap: 6px; font-weight: 700; }
 .dominant-live-control strong { color: var(--studio-preview); text-align: right; }
 .dominant-live-control span { grid-column: 1 / -1; overflow: hidden; color: var(--lz-text-soft); text-overflow: ellipsis; white-space: nowrap; }
@@ -2574,6 +2575,34 @@
         [data-control-module="sources"]
     ) {
     grid-column: span 2 !important;
+}
+
+/* Keep the collapse action explicit in every header, including compact cards. */
+.studio-panel:not(.is-layout-editing) .control-desk__collapse-toggle {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    text-align: left;
+}
+
+.studio-panel:not(.is-layout-editing) .control-desk__collapse-toggle::before {
+    display: inline-block !important;
+    width: auto;
+    order: 2;
+    margin-left: auto;
+    color: #9fc8f8;
+    content: "⌃";
+    font-size: 18px;
+    line-height: 1;
+}
+
+.studio-panel:not(.is-layout-editing)
+    .control-desk__collapse-toggle[aria-expanded="false"]::before {
+    content: "⌄";
+}
+
+.studio-panel:not(.is-layout-editing) .control-desk__collapse-toggle::after {
+    display: none;
 }
 
 .studio-scene-list {

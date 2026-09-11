@@ -10,9 +10,19 @@ export default class DominantLiveUI {
         this.unsubscribe = this.controller.subscribe((snapshot) => this.render(snapshot)); return true; }
     destroy() { if (!this.started) return; this.toggle.removeEventListener("change", this.handleChange);
         this.unsubscribe?.(); this.started = false; }
-    handleChange() { this.config.setArmed(this.toggle.checked); }
+    handleChange() {
+        this.config.setArmed(this.toggle.checked);
+        // A native checkbox changes before persistence; restore the confirmed
+        // model even when no config notification was emitted by a failed write.
+        this.render(this.controller.getSnapshot());
+        if (this.config.lastWrite?.ok === false) {
+            this.status.textContent = "CONFIG NOT SAVED";
+        }
+    }
     render(snapshot) { this.toggle.checked = snapshot.armed;
         this.toggle.setAttribute("aria-checked", String(snapshot.armed));
-        this.status.textContent = snapshot.status; this.source.textContent = snapshot.authorizedSourceName || "NO AUTHORIZED SOURCE";
+        this.status.textContent = snapshot.phase === "PREPARING"
+            ? `AUTOLIVE · PREPARING · STABLE ${Math.floor(snapshot.diagnostics.entryElapsedMs / 1000)} / ${snapshot.diagnostics.entryRequiredMs / 1000} s`
+            : snapshot.status; this.source.textContent = snapshot.authorizedSourceName || "NO AUTHORIZED SOURCE";
         this.root.dataset.dominantState = snapshot.status.toLowerCase().replaceAll(" ", "-"); }
 }

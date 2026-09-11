@@ -140,6 +140,14 @@ class StudioSourceManager {
         return instance;
     }
 
+    transferInstanceConsumer(instance, from, to) {
+        if (!instance || this.instances.get(instance.instanceId) !== instance ||
+            instance.destroyed || instance.consumer !== from ||
+            !["preview", "program"].includes(to)) return false;
+        instance.consumer = to;
+        return true;
+    }
+
     destroyInstance(instance) {
         if (!instance || !this.instances.has(instance.instanceId)) {
             return false;

@@ -2,6 +2,9 @@ import EventBus from "../core/EventBus.js";
 import Events from "../core/Events.js";
 import StudioSlateSurface from "./renderers/StudioSlateSurface.js";
 import StudioGraphicsLayer from "./renderers/StudioGraphicsLayer.js";
+import { waitForLivePlaybackStability, LIVE_PLAYBACK_PROGRESS_GAP_MS } from "./LivePlaybackStability.js";
+import trace from "../core/RuntimeTrace.js";
+import PreviewProgramHandoff from "./PreviewProgramHandoff.js";
 
 const PROGRAM_READINESS_TIMEOUT_MS = 12000;
 
@@ -13,12 +16,14 @@ export default class StudioRenderer {
         studioStateManager,
         definitionRegistry,
         studioSourceManager,
-        studioGraphicsManager
+        studioGraphicsManager,
+        initialProgramContext = null
     }) {
         this.studioStateManager = studioStateManager;
         this.definitionRegistry = definitionRegistry;
         this.studioSourceManager = studioSourceManager;
         this.studioGraphicsManager = studioGraphicsManager;
+        this.initialProgramContext = initialProgramContext;
         this.started = false;
         this.previewTransportListeners = new Set();
         this.programTransportListeners = new Set();
@@ -66,6 +71,7 @@ export default class StudioRenderer {
         EventBus.off(Events.STUDIO_PROGRAM_CHANGED, this.renderProgramFromState);
         this.discardPreparedProgram();
         this.cancelProgramTransition();
+        this.previewProgramHandoff = null;
         this.clearSlot(this.preview);
         this.clearSlot(this.program);
         this.preview.graphicsLayer?.destroy();
@@ -83,6 +89,7 @@ export default class StudioRenderer {
     }
 
     renderPreviewFromState() {
+        if (this.previewProgramHandoff) return;
         const sceneId = this.studioStateManager.getPreviewSceneId();
         const preparationContext = this.consumePreviewHandoff(sceneId);
 
@@ -91,6 +98,8 @@ export default class StudioRenderer {
 
     renderProgramFromState(record = null) {
         const sceneId = this.studioStateManager.getProgramSceneId();
+        const initialContext = this.initialProgramContext;
+        this.initialProgramContext = null;
 
         if (this.program.prepared?.sceneId === sceneId &&
             this.program.prepared.ready) {
@@ -105,7 +114,8 @@ export default class StudioRenderer {
 
         this.discardPreparedProgram();
         this.cancelProgramTransition();
-        this.renderSlot(this.program, sceneId);
+        this.renderSlot(this.program, sceneId, !record && initialContext?.sceneId === sceneId
+            ? initialContext : null);
     }
 
     async prepareProgramScene(
@@ -114,7 +124,8 @@ export default class StudioRenderer {
             generation,
             type = "cut",
             durationMs = 0,
-            preparationContext = null
+            preparationContext = null,
+            reusePreview = false
         } = {}
     ) {
         if (!this.started || !sceneId || generation === undefined ||
@@ -123,6 +134,14 @@ export default class StudioRenderer {
         }
 
         this.discardPreparedProgram();
+
+        if (reusePreview) {
+            const handoff = PreviewProgramHandoff.reserve(this, sceneId, { generation, type, durationMs });
+            if (handoff) {
+                this.program.prepared = handoff.prepared;
+                return Object.freeze({ sceneId, generation });
+            }
+        }
 
         const definition = this.definitionRegistry.getDefinition(sceneId);
 
@@ -142,7 +161,10 @@ export default class StudioRenderer {
         }
 
         root.className = "studio-render-content";
-        root.hidden = true;
+        const preroll = preparationContext?.livePreroll;
+        root.hidden = !preroll;
+        if (preroll) Object.assign(root.style, { position: "absolute", inset: "0",
+            opacity: ".001", pointerEvents: "none" });
 
         const prepared = {
             sceneId,
@@ -150,6 +172,7 @@ export default class StudioRenderer {
             type,
             durationMs,
             ready: false,
+            preserveConnectedRoot: Boolean(preroll),
             root,
             renderer
         };
@@ -158,10 +181,97 @@ export default class StudioRenderer {
         this.program.baseRoot.appendChild(root);
 
         try {
-            await renderer.start(root);
-            await renderer.waitUntilReady({
-                timeoutMs: PROGRAM_READINESS_TIMEOUT_MS
-            });
+            if (preroll) {
+                if (renderer.sourceId !== preroll.sourceId ||
+                    this.studioSourceManager.getSource(preroll.sourceId)?.kind !== "hls") {
+                    const error = new Error("preroll-source-mismatch"); error.code = "preroll-source-mismatch"; throw error;
+                }
+                const startedAt = Date.now();
+                trace.record("preroll", "surface-created", { sourceId: preroll.sourceId, generation });
+                const starting = renderer.start(root);
+                const ready = renderer.waitUntilReady({ timeoutMs: PROGRAM_READINESS_TIMEOUT_MS });
+                const video = renderer.video;
+                const mediaEvents = ["loadedmetadata", "loadeddata", "canplay", "seeked", "waiting", "error"];
+                const observe = event => trace.record("normal-take", event.type, {
+                    sceneId, generation, sourceId: renderer.sourceId, currentTime: video?.currentTime,
+                    duration: video?.duration, readyState: video?.readyState, networkState: video?.networkState });
+                mediaEvents.forEach(name => video?.addEventListener(name, observe));
+                // Startup may have a pending native play promise. Media readiness
+                // remains the bounded authority, while setup rejection is observed.
+                try { await Promise.race([ready, Promise.resolve(starting).then(() => ready)]); }
+                finally { mediaEvents.forEach(name => video?.removeEventListener(name, observe)); }
+                trace.record("preroll", "first-frame", { sourceId: preroll.sourceId, generation });
+                await waitForLivePlaybackStability(renderer, { ...preroll,
+                    // A late but valid first frame must still receive a complete
+                    // stability window plus the existing permitted progress-event gap.
+                    // Early candidates retain their existing 12s overall bound.
+                    timeoutMs: preroll.entryGate ? null : Math.max(PROGRAM_READINESS_TIMEOUT_MS - (Date.now() - startedAt),
+                        preroll.windowMs + LIVE_PLAYBACK_PROGRESS_GAP_MS) });
+            } else {
+                const preparationStartedAt = Date.now();
+                renderer.beginProgramPreparation?.();
+                const recordMedia = (event, surface) => {
+                    const video = surface?.video || surface?.audio;
+                    const instances = this.studioSourceManager.getActiveInstances?.() || [];
+                    trace.record("normal-take", event, { sceneId, generation,
+                        sourceId: surface?.sourceId, instanceId: surface?.instanceId,
+                        consumer: surface?.consumer, currentTime: video?.currentTime, duration: video?.duration,
+                        readyState: video?.readyState, networkState: video?.networkState,
+                        paused: video?.paused, ended: video?.ended, seeking: video?.seeking,
+                        videoWidth: video?.videoWidth, videoHeight: video?.videoHeight,
+                        state: surface?.readinessState,
+                        videoElements: instances.reduce((count, item) => count + Number(Boolean(item.video)) + Number(Boolean(item.motion)), 0),
+                        audioElements: instances.filter(item => item.audio).length,
+                        pendingAudioPlays: surface?.pendingAudioPlays || 0,
+                        pendingMotionPlay: Boolean(surface?.motionPlayPending),
+                        motionDeferred: Boolean(surface?.preparingProgram && surface?.motion),
+                        endpointMatch: (surface?.sourceUrl || surface?.audioUrl) ===
+                            (this.preview.renderer?.sourceUrl || this.preview.renderer?.audioUrl) });
+                    if (surface?.motion) {
+                        trace.record("normal-take", `${event}-motion`, {
+                        sourceId: surface.sourceId, instanceId: `${surface.instanceId}-motion`, generation,
+                        currentTime: surface.motion.currentTime, duration: surface.motion.duration,
+                        readyState: surface.motion.readyState, networkState: surface.motion.networkState,
+                        muted: surface.motion.muted, paused: surface.motion.paused,
+                        loop: surface.motion.loop, seeking: surface.motion.seeking,
+                        endpointMatch: surface.motionUrl === this.preview.renderer?.motionUrl,
+                        pendingMotionPlay: Boolean(surface.motionPlayPending), motionDeferred: Boolean(surface.preparingProgram) });
+                        for (let index = 0; index < Math.min(surface.motion.buffered?.length || 0, 8); index++)
+                            trace.record("normal-take", "motion-buffered-range", { instanceId: `${surface.instanceId}-motion`,
+                                rangeIndex: index, rangeStart: surface.motion.buffered.start(index), rangeEnd: surface.motion.buffered.end(index) });
+                    }
+                    for (let index = 0; index < Math.min(video?.buffered?.length || 0, 8); index++)
+                        trace.record("normal-take", "buffered-range", { instanceId: surface.instanceId,
+                            rangeIndex: index, rangeStart: video.buffered.start(index), rangeEnd: video.buffered.end(index) });
+                };
+                recordMedia("preview-before-prepare", this.preview.renderer);
+                // play() may remain pending while the browser fetches metadata
+                // or seeks. Start the readiness deadline without awaiting play.
+                const starting = renderer.start(root);
+                const ready = renderer.waitUntilReady({ timeoutMs: PROGRAM_READINESS_TIMEOUT_MS });
+                const mediaEvents = ["loadedmetadata", "loadeddata", "canplay", "playing", "timeupdate", "seeking", "seeked", "waiting", "error"];
+                const observe = event => recordMedia(event.type, renderer);
+                const video = renderer.video || renderer.audio;
+                mediaEvents.forEach(name => video?.addEventListener(name, observe));
+                recordMedia("program-created", renderer);
+                Promise.resolve(starting).then(() => recordMedia("startup-settled", renderer), () => {});
+                trace.record("normal-take", "prepare-start", { sceneId, generation,
+                    sourceId: renderer.sourceId, readyState: renderer.video?.readyState,
+                    networkState: renderer.video?.networkState });
+                try { await Promise.race([ready, Promise.resolve(starting).then(() => ready)]); }
+                catch (error) {
+                    trace.record("normal-take", "required-media-failed", { sourceId: renderer.sourceId,
+                        instanceId: renderer.instanceId, kind: renderer.audio ? "audio" : renderer.video ? "video" : "image",
+                        reason: error?.code || "preparation-failed", requestDurationMs: Date.now() - preparationStartedAt });
+                    throw error;
+                }
+                finally { mediaEvents.forEach(name => video?.removeEventListener(name, observe)); }
+                recordMedia("preview-after-prepare", this.preview.renderer);
+                trace.record("normal-take", "prepare-ready", { sceneId, generation,
+                    requestDurationMs: Date.now() - preparationStartedAt,
+                    sourceId: renderer.sourceId, currentTime: renderer.video?.currentTime,
+                    readyState: renderer.video?.readyState, networkState: renderer.video?.networkState });
+            }
         }
         catch (error) {
             if (this.program.prepared === prepared) {
@@ -171,6 +281,7 @@ export default class StudioRenderer {
                 root.remove();
             }
 
+            if (preroll && !error.code?.startsWith("preroll-")) error.code = "preroll-preparation-failed";
             throw error;
         }
 
@@ -201,17 +312,30 @@ export default class StudioRenderer {
         const outgoingRoot = this.program.contentRoot ||
             this.program.baseRoot.firstElementChild;
 
+        if (prepared.handoff) {
+            if (!prepared.handoff.staged) return false;
+            prepared.handoff.committed = true;
+        }
         this.program.generation += 1;
         this.program.prepared = null;
         this.program.sceneId = sceneId;
         this.setSlotRenderer(this.program, prepared.renderer);
         this.program.contentRoot = prepared.root;
         prepared.root.hidden = false;
+        if (prepared.root.style) Object.assign(prepared.root.style, { position: "", inset: "",
+            opacity: "", pointerEvents: "" });
         outgoingRenderer?.deactivateProgram?.();
-        void prepared.renderer.activateProgram?.();
+        if (prepared.renderer.initialPlayback !== "paused") void prepared.renderer.activateProgram?.();
 
         if (type !== "dissolve" || !outgoingRoot || durationMs <= 0) {
-            this.program.baseRoot.replaceChildren(prepared.root);
+            if (prepared.preserveConnectedRoot) {
+                // The warmed video is already connected here. Do not detach and
+                // reinsert it during CUT: retain its media lifecycle continuously.
+                for (const child of [...this.program.baseRoot.children])
+                    if (child !== prepared.root) child.remove();
+            } else this.program.baseRoot.replaceChildren(prepared.root);
+            trace.record("preroll", "surface-promoted", { sceneId,
+                sourceId: prepared.renderer.sourceId, instanceId: prepared.renderer.instanceId });
             this.releaseRenderer(outgoingRenderer);
             this.program.activation = {
                 sceneId,
@@ -232,6 +356,7 @@ export default class StudioRenderer {
         });
 
         this.program.transition = transition;
+        transition.previewHandoff = Boolean(prepared.handoff);
         this.program.activation = {
             sceneId,
             generation,
@@ -357,7 +482,10 @@ export default class StudioRenderer {
         transition.incomingRoot.classList.remove("studio-program-base-layer");
         transition.outgoingRoot.style.opacity = "";
         transition.outgoingRoot.classList.remove("studio-program-base-layer");
-        this.program.baseRoot.replaceChildren(transition.incomingRoot);
+        if (transition.previewHandoff) {
+            for (const child of [...this.program.baseRoot.children])
+                if (child !== transition.incomingRoot) child.remove();
+        } else this.program.baseRoot.replaceChildren(transition.incomingRoot);
         this.releaseRenderer(transition.outgoingRenderer);
 
         if (this.program.transition === transition) {
@@ -365,6 +493,18 @@ export default class StudioRenderer {
         }
 
         transition.resolve(true);
+    }
+
+    stagePreparedProgram({ generation } = {}) {
+        const prepared = this.program.prepared;
+        return !prepared?.handoff || (prepared.generation === generation && prepared.handoff.stage());
+    }
+
+    completePreviewProgramHandoff({ generation, render = true } = {}) {
+        const handoff = this.previewProgramHandoff;
+        if (!handoff || handoff.prepared.generation !== generation) return;
+        this.previewProgramHandoff = null;
+        if (render && this.started && handoff.committed) this.renderPreviewFromState();
     }
 
     discardPreparedProgram({ generation } = {}) {
@@ -376,6 +516,10 @@ export default class StudioRenderer {
         }
 
         this.program.prepared = null;
+        if (prepared.handoff) {
+            prepared.handoff.rollback();
+            return true;
+        }
         this.releaseRenderer(prepared.renderer);
         prepared.root.remove();
         return true;
@@ -423,11 +567,20 @@ export default class StudioRenderer {
             this.setSlotRenderer(slot, renderer);
             await renderer.start(content);
 
-            if (slot === this.program) {
+            if (slot === this.program && preparationContext) {
+                await renderer.waitUntilReady?.({ timeoutMs: PROGRAM_READINESS_TIMEOUT_MS });
+            }
+
+            if (slot === this.program && slot.generation === generation &&
+                preparationContext?.transportInitialPlayback !== "paused") {
                 void renderer.activateProgram?.();
             }
 
             if (slot.generation !== generation) {
+                // Preview startup may settle after ownership was transferred.
+                // Its stale continuation must not release the current Program.
+                if (slot === this.preview && this.program.renderer === renderer &&
+                    renderer.consumer === "program") return;
                 if (slot.renderer === renderer) {
                     this.setSlotRenderer(slot, null);
                 }

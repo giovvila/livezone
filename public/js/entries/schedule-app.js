@@ -13,6 +13,7 @@ import StudioAssetsUI from "../ui/StudioAssetsUI.js";
 import StudioLiveSourcesUI from "../ui/StudioLiveSourcesUI.js";
 import DominantLiveConfig from "../studio/DominantLiveConfig.js";
 import SchedulerRuntimeState from "../scheduler/SchedulerRuntimeState.js";
+import initializeScheduleSources from "../scheduler/InitializeScheduleSources.js";
 import { requireOperatorSession } from "../auth/OperatorSessionClient.js";
 import OperatorSessionUI from "../ui/OperatorSessionUI.js";
 
@@ -22,7 +23,7 @@ const operatorSessionUI = new OperatorSessionUI(
 operatorSessionUI.start();
 
 StudioStateManager.initialize();
-StudioSourceManager.initialize({});
+await initializeScheduleSources(StudioSourceManager);
 StudioGraphicsManager.initialize();
 
 const assetLibrary = new StudioAssetLibrary();

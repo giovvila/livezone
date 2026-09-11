@@ -41,14 +41,14 @@ export default class SchedulerEngine {
     }
 
     setSchedule(schedule) {
-        const emptySlotContext = this.interruptionContext?.kind === "empty-slot"
+        const externalContext = ["external", "empty-slot"].includes(this.interruptionContext?.kind)
             ? this.interruptionContext : null;
         this.schedule = schedule;
         this.attemptedKey = null;
         this.overrideItemId = null;
         this.failure = null;
         this.runtimeShiftMs.clear();
-        this.interruptionContext = emptySlotContext;
+        this.interruptionContext = externalContext;
         this.resumeCues.clear();
         this.resumingItemId = null;
         if (this.enabled) void this.reconcile(false);
@@ -309,7 +309,7 @@ export default class SchedulerEngine {
     }
 
     handleProgramChanged(record) {
-        if (!this.enabled || record?.source === "scheduler" ||
+        if (!this.enabled || ["scheduler", "dominant-live"].includes(record?.source) ||
             record?.source === this.interruptionContext?.origin) return;
         const active = getActiveItem(this.getEffectiveSchedule(), this.clock());
         if (active) {

@@ -229,7 +229,10 @@ test("monitor core has no Program, Preview, scheduler or StateManager dependency
 test("Technical Monitor uses first-frame readiness and delegates retry ownership", async () => {
     const source = await readFile(new URL(
         "../public/js/ui/TechnicalLiveMonitorUI.js", import.meta.url), "utf8");
-    assert.match(source, /waitUntilReady\(\{ timeoutMs: 12000 \}\)/);
+    assert.match(source, /createLiveHlsConsumerFactory\(root/);
+    const consumer = await readFile(new URL(
+        "../public/js/studio/LiveHlsHealthConsumer.js", import.meta.url), "utf8");
+    assert.match(consumer, /waitUntilReady\(\{ timeoutMs: 12000 \}\)/);
     assert.doesNotMatch(source, /onMetadata|loadedmetadata[\s\S]*handlers\.online/);
     assert.doesNotMatch(source, /setTimeout|setInterval/);
 });

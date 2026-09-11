@@ -65,6 +65,10 @@ export default class StudioAudioSurface {
         this.handleAudioRecovery = this.handleAudioRecovery.bind(this);
     }
 
+    beginProgramPreparation() {
+        this.preparingProgram = this.consumer === "program";
+    }
+
     async start(root) {
         this.root = root;
         this.image = this.stillUrl ? document.createElement("img") : null;
@@ -77,7 +81,8 @@ export default class StudioAudioSurface {
             this.image.hidden = true;
         }
         this.audio.preload = "auto";
-        this.audio.autoplay = this.initialPlayback === "playing";
+        this.audio.autoplay = !this.preparingProgram && this.initialPlayback === "playing";
+        if (this.preparingProgram) this.audio.muted = this.audio.defaultMuted = true;
         this.image?.addEventListener("load", this.handleImageLoad);
         this.image?.addEventListener("error", this.handleImageError);
         this.audio.addEventListener("loadedmetadata", this.handleLoadedMetadata);
@@ -107,10 +112,7 @@ export default class StudioAudioSurface {
         this.showStatus("Loading audio…", "loading");
         this.setHealth("connecting", null);
         if (this.image) this.image.src = this.stillUrl;
-        if (this.motion) {
-            this.motion.src = this.motionUrl;
-            this.motion.load();
-        }
+        if (!this.preparingProgram) this.loadMotion();
         this.audio.load();
         this.notifyTransport();
         this.checkCurrentReadiness();
@@ -143,9 +145,11 @@ export default class StudioAudioSurface {
     }
 
     handleMotionReady(event) {
+        if (this.destroyed) return;
         if (event?.currentTarget && event.currentTarget !== this.motion) return;
         this.motionReady = true;
         this.motionFailed = false;
+        this.refreshArtworkVisibility();
         void this.startMotionPlayback();
     }
 
@@ -157,10 +161,18 @@ export default class StudioAudioSurface {
     }
 
     async startMotionPlayback() {
-        if (!this.motion || this.destroyed || this.motionFailed) return false;
+        if (!this.motion || this.destroyed || this.motionFailed || this.preparingProgram) return false;
         const motion = this.motion;
+        if (this.motionPlayPending === motion) {
+            try {
+                await this.motionPlayPromise;
+                return motion === this.motion && !this.destroyed && !this.motionFailed;
+            } catch { return false; }
+        }
+        this.motionPlayPending = motion;
         try {
-            await motion.play();
+            this.motionPlayPromise = Promise.resolve(motion.play());
+            await this.motionPlayPromise;
             if (motion !== this.motion || this.destroyed) return false;
             this.motionReady = true;
             this.refreshArtworkVisibility();
@@ -171,6 +183,20 @@ export default class StudioAudioSurface {
             this.handleMotionError();
             return false;
         }
+        finally {
+            if (this.motionPlayPending === motion) {
+                this.motionPlayPending = null; this.motionPlayPromise = null;
+            }
+        }
+    }
+
+    loadMotion() {
+        if (!this.motion || this.motionStarted || this.destroyed) return;
+        this.motionStarted = true;
+        this.motion.preload = "auto";
+        this.motion.autoplay = true;
+        this.motion.src = this.motionUrl;
+        this.motion.load();
     }
 
     createMotionElement() {
@@ -179,10 +205,10 @@ export default class StudioAudioSurface {
         motion.muted = true;
         motion.defaultMuted = true;
         motion.loop = true;
-        motion.autoplay = true;
+        motion.autoplay = !this.preparingProgram;
         motion.playsInline = true;
         motion.controls = false;
-        motion.preload = "auto";
+        motion.preload = this.preparingProgram ? "none" : "auto";
         motion.hidden = true;
         motion.addEventListener("loadeddata", this.handleMotionReady);
         motion.addEventListener("error", this.handleMotionError);
@@ -190,6 +216,8 @@ export default class StudioAudioSurface {
     }
 
     removeMotionElement() {
+        this.motionStarted = false;
+        this.motionPlayPending = null; this.motionPlayPromise = null;
         if (!this.motion) return;
         this.motion.removeEventListener("loadeddata", this.handleMotionReady);
         this.motion.removeEventListener("error", this.handleMotionError);
@@ -244,8 +272,7 @@ export default class StudioAudioSurface {
             if (nextMotionUrl) {
                 this.motion = this.createMotionElement();
                 this.root.insertBefore(this.motion, this.audio);
-                this.motion.src = nextMotionUrl;
-                this.motion.load();
+                if (!this.preparingProgram) this.loadMotion();
             }
         }
         this.refreshArtworkVisibility();
@@ -262,6 +289,7 @@ export default class StudioAudioSurface {
 
     applyInitialCue() {
         if (this.initialCueState !== "pending" || !this.audio ||
+            this.audio.seeking === true ||
             this.audio.readyState < 1) {
             return;
         }
@@ -334,7 +362,7 @@ export default class StudioAudioSurface {
     }
 
     handlePause() {
-        if (this.consumer === "program" && this.initialPlayback === "playing" &&
+        if (!this.preparingProgram && !this.programDeactivated && !this.interruptionPaused && this.consumer === "program" && this.initialPlayback === "playing" &&
             !this.destroyed && !this.transportEnded && !this.transportError &&
             !this.autoplayBlocked && !this.audio?.ended) {
             void this.startPlayback().then((resumed) => {
@@ -379,12 +407,15 @@ export default class StudioAudioSurface {
     }
 
     async startPlayback() {
+        if (this.preparingProgram || this.programDeactivated || this.interruptionPaused) return false;
         if (!this.audio || this.destroyed) {
             return false;
         }
         const audio = this.audio;
+        this.pendingAudioPlays = (this.pendingAudioPlays || 0) + 1;
         try {
             await audio.play();
+            if (this.preparingProgram || this.programDeactivated || this.interruptionPaused) { audio.pause(); return false; }
             if (this.destroyed || this.audio !== audio) {
                 audio.pause();
                 return false;
@@ -404,6 +435,7 @@ export default class StudioAudioSurface {
             }
             return false;
         }
+        finally { this.pendingAudioPlays -= 1; }
     }
 
     isAutoplayRejection(error) {
@@ -440,6 +472,11 @@ export default class StudioAudioSurface {
     }
 
     activateProgram() {
+        const loadDeferredMotion = this.preparingProgram;
+        this.preparingProgram = false;
+        this.programDeactivated = false;
+        if (this.audio) this.audio.muted = this.audio.defaultMuted = false;
+        if (loadDeferredMotion) this.loadMotion();
         return this.consumer === "program" &&
             this.initialPlayback === "playing"
             ? this.startPlayback()
@@ -450,6 +487,7 @@ export default class StudioAudioSurface {
         if (this.consumer !== "program" || !this.audio) {
             return false;
         }
+        this.programDeactivated = true;
         this.audio.pause();
         return true;
     }
@@ -461,6 +499,26 @@ export default class StudioAudioSurface {
         const played = await this.startPlayback();
         this.notifyTransport();
         return played && !this.audio.paused;
+    }
+
+    pauseForInterruption({ cueAtInterruption } = {}) {
+        this.interruptionPaused = true;
+        this.audio?.pause();
+        this.motion?.pause();
+        if (Number.isFinite(cueAtInterruption) && this.audio) this.audio.currentTime = cueAtInterruption;
+        this.notifyTransport();
+        return true;
+    }
+
+    async resumeFromInterruption({ cueAtInterruption, playbackState }) {
+        this.interruptionPaused = false;
+        this.transportEnded = playbackState === "ended";
+        this.initialPlayback = playbackState === "playing" ? "playing" : "paused";
+        if (Number.isFinite(cueAtInterruption)) this.audio.currentTime = cueAtInterruption;
+        if (this.initialPlayback === "playing") await this.startPlayback();
+        else this.audio?.pause();
+        this.notifyTransport();
+        return true;
     }
 
     pause() {
@@ -588,7 +646,7 @@ export default class StudioAudioSurface {
     }
 
     markReady() {
-        if (!this.metadataReady || !this.audioReady || !this.imageReady ||
+        if (!this.metadataReady || !this.audioReady || this.audio?.seeking === true ||
             this.initialCueState !== "ready" ||
             this.readinessState !== "pending") {
             return;

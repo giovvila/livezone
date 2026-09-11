@@ -1,3 +1,5 @@
+import trace from "../core/RuntimeTrace.js";
+
 export default class StudioTransitionCoordinator {
 
     constructor({ studioStateManager, studioRenderer } = {}) {
@@ -37,6 +39,7 @@ export default class StudioTransitionCoordinator {
         this.generation += 1;
         this.studioRenderer.discardPreparedProgram({ generation });
         this.studioRenderer.cancelProgramTransition({ generation });
+        this.studioRenderer.completePreviewProgramHandoff?.({ generation, render: false });
         this.snapshot = this.createIdleSnapshot();
         this.listeners.clear();
     }
@@ -62,7 +65,11 @@ export default class StudioTransitionCoordinator {
         durationMs,
         source = null,
         reason = null,
-        preparationContext: requestedPreparationContext = null
+        preparationContext: requestedPreparationContext = null,
+        canCommit = null,
+        beforeCommit = null,
+        programTarget = null,
+        reusePreview = true
     } = {}) {
         const normalizedDuration = type === "cut"
             ? 0
@@ -80,7 +87,7 @@ export default class StudioTransitionCoordinator {
         }
 
         const fromSceneId = this.studioStateManager.getProgramSceneId();
-        const toSceneId = this.studioStateManager.getPreviewSceneId();
+        const toSceneId = programTarget || this.studioStateManager.getPreviewSceneId();
 
         if (!toSceneId || !this.studioStateManager.getScene(toSceneId) ||
             toSceneId === fromSceneId) {
@@ -91,6 +98,7 @@ export default class StudioTransitionCoordinator {
         }
 
         const generation = ++this.generation;
+        trace.record("normal-take", "accepted", { generation, sceneId: toSceneId, previousSceneId: fromSceneId });
         const preparationContext = requestedPreparationContext ??
             this.studioRenderer.getPreviewPreparationContext?.(toSceneId) ?? null;
 
@@ -112,7 +120,9 @@ export default class StudioTransitionCoordinator {
                     generation,
                     type,
                     durationMs: normalizedDuration,
-                    preparationContext
+                    preparationContext,
+                    reusePreview: reusePreview && source === "operator" &&
+                        !requestedPreparationContext && !programTarget
                 }
             );
 
@@ -125,20 +135,34 @@ export default class StudioTransitionCoordinator {
             }
 
             stage = "preview-revalidation";
-            if (this.studioStateManager.getPreviewSceneId() !== toSceneId) {
+            if (canCommit && !canCommit()) {
+                this.studioRenderer.discardPreparedProgram({ generation });
+                this.recordTransitionFailure("acquisition-cancelled", { fromSceneId, toSceneId,
+                    previewReady: true, programCommitted: false });
+                return null;
+            }
+            if (!programTarget && this.studioStateManager.getPreviewSceneId() !== toSceneId) {
                 this.studioRenderer.discardPreparedProgram({ generation });
                 this.recordTransitionFailure("preview-race", { fromSceneId, toSceneId,
                     previewReady: true, programCommitted: false });
                 return null;
             }
 
-            this.studioRenderer.captureProgramPreviewHandoff?.(
+            if (!programTarget) this.studioRenderer.captureProgramPreviewHandoff?.(
                 fromSceneId,
                 { generation }
             );
 
             stage = "program-commit";
-            const record = this.studioStateManager.take({ source, reason });
+            beforeCommit?.();
+            if (this.studioRenderer.stagePreparedProgram?.({ generation }) === false)
+                throw new Error("preview-handoff-invalidated");
+            if (source === "dominant-live") trace.record("autolive", "program-commit-start", {
+                generation, previousSceneId: fromSceneId, sceneId: toSceneId });
+            const record = programTarget
+                ? this.studioStateManager.setProgramScene(toSceneId, { source, reason })
+                : this.studioStateManager.take({ source, reason });
+            trace.record("normal-take", "state-commit", { generation, sceneId: toSceneId, previousSceneId: fromSceneId });
 
             if (!record || this.studioStateManager.getProgramSceneId() !== toSceneId) {
                 this.studioRenderer.discardPreviewHandoff?.({ generation });
@@ -149,6 +173,8 @@ export default class StudioTransitionCoordinator {
             }
 
             stage = "program-activation";
+            if (source === "dominant-live") trace.record("autolive", "program-committed", {
+                generation, previousSceneId: fromSceneId, sceneId: toSceneId });
             const completed = await this.studioRenderer
                 .waitForProgramTransition({ toSceneId, generation });
 
@@ -182,6 +208,7 @@ export default class StudioTransitionCoordinator {
             return null;
         }
         finally {
+            this.studioRenderer.completePreviewProgramHandoff?.({ generation });
             if (this.isCurrent(generation)) {
                 this.busy = false;
                 this.setSnapshot(this.createIdleSnapshot());
@@ -203,6 +230,8 @@ export default class StudioTransitionCoordinator {
 
     recordTransitionFailure(reason, fields = {}) {
         this.lastTransitionResult = Object.freeze({ ok: false, reason, ...fields });
+        trace.record("normal-take", "failed", { reason, sceneId: fields.toSceneId,
+            previousSceneId: fields.fromSceneId, generation: this.generation });
     }
 
     subscribe(listener) {

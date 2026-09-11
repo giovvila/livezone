@@ -11,9 +11,10 @@ export async function createProgramOutputTransport({
     tokenProvider = null,
     fetchImplementation,
     eventSourceFactory,
-    baseUrl
+    baseUrl,
+    configSignal
 } = {}) {
-    const config = await loadConfig(configUrl);
+    const config = await loadConfig(configUrl, configSignal);
     if (config.mode === "local") return new LocalProgramOutputTransport();
     return new NetworkProgramOutputTransport({
         role,
@@ -32,8 +33,8 @@ export async function loadProgramOutputConfig(configUrl = CONFIG_URL) {
     return loadConfig(configUrl);
 }
 
-async function loadConfig(configUrl) {
-    const response = await fetch(configUrl, { cache: "no-store" });
+async function loadConfig(configUrl, signal) {
+    const response = await fetch(configUrl, { cache: "no-store", ...(signal ? { signal } : {}) });
     if (!response.ok) throw new Error("Program Output configuration unavailable");
     const value = await response.json();
     if (!value || value.version !== 1 || !["local", "network"].includes(value.mode) ||

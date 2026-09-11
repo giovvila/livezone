@@ -1,5 +1,6 @@
 const STORAGE_KEY = "livezone.controlDesk.layout.v1";
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 3;
+const LEGACY_SCHEMA_VERSIONS = new Set([1, 2]);
 const BASE_COLUMNS = 12;
 const GRID_GAP = 12;
 const GRID_ROW_STEP = 48;
@@ -56,9 +57,9 @@ export default class ControlDeskLayoutManager {
         this.editMode = false;
         this.columns = BASE_COLUMNS;
         this.modules = new Map();
+        this.collapsedIds = new Set();
         this.baseLayout = this.createDefaultLayout();
         this.activeLayout = [];
-        this.collapsedIds = new Set();
         this.operation = null;
         this.frameId = null;
 
@@ -160,6 +161,7 @@ export default class ControlDeskLayoutManager {
         this.baseLayout = this.createDefaultLayout();
         this.collapsedIds = this.createDefaultCollapsedIds();
         this.applyLayout();
+        this.persistLayout();
         this.onReset();
         return this.getLayout();
     }
@@ -778,15 +780,31 @@ export default class ControlDeskLayoutManager {
             parsed = JSON.parse(value);
         }
         catch {
-            return this.createDefaultLayout();
+            this.collapsedIds = this.createDefaultCollapsedIds();
+            const layout = this.createDefaultLayout();
+            this.persistLayout(layout);
+            return layout;
         }
 
-        if (!parsed || parsed.version !== SCHEMA_VERSION ||
+        // v2 was introduced while the real browser still hydrated every panel
+        // expanded. It cannot be trusted as evidence of deliberate user intent.
+        // v3 is the first schema that can safely preserve an empty collapse set.
+        const legacyLayout = parsed?.version === undefined ||
+            LEGACY_SCHEMA_VERSIONS.has(parsed?.version);
+        if (!parsed || (!legacyLayout && parsed.version !== SCHEMA_VERSION) ||
             !Array.isArray(parsed.modules)) {
-            return this.createDefaultLayout();
+            this.collapsedIds = this.createDefaultCollapsedIds();
+            const layout = this.createDefaultLayout();
+            this.persistLayout(layout);
+            return layout;
         }
 
-        this.collapsedIds = this.parseCollapsedIds(parsed.collapsed);
+        // Schemas through v2 cannot express an explicit expanded state: [] can
+        // have been emitted by the broken hydration path. Schema v3 records
+        // deliberate collapsed/expanded choices.
+        this.collapsedIds = legacyLayout
+            ? this.createDefaultCollapsedIds()
+            : this.parseCollapsedIds(parsed.collapsed);
 
         const known = new Map();
 
@@ -797,7 +815,10 @@ export default class ControlDeskLayoutManager {
 
             if (known.has(item.id) || ![item.x, item.y, item.w, item.h]
                 .every(Number.isInteger)) {
-                return this.createDefaultLayout();
+                this.collapsedIds = this.createDefaultCollapsedIds();
+                const layout = this.createDefaultLayout();
+                this.persistLayout(layout);
+                return layout;
             }
 
             const definition = MODULE_BY_ID.get(item.id);
@@ -805,7 +826,10 @@ export default class ControlDeskLayoutManager {
             if (item.x < 0 || item.y < 0 || item.w < definition.minW ||
                 item.h < definition.minH || item.w > BASE_COLUMNS ||
                 item.x + item.w > BASE_COLUMNS) {
-                return this.createDefaultLayout();
+                this.collapsedIds = this.createDefaultCollapsedIds();
+                const layout = this.createDefaultLayout();
+                this.persistLayout(layout);
+                return layout;
             }
 
             known.set(item.id, {
@@ -834,25 +858,30 @@ export default class ControlDeskLayoutManager {
             return geometry;
         });
 
+        if (legacyLayout) {
+            this.persistLayout(merged);
+        }
         return merged;
     }
 
     parseCollapsedIds(value) {
         if (value === undefined) {
-            return new Set();
+            // Layout v1 predated this field. Its compact default must not hydrate
+            // as ten permanently expanded panels.
+            return this.createDefaultCollapsedIds();
         }
 
         if (!Array.isArray(value) || value.some((id) => typeof id !== "string")) {
-            return new Set();
+            return this.createDefaultCollapsedIds();
         }
 
         return new Set(value.filter((id) => MODULE_BY_ID.has(id)));
     }
 
-    persistLayout() {
+    persistLayout(layout = this.baseLayout) {
         const payload = {
             version: SCHEMA_VERSION,
-            modules: this.baseLayout.map((item) => ({ ...item })),
+            modules: layout.map((item) => ({ ...item })),
             collapsed: Array.from(this.collapsedIds)
         };
 
@@ -884,9 +913,9 @@ export default class ControlDeskLayoutManager {
     }
 
     createDefaultLayout() {
-        return MODULE_DEFINITIONS.map((definition) =>
+        return this.normalizeBaseLayout(MODULE_DEFINITIONS.map((definition) =>
             this.createGeometry(definition)
-        );
+        ));
     }
 
     createDefaultCollapsedIds() {

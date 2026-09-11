@@ -53,7 +53,21 @@ export default class StudioLiveSourcesUI {
         const button = event.target.closest("button[data-action]");
         if (!button) return;
         const source = this.catalog.getSources().find(({ id }) => id === button.dataset.id);
-        if (!source || source.kind !== "hls" || source.origin !== "operator") return;
+        if (!source || source.kind !== "hls") return;
+        if (button.dataset.action === "authorize") {
+            if (source.enabled === false) return;
+            const authorized = this.dominantLiveConfig?.getSnapshot?.().authorizedSourceId;
+            this.dominantLiveConfig?.setAuthorizedSourceId(
+                authorized === source.id ? null : source.id, { sourceKind: source.kind }
+            );
+            if (!this.dominantLiveConfig || this.dominantLiveConfig.lastWrite?.ok === false) {
+                return this.show("Autorizzazione AUTO INTERRUPT non salvata. Riprova il salvataggio.", true);
+            }
+            return this.show(authorized === source.id
+                ? "AUTO INTERRUPT disattivato."
+                : `${source.name} è l'unica sorgente AUTO INTERRUPT.`, false);
+        }
+        if (source.origin !== "operator") return;
         if (button.dataset.action === "edit") {
             this.editingId = source.id;
             this.form.elements.name.value = source.name;
@@ -76,15 +90,6 @@ export default class StudioLiveSourcesUI {
                 ? this.show(`Sorgente LIVE ${result.source.enabled ? "abilitata" : "disabilitata"}.`, false)
                 : this.show(`Operazione rifiutata: ${result.reason}.`, true);
         }
-        if (button.dataset.action === "authorize") {
-            const authorized = this.dominantLiveConfig?.getSnapshot?.().authorizedSourceId;
-            this.dominantLiveConfig?.setAuthorizedSourceId(
-                authorized === source.id ? null : source.id
-            );
-            return this.show(authorized === source.id
-                ? "AUTO INTERRUPT disattivato."
-                : `${source.name} è l'unica sorgente AUTO INTERRUPT.`, false);
-        }
         const sceneId = source.sceneIds[0];
         let referenced = false;
         const unsubscribe = this.scheduleStore?.subscribe?.(({ schedule }) => {
@@ -103,7 +108,7 @@ export default class StudioLiveSourcesUI {
 
     render(sources) {
         if (!this.started) return;
-        const rows = sources.filter(({ kind, origin }) => kind === "hls" && origin === "operator")
+        const rows = sources.filter(({ kind }) => kind === "hls")
             .map((source) => {
                 const row = document.createElement("li");
                 const name = document.createElement("strong");
@@ -128,6 +133,7 @@ export default class StudioLiveSourcesUI {
                 toggle.textContent = source.enabled ? "DISABLE" : "ENABLE";
                 authorize.textContent = `AUTO INTERRUPT: ${isAuthorized ? "ON" : "OFF"}`;
                 remove.textContent = "REMOVE";
+                edit.hidden = toggle.hidden = remove.hidden = source.origin !== "operator";
                 edit.dataset.action = "edit";
                 toggle.dataset.action = "toggle";
                 authorize.dataset.action = "authorize";

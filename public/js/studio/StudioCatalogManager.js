@@ -143,6 +143,7 @@ export default class StudioCatalogManager {
 
         this.initialized = true;
         this.eventTarget?.addEventListener?.("storage", this.handleStorage);
+        this.notify();
         return this.createInitializationReport(
             issues,
             registeredSourceCount,

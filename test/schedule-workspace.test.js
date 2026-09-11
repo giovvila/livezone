@@ -534,6 +534,192 @@ test("clean and reset ControlDesk keep every compact module visible", () => {
     ), 84);
 });
 
+test("legacy ControlDesk layouts migrate every collapse representation to schema v3 compact defaults", () => {
+    const modules = [{ id: "scenes", x: 0, y: 0, w: 6, h: 4 }];
+    for (const [version, collapsed] of [[undefined, undefined], [1, undefined],
+        [1, []], [1, "invalid"], [1, ["scenes"]], [2, []], [2, ["scenes"]]]) {
+        const writes = [];
+        const manager = new ControlDeskLayoutManager({ root: null, storage: {
+            getItem: () => JSON.stringify({ ...(version === undefined ? {} : { version }), modules,
+                ...(collapsed === undefined ? {} : { collapsed }) }),
+            setItem: (_key, value) => writes.push(JSON.parse(value))
+        } });
+        const layout = manager.loadLayout();
+        assert.equal(manager.collapsedIds.size, 10);
+        assert.deepEqual(layout.find(({ id }) => id === "scenes"), modules[0],
+            "migration must preserve valid geometry");
+        assert.equal(writes.length, 1);
+        assert.equal(writes[0].version, 3);
+        assert.equal(writes[0].collapsed.length, 10);
+    }
+});
+
+test("schema v3 preserves deliberate empty and partial collapse choices", () => {
+    const modules = [{ id: "scenes", x: 0, y: 0, w: 6, h: 4 }];
+    const explicitExpanded = new ControlDeskLayoutManager({ root: null, storage: {
+        getItem: () => JSON.stringify({ version: 3, modules, collapsed: [] })
+    } });
+    explicitExpanded.loadLayout();
+    assert.equal(explicitExpanded.collapsedIds.size, 0);
+    const partial = new ControlDeskLayoutManager({ root: null, storage: {
+        getItem: () => JSON.stringify({ version: 3, modules, collapsed: ["scenes"] })
+    } });
+    partial.loadLayout();
+    assert.deepEqual([...partial.collapsedIds], ["scenes"]);
+});
+
+test("ControlDesk collapse action updates only its panel body and persists independently", () => {
+    const persisted = [];
+    const manager = new ControlDeskLayoutManager({ root: null, storage: {
+        setItem: (_key, value) => persisted.push(JSON.parse(value))
+    } });
+    const classes = new Set();
+    const attributes = new Map();
+    const module = { element: { classList: { toggle: (name, enabled) => {
+        if (enabled) classes.add(name); else classes.delete(name);
+    } }, style: {} }, body: { hidden: false }, toggle: {
+        setAttribute: (name, value) => attributes.set(name, value)
+    }, resizeHandle: {} };
+    manager.modules.set("scenes", module);
+    manager.modules.set("sources", { ...module, element: { classList: { toggle() {} }, style: {} },
+        body: { hidden: false }, toggle: { setAttribute() {} }, resizeHandle: {} });
+    manager.workspace = { contains: () => true };
+    manager.applyLayout = () => ["scenes", "sources"].forEach((id) => manager.renderModuleState(id));
+    const program = { sceneId: "program" };
+    const preview = { sceneId: "preview" };
+    const click = (id) => manager.handleCollapseClick({ target: { closest: () => ({
+        dataset: { collapseModule: id }
+    }) } });
+    click("scenes");
+    assert.equal(module.body.hidden, true);
+    assert.equal(classes.has("is-collapsed"), true);
+    assert.equal(attributes.get("aria-expanded"), "false");
+    assert.equal(manager.collapsedIds.has("sources"), false);
+    assert.equal(persisted.at(-1).collapsed.includes("scenes"), true);
+    assert.deepEqual(program, { sceneId: "program" });
+    assert.deepEqual(preview, { sceneId: "preview" });
+    click("scenes");
+    assert.equal(module.body.hidden, false);
+    assert.equal(classes.has("is-collapsed"), false);
+    assert.equal(attributes.get("aria-expanded"), "true");
+    click("sources");
+    assert.equal(manager.collapsedIds.has("scenes"), false);
+    assert.equal(manager.collapsedIds.has("sources"), true);
+});
+
+test("ControlDesk materializes ten real header controls and toggles their rendered bodies", () => {
+    class Element {
+        constructor(tagName = "div") {
+            this.tagName = tagName.toUpperCase(); this.children = []; this.dataset = {};
+            this.attributes = new Map(); this.classList = { values: new Set(),
+                add: value => this.classList.values.add(value),
+                toggle: (value, enabled) => enabled ? this.classList.values.add(value)
+                    : this.classList.values.delete(value) };
+            this.style = {}; this.hidden = false;
+        }
+        append(...items) { this.children.push(...items); }
+        appendChild(item) { this.children.push(item); return item; }
+        prepend(item) { this.children.unshift(item); }
+        matches() { return false; }
+        querySelector() { return null; }
+        setAttribute(name, value) { this.attributes.set(name, String(value)); }
+        closest(selector) { return selector === "[data-collapse-module]" &&
+            this.dataset.collapseModule ? this : null; }
+    }
+    const document = { createElement: tagName => new Element(tagName) };
+    const workspace = new Element(); workspace.ownerDocument = document;
+    workspace.contains = node => workspace.children.includes(node) ||
+        [...workspace.children].some(module => module.children.includes(node) ||
+            module.children.some(child => child.children?.includes(node)));
+    const manager = new ControlDeskLayoutManager({ root: null, storage: { setItem() {} } });
+    ["scenes", "sources", "transition", "take", "broadcast", "media-preview",
+        "lower-third", "text-crawl", "channel-logo", "technical-monitor"].forEach((id) => {
+        const module = new Element("section");
+        module.dataset.controlDeskModule = id;
+        module.append(new Element("p"));
+        workspace.append(module);
+        manager.modules.set(id, { element: module });
+    });
+    manager.workspace = workspace;
+    manager.installModuleChrome();
+    manager.installHandles();
+    manager.modules.forEach(({ toggle, body }) => {
+        assert.equal(toggle.tagName, "BUTTON");
+        assert.ok(toggle.dataset.collapseModule);
+        assert.equal(body.hidden, false);
+    });
+    manager.applyLayout = () => ["scenes", "sources", "transition", "take", "broadcast",
+        "media-preview", "lower-third", "text-crawl", "channel-logo", "technical-monitor"]
+        .forEach(id => manager.renderModuleState(id));
+    const scenes = manager.modules.get("scenes");
+    manager.handleCollapseClick({ target: scenes.toggle });
+    assert.equal(scenes.body.hidden, true);
+    assert.equal(scenes.toggle.attributes.get("aria-expanded"), "false");
+    manager.handleCollapseClick({ target: scenes.toggle });
+    assert.equal(scenes.body.hidden, false);
+    assert.equal(scenes.toggle.attributes.get("aria-expanded"), "true");
+
+    manager.collapsedIds.clear();
+    manager.reset();
+    manager.modules.forEach(({ element, body, toggle }) => {
+        assert.equal(body.hidden, true);
+        assert.equal(element.classList.values.has("is-collapsed"), true);
+        assert.equal(toggle.attributes.get("aria-expanded"), "false");
+    });
+});
+
+test("ControlDesk starts before optional runtime bootstraps and has one owner", async () => {
+    const source = await readFile(new URL(
+        "../public/js/entries/control-room-app.js", import.meta.url), "utf8");
+    const construction = source.indexOf("controlDeskLayoutManager = new ControlDeskLayoutManager");
+    const runtimeStart = source.indexOf("runtime.start({");
+
+    assert.ok(construction >= 0 && construction < runtimeStart,
+        "the static Control Desk must start before optional runtime services");
+    assert.equal((source.match(/new ControlDeskLayoutManager/g) || []).length, 1,
+        "only one manager may own the current Control Desk DOM");
+});
+
+test("ControlDesk RESET LAYOUT removes saved expansion and restores compact defaults", () => {
+    let removed = false;
+    let persisted = null;
+    const manager = new ControlDeskLayoutManager({ root: null, storage: {
+        removeItem: () => { removed = true; },
+        setItem: (_key, value) => { persisted = JSON.parse(value); }
+    } });
+    manager.collapsedIds = new Set();
+    const layout = manager.reset();
+    assert.equal(removed, true);
+    assert.equal(manager.collapsedIds.size, 10);
+    assert.equal(layout.collapsed.length, 10);
+    assert.equal(persisted.version, 3);
+    assert.equal(persisted.collapsed.length, 10);
+});
+
+test("schema v3 retains one-panel collapse and intentional all-expanded state across reload", () => {
+    let saved = null;
+    const storage = { getItem: () => saved, setItem: (_key, value) => { saved = value; } };
+    const first = new ControlDeskLayoutManager({ root: null, storage });
+    first.baseLayout = first.createDefaultLayout();
+    first.collapsedIds = new Set(["scenes"]);
+    first.persistLayout();
+    const second = new ControlDeskLayoutManager({ root: null, storage });
+    second.loadLayout();
+    assert.deepEqual([...second.collapsedIds], ["scenes"]);
+    second.collapsedIds.clear();
+    second.persistLayout();
+    const third = new ControlDeskLayoutManager({ root: null, storage });
+    third.loadLayout();
+    assert.equal(third.collapsedIds.size, 0);
+    assert.equal(JSON.parse(saved).version, 3);
+});
+
+test("ControlDesk CSS keeps a right-edge chevron visible for expanded and collapsed panels", async () => {
+    const css = await readFile(new URL("../public/css/studio.css", import.meta.url), "utf8");
+    assert.match(css, /Keep the collapse action explicit[\s\S]*?\.control-desk__collapse-toggle::before\s*\{[^}]*display:\s*inline-block !important;[^}]*order:\s*2;[^}]*margin-left:\s*auto;[^}]*content:\s*"⌃";/);
+    assert.match(css, /\.control-desk__collapse-toggle\[aria-expanded="false"\]::before\s*\{\s*content:\s*"⌄";/);
+});
+
 test("normal ControlDesk expansion keeps sibling cards in the intrinsic grid", async () => {
     const css = await readFile(new URL("../public/css/studio.css", import.meta.url), "utf8");
     const managerSource = await readFile(new URL(

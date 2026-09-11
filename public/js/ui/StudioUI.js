@@ -1,13 +1,15 @@
 import EventBus from "../core/EventBus.js";
 import Events from "../core/Events.js";
 import StudioStateManager from "../core/StudioStateManager.js";
+import trace from "../core/RuntimeTrace.js";
 
 export default class StudioUI {
 
-    constructor(root, transitionCoordinator, catalog = null) {
+    constructor(root, transitionCoordinator, catalog = null, publicationPending = () => null) {
         this.root = root;
         this.transitionCoordinator = transitionCoordinator;
         this.catalog = catalog;
+        this.publicationPending = publicationPending;
         this.started = false;
 
         this.handleSceneListClick = this.handleSceneListClick.bind(this);
@@ -45,6 +47,13 @@ export default class StudioUI {
 
         this.sceneList.addEventListener("click", this.handleSceneListClick);
         this.takeButton.addEventListener("click", this.handleTakeClick);
+        if (this.takeButton.parentElement) {
+            this.takeFeedback = document.createElement("p");
+            this.takeFeedback.className = "studio-sources__feedback";
+            this.takeFeedback.setAttribute("role", "status");
+            this.takeFeedback.hidden = true;
+            this.takeButton.parentElement.appendChild(this.takeFeedback);
+        }
         this.transitionSelect.addEventListener(
             "change",
             this.handleTransitionChange
@@ -89,6 +98,7 @@ export default class StudioUI {
 
         this.sceneList.removeEventListener("click", this.handleSceneListClick);
         this.takeButton.removeEventListener("click", this.handleTakeClick);
+        this.takeFeedback?.remove(); this.takeFeedback = null;
         this.transitionSelect.removeEventListener(
             "change",
             this.handleTransitionChange
@@ -156,17 +166,24 @@ export default class StudioUI {
         );
     }
 
-    handleTakeClick() {
+    async handleTakeClick() {
         const type = this.selectedTransition === "dissolve"
             ? "dissolve"
             : "cut";
 
-        this.transitionCoordinator.transition({
+        if (this.takeFeedback) this.takeFeedback.hidden = true;
+        trace.record("normal-take", "ui-click", { sceneId: StudioStateManager.getPreviewSceneId(),
+            previousSceneId: StudioStateManager.getProgramSceneId() });
+        const result = await this.transitionCoordinator.transition({
             type,
             durationMs: type === "dissolve" ? 400 : 0,
             source: "operator",
             reason: "manual-take"
         });
+        if (this.started && this.takeFeedback && !result) {
+            this.takeFeedback.textContent = "TAKE non completato. La sorgente non è pronta. Riprova o seleziona un’altra scena.";
+            this.takeFeedback.hidden = false;
+        }
     }
 
     handleTransitionChange() {
@@ -252,6 +269,24 @@ export default class StudioUI {
         this.takeButton.disabled = !preview ||
             previewSceneId === programSceneId ||
             this.transitionCoordinator.isBusy();
+        const renderer = this.transitionCoordinator.studioRenderer;
+        const video = renderer?.preview?.renderer?.video;
+        const guard = { sceneId: previewSceneId, previousSceneId: programSceneId,
+            reason: !preview ? "preview-missing" : previewSceneId === programSceneId ? "preview-already-program" :
+                this.transitionCoordinator.isBusy() ? "transition-busy" : "enabled",
+            state: renderer?.program?.prepared ? "preparing" : "idle",
+            kind: this.catalog?.getSources?.().find(source => source.id === renderer?.preview?.renderer?.sourceId)?.kind,
+            transitionBusy: this.transitionCoordinator.isBusy(),
+            pendingTransition: Boolean(renderer?.program?.transition),
+            pendingPublication: this.publicationPending?.(),
+            metadataReady: Boolean(video && video.readyState >= 1),
+            durationKnown: Boolean(video && Number.isFinite(video.duration)),
+            duration: video?.duration, playbackReady: Boolean(video && video.readyState >= 2),
+            transportState: renderer?.preview?.renderer?.getTransport?.().state,
+            readyState: video?.readyState, networkState: video?.networkState,
+            currentTime: video?.currentTime, paused: video?.paused };
+        const key = JSON.stringify(guard);
+        if (key !== this.lastTakeGuard) { this.lastTakeGuard = key; trace.record("normal-take", "ui-guard", guard); }
     }
 
     createSceneButton(scene, previewSceneId, programSceneId) {

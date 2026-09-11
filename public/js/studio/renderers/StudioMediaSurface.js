@@ -127,7 +127,7 @@ export default class StudioMediaSurface {
     }
 
     handlePause() {
-        if (this.consumer === "program" && this.initialPlayback === "playing" &&
+        if (!this.interruptionPaused && this.consumer === "program" && this.initialPlayback === "playing" &&
             !this.destroyed && !this.transportEnded && !this.transportError &&
             !this.video?.ended) {
             void this.startPlayback().then((resumed) => {
@@ -160,6 +160,7 @@ export default class StudioMediaSurface {
 
     tryApplyInitialCue() {
         if (this.initialCueState !== "pending" || !this.video ||
+            this.consumer === "program" && this.video.seeking === true ||
             !Number.isFinite(this.initialCueTarget) ||
             this.initialSeekAttempts >= 2 ||
             !this.isInitialCueSeekable(this.initialCueTarget)) {
@@ -199,12 +200,14 @@ export default class StudioMediaSurface {
     }
 
     async startPlayback() {
+        if (this.interruptionPaused) return false;
         if (!this.video || this.destroyed) {
             return false;
         }
 
         try {
             await this.video.play();
+            if (this.interruptionPaused) { this.video.pause(); return false; }
             return true;
         }
         catch {
@@ -214,6 +217,7 @@ export default class StudioMediaSurface {
     }
 
     async activateProgram() {
+        if (this.interruptionPaused) return false;
         if (this.consumer !== "program" || !this.video || this.destroyed ||
             this.transportEnded || this.video.ended) return false;
         const video = this.video;
@@ -292,6 +296,11 @@ export default class StudioMediaSurface {
     }
 
     isInitialCueSeekable(target) {
+        // Finite VOD metadata defines the valid timeline. Assigning currentTime
+        // requests the target range; waiting for seekable to contain it first
+        // can deadlock a second, cold consumer at a nonzero Preview cue.
+        if (this.consumer === "program" && this.video?.readyState >= 1 && Number.isFinite(this.video.duration) &&
+            this.video.duration > 0 && target >= 0 && target < this.video.duration) return true;
         const ranges = this.video?.seekable;
         if (!ranges || ranges.length === 0) return false;
         for (let index = 0; index < ranges.length; index += 1) {
@@ -324,6 +333,26 @@ export default class StudioMediaSurface {
 
         this.notifyTransport();
         return !this.video.paused;
+    }
+
+    pauseForInterruption({ cueAtInterruption } = {}) {
+        this.interruptionPaused = true;
+        this.video?.pause();
+        this.motion?.pause();
+        if (Number.isFinite(cueAtInterruption) && this.video) this.video.currentTime = cueAtInterruption;
+        this.notifyTransport();
+        return true;
+    }
+
+    async resumeFromInterruption({ cueAtInterruption, playbackState }) {
+        this.interruptionPaused = false;
+        this.transportEnded = playbackState === "ended";
+        this.initialPlayback = playbackState === "playing" ? "playing" : "paused";
+        if (Number.isFinite(cueAtInterruption)) this.video.currentTime = cueAtInterruption;
+        if (this.initialPlayback === "playing") await this.startPlayback();
+        else this.video?.pause();
+        this.notifyTransport();
+        return true;
     }
 
     pause() {
@@ -449,6 +478,7 @@ export default class StudioMediaSurface {
 
     markReadyIfFrameAvailable() {
         if (!this.video || this.video.readyState < 2 ||
+            this.consumer === "program" && this.video.seeking === true ||
             this.initialCueState !== "ready") {
             return;
         }

@@ -1,3 +1,5 @@
+import trace from "../../core/RuntimeTrace.js";
+
 export default class StudioHlsSurface {
 
     constructor({ sourceId, sourceUrl, instanceId, consumer, onDestroyed }) {
@@ -20,6 +22,7 @@ export default class StudioHlsSurface {
         this.recoveryFramePending = false;
         this.usesVideoFrameCallback = false;
         this.autoplayBlocked = false;
+        this.programActive = false;
         this.audioRecoveryButton = null;
         this.handleLoadedData = this.handleLoadedData.bind(this);
         this.handleCanPlay = this.handleCanPlay.bind(this);
@@ -32,6 +35,8 @@ export default class StudioHlsSurface {
     }
 
     async start(root) {
+        trace.record("live-player", "surface-start", { sourceId: this.sourceId,
+            instanceId: this.instanceId, consumer: this.consumer });
         this.destroyed = false;
         this.root = root;
         this.video = document.createElement("video");
@@ -72,13 +77,31 @@ export default class StudioHlsSurface {
             lowLatencyMode: true,
             backBufferLength: 90
         });
+        let playlistRequests = 0;
+        if (HlsImplementation.Events.LEVEL_LOADING) this.hls.on(HlsImplementation.Events.LEVEL_LOADING, () => {
+            if (!this.destroyed) trace.record("live-player", "playlist-request", {
+                sourceId: this.sourceId, instanceId: this.instanceId, consumer: this.consumer,
+                requestCount: ++playlistRequests });
+        });
+        if (HlsImplementation.Events.LEVEL_LOADED) this.hls.on(HlsImplementation.Events.LEVEL_LOADED, (_event, data) => {
+            if (!this.destroyed) trace.record("live-player", "playlist-loaded", {
+                sourceId: this.sourceId, instanceId: this.instanceId, consumer: this.consumer,
+                playlistSequence: data?.details?.endSN, fragmentCount: data?.details?.fragments?.length });
+        });
 
         this.hls.on(HlsImplementation.Events.MANIFEST_PARSED, () => {
             if (!this.destroyed) {
+                trace.record("live-player", "manifest-ready", { sourceId: this.sourceId,
+                    instanceId: this.instanceId, consumer: this.consumer });
                 this.tryPlay();
             }
         });
         this.hls.on(HlsImplementation.Events.ERROR, (event, data) => {
+            if (!this.destroyed) this.lastHlsErrorFatal = data?.fatal === true;
+            if (!this.destroyed) trace.record("live-player", data?.fatal ? "hls-fatal" : "hls-warning", {
+                sourceId: this.sourceId, instanceId: this.instanceId, consumer: this.consumer,
+                reason: this.classifyHlsError(data), currentTime: this.video?.currentTime,
+                readyState: this.video?.readyState, networkState: this.video?.networkState });
             if (!this.destroyed && data?.fatal) {
                 this.showStatus("Live source unavailable", "error");
                 this.setHealth("error", this.classifyHlsError(data));
@@ -106,6 +129,7 @@ export default class StudioHlsSurface {
         if (this.consumer !== "program" || !this.video || this.destroyed) {
             return false;
         }
+        this.programActive = true;
         this.setMuted(false);
         try {
             await this.video.play();
@@ -127,8 +151,26 @@ export default class StudioHlsSurface {
         }
     }
 
+    completeProgramRecovery() {
+        if (this.consumer !== "program" || this.destroyed || !this.video ||
+            this.video.readyState < 2 || this.video.paused || this.video.ended) return;
+        this.status?.remove(); this.status = null;
+        this.readinessState = "ready"; this.readinessError = null;
+        this.setHealth("ready", null);
+    }
+
+    async recoverProgramPlayback() {
+        if (this.consumer !== "program" || !this.video || this.destroyed || this.hls) return false;
+        // Retry the existing native resource before allocating another decoder.
+        this.programActive = false;
+        try { this.video.load(); }
+        catch { this.programActive = true; return false; }
+        return this.activateProgram();
+    }
+
     deactivateProgram() {
         if (this.consumer !== "program" || !this.video) return false;
+        this.programActive = false;
         this.setMuted(true);
         return true;
     }
@@ -209,11 +251,13 @@ export default class StudioHlsSurface {
     }
 
     handlePlaying() {
+        trace.record("live-player", "playback-begins", { sourceId: this.sourceId,
+            instanceId: this.instanceId, consumer: this.consumer, currentTime: this.video?.currentTime });
         if (!this.video?.muted && this.video?.paused !== true) this.clearAudioRecovery();
     }
 
     handlePause() {
-        if (this.consumer === "program" && !this.destroyed && !this.autoplayBlocked &&
+        if (this.consumer === "program" && this.programActive && !this.destroyed && !this.autoplayBlocked &&
             !this.video?.ended) void this.activateProgram();
     }
 
@@ -343,6 +387,8 @@ export default class StudioHlsSurface {
         }
 
         this.readinessState = "ready";
+        trace.record("live-player", "first-frame", { sourceId: this.sourceId,
+            instanceId: this.instanceId, consumer: this.consumer });
         this.status?.remove();
         this.status = null;
         this.setHealth("ready", null);
@@ -409,6 +455,8 @@ export default class StudioHlsSurface {
         }
 
         this.destroyed = true;
+        trace.record("live-player", "surface-destroyed", { sourceId: this.sourceId,
+            instanceId: this.instanceId, consumer: this.consumer });
         this.failReadiness("destroyed-before-ready");
         this.cancelPendingVideoFrameCallback();
         this.clearAudioRecovery();
@@ -457,6 +505,10 @@ export default class StudioHlsSurface {
     }
 
     setHealth(state, reason) {
+        trace.record("live-player", "surface-health", { state, reason,
+            sourceId: this.sourceId, instanceId: this.instanceId, consumer: this.consumer,
+            currentTime: this.video?.currentTime, readyState: this.video?.readyState,
+            paused: this.video?.paused, muted: this.video?.muted });
         this.health = this.createHealth(state, reason);
         this.healthListeners.forEach((listener) => listener(this.health));
     }

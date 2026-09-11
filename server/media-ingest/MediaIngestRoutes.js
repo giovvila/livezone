@@ -12,7 +12,9 @@ export default class MediaIngestRoutes {
             response.end(JSON.stringify({ ok: false, error: "method-not-allowed" }));
             return true;
         }
-        const status = await this.statusClient.getStatus();
+        const status = await this.statusClient.getStatus({
+            sourceOnly: url.searchParams.get("sourceOnly") === "1"
+        });
         response.writeHead(200, { "Content-Type": "application/json; charset=utf-8",
             "Cache-Control": "no-store" });
         response.end(JSON.stringify(status));

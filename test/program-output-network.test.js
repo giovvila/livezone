@@ -339,7 +339,8 @@ test("Public PLAYING reconciliation invokes play and exposes rejected autoplay",
         now: () => Date.parse("2026-08-21T10:00:05.000Z") });
     controller.current = entry;
     await controller.reconcilePlayback(snapshotValue, entry);
-    assert.equal(playCalls, 1);
+    assert.equal(playCalls, 2);
+    assert.equal(media.muted, true);
     assert.equal(audioButton.hidden, false);
     assert.equal(controller.current, entry);
 });
@@ -382,7 +383,7 @@ test("Public HLS uses the canonical audio gate and preserves permission across r
         const secondCleanup = await controller.createSource(secondRoot, hlsSnapshot);
         const second = created[1];
         assert.notEqual(second, first);
-        assert.equal(second.muted, false);
+        assert.equal(second.muted, true, "replacement preparation stays muted until visual promotion");
         assert.equal(controller.audioEnabled, true);
         firstCleanup(); secondCleanup();
 
@@ -442,7 +443,7 @@ test("Public VIDEO repeated NotAllowed recovery survives replacement and clears 
         error.name = "NotAllowedError"; return error; };
     const audioButton = { hidden: false };
     const controller = new PublicProgramController({ root: null, status: null,
-        audioButton, transport: {} });
+        audioButton, transport: {}, now: () => Date.parse("2026-08-21T10:01:01Z") });
     const first = new FakePublicElement("video");
     first.currentTime = 61;
     first.play = async () => { first.playCalls += 1; throw blocked(); };
@@ -469,7 +470,7 @@ test("Public VIDEO repeated NotAllowed recovery survives replacement and clears 
     try { await second.play(); }
     catch (error) { controller.handleAutoplayRejection(error, second); }
     controller.syncCurrentAudioButton();
-    assert.equal(second.playCalls, 1);
+    assert.equal(second.playCalls, 2);
     assert.equal(controller.audioBlockedElement, second);
     assert.equal(audioButton.hidden, false);
 
@@ -602,10 +603,12 @@ test("failed transferred cue reports failure without assigning zero", () => {
 });
 
 class FakePublicElement extends EventTarget {
+    querySelector(tag) { return this.children.find(child => child.tagName === tag.toUpperCase()) || null; }
     constructor(tagName, { rejectPlay = false } = {}) {
         super();
         this.tagName = tagName.toUpperCase();
         this.children = [];
+        this.style = {};
         this.hidden = false;
         this.complete = false;
         this.naturalWidth = 0;
@@ -620,6 +623,8 @@ class FakePublicElement extends EventTarget {
     }
     append(...children) { this.children.push(...children); }
     appendChild(child) { this.children.push(child); return child; }
+    replaceChildren(...children) { this.children = children; }
+    remove() { this.removed = true; this.isConnected = false; }
     async play() {
         this.playCalls += 1;
         if (this.rejectPlay) throw new Error("autoplay-rejected");
@@ -655,7 +660,7 @@ async function createPublicAudioHarness(source, { rejectMotion = false,
         placeholder: elements.find((element) => element.tagName === "DIV") };
 }
 
-test("Public AUDIO late join keeps its explicit enable gate and current surface", async () => {
+test("Public AUDIO late join plays muted and unlocks the same timeline and surface", async () => {
     const playing = { ...audioSnapshot(), playback: { ...audioSnapshot().playback,
         initialTime: 1800, playing: true, ended: false, state: "playing",
         startedAt: "2026-08-21T10:00:00.000Z" } };
@@ -663,7 +668,8 @@ test("Public AUDIO late join keeps its explicit enable gate and current surface"
         audioUrl: "https://example.test/audio.mp3",
         motionUrl: "https://example.test/motion.mp4" }, { snapshot: playing });
     try {
-        assert.equal(harness.audio.playCalls, 0);
+        assert.equal(harness.audio.playCalls, 1);
+        assert.equal(harness.audio.muted, true);
         assert.equal(harness.audio.currentTime, 1800);
         const motion = harness.motion;
         harness.controller.audioButton = { hidden: false };
@@ -672,7 +678,7 @@ test("Public AUDIO late join keeps its explicit enable gate and current surface"
         } };
         harness.controller.enableAudio();
         await Promise.resolve();
-        assert.equal(harness.audio.playCalls, 1);
+        assert.equal(harness.audio.playCalls, 2);
         assert.equal(harness.audio.currentTime, 1800);
         assert.equal(harness.controller.audioEnabled, true);
         assert.equal(harness.controller.audioButton.hidden, true);
@@ -1022,6 +1028,109 @@ test("Public rapid IMAGE IMAGE VIDEO preparation owns independent cleanup", asyn
         assert.equal(video.src, "");
     }
     finally { globalThis.document = previousDocument; }
+});
+
+test("Public and OBS keep the newest A LIVE A LIVE revision under async supersession", async () => {
+    const previousDocument = globalThis.document;
+    globalThis.document = { createElement: (tagName) => new FakePublicElement(tagName) };
+    try {
+        for (const outputMode of ["public", "obs"]) {
+            const baseRoot = new FakePublicElement("div");
+            const root = { querySelector: (selector) => selector === "[data-public-base]"
+                ? baseRoot : null };
+            const controller = new PublicProgramController({ root, status: null,
+                audioButton: null, transport: {}, outputMode });
+            controller.renderGraphics = () => {};
+            controller.renderOverlays = () => {};
+            controller.syncCurrentAudioButton = () => {};
+            const pending = new Map();
+            const cleaned = [];
+            controller.createSource = (layer, value) => new Promise((resolve) => {
+                pending.set(value.revision, () => resolve(() => cleaned.push(value.revision)));
+                layer.revision = value.revision;
+            });
+            const media = (revision) => ({ ...snapshot({ revision }),
+                scene: { id: "program-a", name: "A", type: "MEDIA" },
+                source: { id: "media-a", kind: "media",
+                    url: "https://example.test/a.mp4" } });
+            const live = (revision) => ({ ...snapshot({ revision }),
+                scene: { id: "auto-live", name: "LIVE", type: "LIVE" },
+                source: { id: "live-a", kind: "hls",
+                    url: "https://example.test/live.m3u8" } });
+            [media(1), live(2), media(3), live(4)].forEach((value) =>
+                controller.handleSnapshot(value, { livePublisher: true }));
+            pending.get(4)(); await Promise.resolve(); await Promise.resolve();
+            pending.get(2)(); pending.get(1)(); pending.get(3)();
+            await Promise.resolve(); await Promise.resolve();
+            assert.equal(controller.current.snapshot.revision, 4);
+            assert.equal(controller.current.snapshot.source.kind, "hls");
+            assert.deepEqual(cleaned.sort(), [1, 2, 3]);
+            assert.equal(controller.revisionBySession.get("session-a"), 4);
+            assert.equal(baseRoot.children.at(-1).revision, 4);
+            clearTimeout(controller.staleTimer);
+            controller.releaseCurrent();
+        }
+    }
+    finally { globalThis.document = previousDocument; }
+});
+
+test("already-open Public and OBS coalesce LIVE playback revisions into one HLS preparation", async () => {
+    const previousDocument = globalThis.document;
+    globalThis.document = { createElement: (tagName) => new FakePublicElement(tagName) };
+    try {
+        for (const outputMode of ["public", "obs"]) {
+            const baseRoot = new FakePublicElement("div");
+            const root = { querySelector: (selector) => selector === "[data-public-base]"
+                ? baseRoot : null };
+            const controller = new PublicProgramController({ root, status: null,
+                audioButton: null, transport: {}, outputMode });
+            controller.renderGraphics = () => {};
+            controller.renderOverlays = () => {};
+            controller.syncCurrentAudioButton = () => {};
+            const mediaA = { ...snapshot({ revision: 1 }),
+                scene: { id: "program-a", name: "A", type: "MEDIA" },
+                source: { id: "media-a", kind: "media", url: "/a.mp4" } };
+            controller.current = { snapshot: mediaA, layer: new FakePublicElement("div"),
+                cleanup() {} };
+            let resolveLive;
+            let preparations = 0;
+            controller.createSource = () => { preparations += 1;
+                return new Promise((resolve) => { resolveLive = resolve; }); };
+            const live = (revision) => ({ ...snapshot({ revision }),
+                scene: { id: "auto-live", name: "LIVE", type: "LIVE" },
+                source: { id: "live-a", kind: "hls", url: "/live.m3u8" },
+                playback: { ...snapshot().playback, playing: true, state: "playing" } });
+            controller.handleSnapshot(live(2), { livePublisher: true });
+            controller.handleSnapshot(live(3), { livePublisher: true });
+            controller.handleSnapshot(live(4), { livePublisher: true });
+            assert.equal(preparations, 1);
+            resolveLive(() => {});
+            await Promise.resolve(); await Promise.resolve();
+            assert.equal(controller.current.snapshot.revision, 4);
+            assert.equal(controller.current.snapshot.source.kind, "hls");
+            clearTimeout(controller.staleTimer);
+            controller.releaseCurrent();
+        }
+    }
+    finally { globalThis.document = previousDocument; }
+});
+
+test("ProgramOutputStore retains final LIVE in the exact A LIVE A LIVE sequence", () => {
+    const store = new ProgramOutputStore();
+    const values = [
+        { kind: "media", id: "media-a", url: "https://example.test/a.mp4" },
+        { kind: "hls", id: "live-a", url: "https://example.test/live.m3u8" },
+        { kind: "media", id: "media-a", url: "https://example.test/a.mp4" },
+        { kind: "hls", id: "live-a", url: "https://example.test/live.m3u8" }
+    ];
+    values.forEach((source, index) => {
+        const value = { ...snapshot({ revision: index + 1 }), source,
+            scene: { id: source.id, name: source.id, type: source.kind === "hls"
+                ? "LIVE" : "MEDIA" } };
+        assert.equal(store.accept(createProgramOutputEnvelope(value)).accepted, true);
+    });
+    assert.equal(store.getCurrent().snapshot.revision, 4);
+    assert.equal(store.getCurrent().snapshot.source.kind, "hls");
 });
 
 test("public AUDIO contract accepts every optional artwork combination", () => {
@@ -1940,6 +2049,72 @@ test("ProgramOutputManager startup publishes explicit empty Program", () => {
     assert.equal(published[0].scene, null);
     assert.equal(published[0].source, null);
     assert.ok(createProgramOutputEnvelope(published[0]));
+    manager.destroy();
+});
+
+test("rehydrated VIDEO waits for playing transport before publisher ownership", () => {
+    let transportListener = null;
+    const published = [];
+    const state = { sceneId: "video-a-scene" };
+    const sources = new Map([
+        ["video-a", { id: "video-a", kind: "media",
+            url: "https://example.test/a.mp4" }],
+        ["video-b", { id: "video-b", kind: "media",
+            url: "https://example.test/b.mp4" }]
+    ]);
+    const definitions = new Map(Array.from(sources, ([id]) => [
+        `${id}-scene`, { id: `${id}-scene`, name: id, type: "MEDIA",
+            renderer: { kind: "source", sourceId: id } }
+    ]));
+    let rendererTransport = null;
+    const manager = new ProgramOutputManager({
+        stateManager: {
+            getProgramSceneId: () => state.sceneId,
+            getScene: (id) => definitions.get(id)
+        },
+        catalog: { getDefinition: (id) => definitions.get(id),
+            subscribe: () => () => {} },
+        sourceManager: { getSource: (id) => sources.get(id) },
+        renderer: {
+            subscribeProgramTransport(listener) {
+                transportListener = listener;
+                listener(rendererTransport);
+                return () => {};
+            },
+            getProgramTransport: () => rendererTransport
+        },
+        graphicsManager: { subscribe: () => () => {},
+            getVisibleGraphics: () => [] },
+        transitionCoordinator: { getSnapshot: () => ({
+            state: "running", type: "cut" }) },
+        transport: { start() {}, publish: (value) => published.push(value),
+            destroy() {} }
+    });
+
+    manager.start();
+    assert.equal(published.length, 0,
+        "a transient restored first frame must not replace retained Program");
+    rendererTransport = { sourceId: "video-a", state: "paused",
+        currentTime: 0, duration: 60, ended: false };
+    transportListener(rendererTransport);
+    assert.equal(published.length, 0);
+    rendererTransport = { ...rendererTransport, state: "playing" };
+    transportListener(rendererTransport);
+    assert.equal(published.length, 1);
+    assert.equal(published[0].source.id, "video-a");
+    assert.equal(published[0].playback.playing, true);
+
+    state.sceneId = "video-b-scene";
+    rendererTransport = { sourceId: "video-b", state: "paused",
+        currentTime: 0, duration: 90, ended: false };
+    manager.handleProgramChanged();
+    assert.equal(published.length, 1);
+    rendererTransport = { ...rendererTransport, state: "playing" };
+    transportListener(rendererTransport);
+    assert.equal(published.length, 2);
+    assert.equal(published[1].source.id, "video-b");
+    assert.equal(published[1].playback.playing, true);
+    assert.equal(published[1].transition.type, "cut");
     manager.destroy();
 });
 

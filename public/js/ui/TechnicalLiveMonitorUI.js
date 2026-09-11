@@ -1,4 +1,5 @@
-import StudioHlsSurface from "../studio/renderers/StudioHlsSurface.js";
+import trace from "../core/RuntimeTrace.js";
+import { createLiveHlsConsumerFactory } from "../studio/LiveHlsHealthConsumer.js";
 
 const SELECTION_KEY = "livezone.control.technicalLiveSource.v1";
 
@@ -57,6 +58,8 @@ export default class TechnicalLiveMonitorUI {
         this.select.value = ""; this.monitor.stop(); this.surface.replaceChildren(); }
     readSelection() { try { return this.storage?.getItem(SELECTION_KEY) || ""; } catch { return ""; } }
     renderSnapshot(snapshot) {
+        trace.record("technical-monitor", "state", { sourceId: snapshot.sourceId,
+            state: snapshot.state, monitorGeneration: snapshot.generation });
         this.root.dataset.technicalState = snapshot.state.toLowerCase();
         this.status.textContent = `● ${snapshot.state}`;
         this.lastOk.textContent = snapshot.lastOnlineAt
@@ -69,27 +72,6 @@ export default class TechnicalLiveMonitorUI {
         return `${url.host}${url.pathname}`.slice(0, 80); } catch { return "—"; } }
 
     static createConsumerFactory(root) {
-        let nextId = 1;
-        return (source, handlers) => {
-            const surface = new StudioHlsSurface({ sourceId: source.id, sourceUrl: source.url,
-                instanceId: `technical-live-${nextId++}`, consumer: "technical" });
-            let unsubscribe = null; let video = null;
-            return {
-                async start() {
-                    unsubscribe = surface.subscribeHealth((health) => {
-                        if (health.state === "error") handlers.error(health.reason);
-                    });
-                    await surface.start(root); video = surface.video;
-                    surface.waitUntilReady({ timeoutMs: 12000 }).then(() => {
-                        video = surface.video; handlers.online({ width: video?.videoWidth,
-                            height: video?.videoHeight });
-                    }).catch((error) => {
-                        if (error?.code === "readiness-timeout") handlers.offline();
-                        else handlers.error(surface.getHealth()?.reason);
-                    });
-                },
-                destroy() { unsubscribe?.(); surface.destroy(); }
-            };
-        };
+        return createLiveHlsConsumerFactory(root, undefined, { consumer: "technical" });
     }
 }

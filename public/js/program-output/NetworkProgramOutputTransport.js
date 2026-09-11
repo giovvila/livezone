@@ -4,6 +4,7 @@ import {
 } from "./ProgramOutputEnvelope.js";
 
 const PUBLISH_TIMEOUT_MS = 8000;
+import trace, { programTraceFields } from "../core/RuntimeTrace.js";
 
 export default class NetworkProgramOutputTransport {
     constructor({ role, publishUrl, subscribeUrl, tokenProvider = null,
@@ -59,6 +60,35 @@ export default class NetworkProgramOutputTransport {
             this.refreshPublisherCredential();
             this.startPublisherMonitor();
         }
+    }
+
+    // Bootstrap uses the same retained SSE envelope as Public/OBS, before publishing.
+    readRetained({ timeoutMs = 2000 } = {}) {
+        if (!this.eventSourceFactory || !this.subscribeUrl) return Promise.resolve(null);
+        return new Promise(resolve => {
+            let stream = null;
+            let timer = null;
+            const finish = snapshot => {
+                this.clearTimer(timer);
+                stream?.removeEventListener("program", receive);
+                stream?.removeEventListener("error", fail);
+                stream?.close();
+                resolve(snapshot);
+            };
+            const fail = () => finish(null);
+            const receive = event => {
+                try {
+                    const envelope = validateProgramOutputEnvelope(JSON.parse(event.data));
+                    if (envelope) finish(envelope.snapshot);
+                } catch { /* Ignore malformed events until the bounded deadline. */ }
+            };
+            try {
+                stream = this.eventSourceFactory(this.subscribeUrl.href);
+                stream.addEventListener("program", receive);
+                stream.addEventListener("error", fail);
+                timer = this.setTimer(fail, timeoutMs);
+            } catch { finish(null); }
+        });
     }
 
     publish(snapshot) {
@@ -159,6 +189,8 @@ export default class NetworkProgramOutputTransport {
                 cache: "no-store",
                 signal: requestController.signal
             });
+            trace.record("network", response.ok ? "publish-success" : "publish-rejected",
+                { ...programTraceFields(envelope.snapshot), httpStatus: response.status });
             if (response.status === 401 || response.status === 403) {
                 this.cancelRetry();
                 this.publisherBlockedByCredential = true;
@@ -194,6 +226,7 @@ export default class NetworkProgramOutputTransport {
             return true;
         }
         catch (error) {
+            trace.record("network", "publish-failed", programTraceFields(envelope.snapshot));
             if (timedOut || error?.name !== "AbortError") {
                 this.setStatus("publishing-error");
                 this.scheduleRetry(generation);
@@ -218,15 +251,18 @@ export default class NetworkProgramOutputTransport {
     handleProgram(event) {
         try {
             const envelope = validateProgramOutputEnvelope(JSON.parse(event.data));
-            if (!envelope) return;
+            if (!envelope) { trace.record("network", "sse-rejected"); return; }
+            trace.record("network", "sse-revision", { ...programTraceFields(envelope.snapshot),
+                eventSourceState: this.eventSource?.readyState });
             this.listeners.forEach((listener) => listener(
                 envelope.snapshot, { livePublisher: true }
             ));
         }
-        catch { /* Malformed network input is ignored. */ }
+        catch { trace.record("network", "sse-dispatch-failed"); }
     }
 
     handleOpen() {
+        trace.record("network", "sse-open", { mode: this.role, eventSourceState: this.eventSource?.readyState });
         if (this.role === "subscriber") return this.setStatus("connected");
         const shouldRecover = this.publisherMonitorOpened && this.publisherMonitorDisconnected;
         this.publisherMonitorOpened = true;
@@ -234,6 +270,7 @@ export default class NetworkProgramOutputTransport {
         if (shouldRecover && !this.publisherBlockedByCredential) this.queueLatest();
     }
     handleError() {
+        trace.record("network", "sse-error", { mode: this.role, eventSourceState: this.eventSource?.readyState });
         if (this.role === "publisher") {
             this.publisherMonitorDisconnected = true;
             if (this.publisherBlockedByCredential) return;

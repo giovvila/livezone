@@ -7,7 +7,7 @@ export default class MediaIngestStatusClient {
         this.fetchImplementation = fetchImplementation;
     }
 
-    async getStatus() {
+    async getStatus({ sourceOnly = false } = {}) {
         const safe = this.config.toPublic();
         try {
             const payload = await this.fetchJson(
@@ -15,14 +15,18 @@ export default class MediaIngestStatusClient {
             );
             if (!payload || !Array.isArray(payload.items)) return this.errorStatus(safe);
             const path = payload.items.find((item) => item?.name === this.config.mediaPath);
+            // An incomplete list cannot establish absence of the configured path.
+            if (!path && payload.pageCount > 1) return this.errorStatus(safe);
             if (!path || path.online === false) return this.status(safe, "offline", false, false, null);
-            if (path.online !== true || !path.source || !Array.isArray(path.tracks2)) {
+            if (path.online !== true || !path.source || typeof path.source.type !== "string" ||
+                !path.source.type || !Array.isArray(path.tracks2)) {
                 return this.errorStatus(safe);
             }
             const publisherPresent = path.tracks2.length > 0;
             if (!publisherPresent) return this.status(safe, "connecting", false, false,
                 validTimestamp(path.onlineTime));
-            const hlsAvailable = await this.probeHls();
+            // Ownership probes must not wait for (or trust) buffered HLS.
+            const hlsAvailable = sourceOnly ? false : await this.probeHls();
             return this.status(safe, hlsAvailable ? "live" : "connecting", true,
                 hlsAvailable, validTimestamp(path.onlineTime));
         } catch {

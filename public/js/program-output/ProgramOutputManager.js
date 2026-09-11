@@ -1,10 +1,14 @@
+import { AUTO_LIVE_ENTRY_ID, AUTO_LIVE_ENTRY_TITLE, AUTO_LIVE_ENTRY_MESSAGE } from "./AutoLiveEntrySlate.js";
+import { AUTO_LIVE_LOSS_SLATE_ID } from "./AutoLiveLossSlate.js";
 import EventBus from "../core/EventBus.js";
 import Events from "../core/Events.js";
 import { validateProgramOutputSnapshot } from "./ProgramOutputContract.js";
+import trace, { programTraceFields } from "../core/RuntimeTrace.js";
 
 export default class ProgramOutputManager {
     constructor({ stateManager, catalog, sourceManager, renderer,
-        graphicsManager, transitionCoordinator, transport, now = () => Date.now() }) {
+        graphicsManager, transitionCoordinator, transport, initialProgramContext = null,
+        now = () => Date.now() }) {
         Object.assign(this, { stateManager, catalog, sourceManager, renderer,
             graphicsManager, transitionCoordinator, transport, now });
         this.revision = 0;
@@ -12,6 +16,8 @@ export default class ProgramOutputManager {
         this.started = false;
         this.programTransport = null;
         this.lastTransportSignature = null;
+        this.pendingProgramPublishReason = null;
+        this.initialProgramContext = initialProgramContext;
         this.publisherSessionId = globalThis.crypto?.randomUUID?.() ||
             `session-${this.now()}-${Math.random().toString(36).slice(2)}`;
         this.handleProgramChanged = this.handleProgramChanged.bind(this);
@@ -32,7 +38,7 @@ export default class ProgramOutputManager {
             this.handleProgramTransport
         );
         this.started = true;
-        this.publish("startup");
+        this.publishWhenProgramReady("startup");
     }
 
     destroy() {
@@ -46,9 +52,12 @@ export default class ProgramOutputManager {
     }
 
     handleProgramChanged() {
+        this.autoLiveEntrySlate = null;
+        this.autoLiveLossSlate = null;
+        this.initialProgramContext = null;
         this.programTransport = this.renderer.getProgramTransport();
         this.lastTransportSignature = this.transportSignature(this.programTransport);
-        this.publish("program");
+        this.publishWhenProgramReady("program");
     }
 
     handleGraphicsChanged() {
@@ -69,9 +78,45 @@ export default class ProgramOutputManager {
         const signature = this.transportSignature(snapshot);
         if (this.started && signature !== this.lastTransportSignature) {
             this.lastTransportSignature = signature;
-            if (this.isPendingProgramSource(snapshot)) return;
+            if (!this.pendingProgramPublishReason &&
+                this.isPendingProgramSource(snapshot)) return;
+            if (this.pendingProgramPublishReason) {
+                if (!this.isProgramTransportReady(snapshot)) return;
+                const reason = this.pendingProgramPublishReason || "playback";
+                this.pendingProgramPublishReason = null;
+                this.publish(reason);
+                return;
+            }
             this.publish("playback");
         }
+    }
+
+    publishWhenProgramReady(reason) {
+        if (this.shouldAwaitProgramTransport()) {
+            this.pendingProgramPublishReason = reason;
+            return null;
+        }
+        this.pendingProgramPublishReason = null;
+        return this.publish(reason);
+    }
+
+    shouldAwaitProgramTransport() {
+        const sceneId = this.stateManager.getProgramSceneId();
+        if (!sceneId) return false;
+        const definition = this.catalog.getDefinition(sceneId);
+        const source = definition ? this.createSource(definition) : null;
+        return source && ["media", "audio"].includes(source.kind) &&
+            !this.isProgramTransportReady(this.programTransport, source.id);
+    }
+
+    isProgramTransportReady(transport, expectedSourceId = null) {
+        if (!transport || (expectedSourceId &&
+            transport.sourceId !== expectedSourceId)) return false;
+        if (transport.state === "paused" &&
+            this.initialProgramContext?.transportInitialPlayback === "paused" &&
+            transport.sourceId === this.initialProgramContext.sourceId) return true;
+        if (transport.state === "paused" && this.renderer.program?.renderer?.initialPlayback === "paused") return true;
+        return ["playing", "ended", "error"].includes(transport.state);
     }
 
     isPendingProgramSource(transport) {
@@ -85,6 +130,7 @@ export default class ProgramOutputManager {
     }
 
     publish(reason) {
+        if (this.autoLiveEntrySlate) return this.publishEntrySlate();
         const sceneId = this.stateManager.getProgramSceneId();
         if (!sceneId) return this.publishEmpty(reason);
         const scene = this.stateManager.getScene(sceneId);
@@ -113,8 +159,35 @@ export default class ProgramOutputManager {
             overlays: this.createOverlays(),
             transition
         });
-        if (!snapshot) return null;
+        if (!snapshot) {
+            trace.record("program-output", "snapshot-rejected", { reason });
+            return null;
+        }
         this.snapshot = snapshot;
+        trace.record("program-output", "publish-attempt", { ...programTraceFields(snapshot), reason });
+        this.transport.publish(snapshot);
+        return snapshot;
+    }
+
+    setAutoLiveEntrySlate(value) {
+        if (JSON.stringify(value) === JSON.stringify(this.autoLiveEntrySlate ?? null)) return;
+        this.autoLiveEntrySlate = value;
+        if (this.started) this.publish("program");
+    }
+
+    publishEntrySlate() {
+        const entry = this.autoLiveEntrySlate;
+        const committedAt = new Date(entry.startedAt).toISOString();
+        const snapshot = validateProgramOutputSnapshot({ version: 1, revision: ++this.revision,
+            publisherSessionId: this.publisherSessionId, publishedAt: new Date(this.now()).toISOString(), committedAt,
+            scene: { id: AUTO_LIVE_ENTRY_ID + "-" + entry.sessionId, name: "AutoLive entry", type: "SLATE" },
+            source: { id: AUTO_LIVE_ENTRY_ID, kind: "break", title: AUTO_LIVE_ENTRY_TITLE,
+                message: AUTO_LIVE_ENTRY_MESSAGE, logoUrl: entry.logoUrl },
+            playback: { initialTime: 0, duration: null, playing: false, ended: false, state: "ready", startedAt: committedAt },
+            graphics: { items: [] }, overlays: {}, transition: { type: "cut", durationMs: 0 } });
+        if (!snapshot) { trace.record("program-output", "entry-snapshot-rejected"); return null; }
+        this.snapshot = snapshot;
+        trace.record("program-output", "publish-attempt", { ...programTraceFields(snapshot), reason: "entry" });
         this.transport.publish(snapshot);
         return snapshot;
     }
@@ -138,6 +211,7 @@ export default class ProgramOutputManager {
         });
         if (!snapshot) return null;
         this.snapshot = snapshot;
+        trace.record("program-output", "publish-attempt", { ...programTraceFields(snapshot), reason });
         this.transport.publish(snapshot);
         return snapshot;
     }
@@ -180,7 +254,19 @@ export default class ProgramOutputManager {
         };
     }
 
+    setAutoLiveLossSlate(value) {
+        if (JSON.stringify(value) === JSON.stringify(this.autoLiveLossSlate)) return;
+        this.autoLiveLossSlate = value;
+        if (this.started) this.publish("graphics");
+    }
+
     createGraphics() {
+        const loss = this.autoLiveLossSlate;
+        if (loss && loss.sceneId === this.stateManager.getProgramSceneId() &&
+            this.catalog.getDefinition(loss.sceneId)?.renderer?.sourceId === loss.sourceId) {
+            return { items: [{ id: AUTO_LIVE_LOSS_SLATE_ID, kind: "image",
+                position: "top-left", url: loss.logoUrl }] };
+        }
         const items = this.graphicsManager.getVisibleGraphics("program")
             .filter(({ graphic }) => graphic.kind !== "text-crawl")
             .map(({ graphic, payload }) => graphic.kind === "image"

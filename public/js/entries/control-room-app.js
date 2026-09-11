@@ -1,3 +1,5 @@
+import { shareTechnicalLiveHealth } from "../studio/SharedLiveHealthConsumer.js";
+import AutoLiveEntryPresentation from "../studio/AutoLiveEntryPresentation.js";
 import PlaybackRuntime from "../runtime/PlaybackRuntime.js";
 import EventBus from "../core/EventBus.js";
 import Events from "../core/Events.js";
@@ -20,6 +22,7 @@ import StudioCatalogManager from "../studio/StudioCatalogManager.js";
 import StudioAssetLibrary from "../studio/StudioAssetLibrary.js";
 import StudioAssetResolver from "../studio/StudioAssetResolver.js";
 import StudioRenderer from "../studio/StudioRenderer.js";
+import { programPlaybackContinuity } from "../studio/ProgramPlaybackContinuity.js";
 import StudioSourceManager from "../studio/StudioSourceManager.js";
 import StudioGraphicsManager from "../studio/StudioGraphicsManager.js";
 import StudioTransitionCoordinator from "../studio/StudioTransitionCoordinator.js";
@@ -40,10 +43,10 @@ import { createProgramOutputTransport } from
 import LiveSourceMonitor from "../studio/LiveSourceMonitor.js";
 import TechnicalLiveMonitorUI from "../ui/TechnicalLiveMonitorUI.js";
 import DominantLiveConfig from "../studio/DominantLiveConfig.js";
-import DominantLiveController from "../studio/DominantLiveController.js";
+import AutoLiveEntryController from "../studio/AutoLiveEntryController.js";
 import DominantLiveUI from "../ui/DominantLiveUI.js";
-import { createDominantLiveConsumerFactory } from
-    "../studio/DominantLiveHealthConsumer.js";
+import SourcePresenceMonitor from "../studio/SourcePresenceMonitor.js";
+import { createLiveHlsConsumerFactory } from "../studio/LiveHlsHealthConsumer.js";
 import MediaLibraryClient from "../media-library/MediaLibraryClient.js";
 import MediaLibraryManager from "../media-library/MediaLibraryManager.js";
 import MediaLibraryUI from "../ui/MediaLibraryUI.js";
@@ -55,6 +58,12 @@ await requireOperatorSession();
 const operatorSessionUI = new OperatorSessionUI(
     document.getElementById("operator-logout"));
 operatorSessionUI.start();
+
+// Back/forward cache restores frozen JS instead of running the bootstrap again.
+// Re-enter through retained Program Output so elapsed Scheduler time is applied.
+globalThis.addEventListener?.("pageshow", event => {
+    if (event.persisted) globalThis.location.reload();
+});
 
 BroadcastStateManager.initialize();
 StudioStateManager.initialize();
@@ -95,11 +104,27 @@ let schedulerEngine = null;
 let programRemainingTimeUI = null;
 let technicalLiveMonitorUI = null;
 let dominantLiveController = null;
+let autoLiveLossPresentation = null;
 let dominantLiveUI = null;
 let mediaLibraryUI = null;
 let mediaLibraryPickerUI = null;
 
+// The Control Desk is static page markup. Start its interaction layer before
+// optional runtime services so Reset Layout and compact defaults remain usable
+// if a later media, transport, or monitoring bootstrap step cannot start.
+controlDeskLayoutManager = new ControlDeskLayoutManager({
+    root: document.getElementById("studio-panel"),
+    onEditModeChange: (enabled) =>
+        monitorWallLayoutManager?.setEditMode(enabled),
+    onReset: () => monitorWallLayoutManager?.reset()
+});
+controlDeskLayoutManager.start();
+
 function destroyControlRoom() {
+    dominantLiveController?.destroy();
+    dominantLiveController = null;
+    autoLiveLossPresentation?.destroy();
+    autoLiveLossPresentation = null;
     studioTextCrawlUI?.destroy();
     studioTextCrawlUI = null;
     studioGraphicsUI?.destroy();
@@ -133,18 +158,26 @@ runtime.start({
         catch (error) { console.warn("[MediaLibraryManager]", error); }
 
         const bootstrapReport = await studioBootstrap.initialize();
+        dominantLiveConfig.logRead(studioCatalogManager);
 
         if (bootstrapReport.status !== "ready") {
             console.warn("[StudioBootstrap]", bootstrapReport);
         }
 
+        const programOutputTransport = await createProgramOutputTransport({ role: "publisher" });
+        const retainedProgram = await programOutputTransport.readRetained();
+        const initialProgramContext = programPlaybackContinuity(retainedProgram, {
+            stateManager: StudioStateManager, catalog: studioCatalogManager,
+            sourceManager: StudioSourceManager
+        });
         studioRenderer = new StudioRenderer({
             previewRoot: document.getElementById("studio-preview-renderer"),
             programRoot: document.getElementById("studio-program-renderer"),
             studioStateManager: StudioStateManager,
             definitionRegistry: studioCatalogManager,
             studioSourceManager: StudioSourceManager,
-            studioGraphicsManager: StudioGraphicsManager
+            studioGraphicsManager: StudioGraphicsManager,
+            initialProgramContext
         });
         studioRenderer.start();
 
@@ -153,9 +186,6 @@ runtime.start({
             studioRenderer
         });
         studioTransitionCoordinator.start();
-        const programOutputTransport = await createProgramOutputTransport({
-            role: "publisher"
-        });
         programOutputManager = new ProgramOutputManager({
             stateManager: StudioStateManager,
             catalog: studioCatalogManager,
@@ -163,7 +193,8 @@ runtime.start({
             renderer: studioRenderer,
             graphicsManager: StudioGraphicsManager,
             transitionCoordinator: studioTransitionCoordinator,
-            transport: programOutputTransport
+            transport: programOutputTransport,
+            initialProgramContext
         });
         programOutputManager.start();
         programOutputSetupUI = new ProgramOutputSetupUI({
@@ -182,7 +213,8 @@ runtime.start({
         studioUI = new StudioUI(
             document.getElementById("studio-panel"),
             studioTransitionCoordinator,
-            studioCatalogManager
+            studioCatalogManager,
+            () => Boolean(programOutputManager?.pendingProgramPublishReason)
         );
         studioUI.start();
 
@@ -264,30 +296,31 @@ runtime.start({
         });
         technicalLiveMonitorUI.start();
 
-        const dominantHealthSurface = document.createElement("div");
-        dominantHealthSurface.className = "dominant-live-health-surface";
-        dominantHealthSurface.setAttribute("aria-hidden", "true");
-        document.body.append(dominantHealthSurface);
-        let dominantProbeDiagnostics = Object.freeze({});
-        const dominantHealthMonitor = new LiveSourceMonitor({
-            consumerFactory: createDominantLiveConsumerFactory(
-                dominantHealthSurface,
-                (diagnostics) => {
-                    dominantProbeDiagnostics = diagnostics;
-                    dominantLiveController?.refreshDiagnostics();
-                }
-            )
+        const dominantHealthRoot = document.createElement("div");
+        dominantHealthRoot.className = "dominant-live-health-surface";
+        dominantHealthRoot.setAttribute("aria-hidden", "true");
+        document.body.append(dominantHealthRoot);
+        const dominantHealthMonitor = new SourcePresenceMonitor({
+            externalConsumerFactory: shareTechnicalLiveHealth(liveSourceMonitor,
+                createLiveHlsConsumerFactory(dominantHealthRoot))
         });
-        dominantLiveController = new DominantLiveController({
+        dominantLiveController = new AutoLiveEntryController({
+            renderer: studioRenderer,
+            getProgramRevision: () => programOutputManager?.revision,
             config: dominantLiveConfig,
             catalog: studioCatalogManager,
             monitor: dominantHealthMonitor,
             scheduler: schedulerEngine,
             command: studioProgramCommand,
             targetResolver: dominantLiveTargetResolver,
-            probeDiagnosticsProvider: () => dominantProbeDiagnostics
+            probeDiagnosticsProvider: () => ({ healthAuthority: "source" })
         });
         dominantLiveController.start();
+        autoLiveLossPresentation = new AutoLiveEntryPresentation({
+            controller: dominantLiveController, output: programOutputManager, renderer: studioRenderer,
+            root: studioRenderer.program.root, stateManager: StudioStateManager
+        });
+        autoLiveLossPresentation.start();
         dominantLiveUI = new DominantLiveUI({
             root: document.getElementById("dominant-live-control"),
             config: dominantLiveConfig,
@@ -318,14 +351,6 @@ runtime.start({
             root: document.querySelector(".control-room-monitor-wall")
         });
         monitorWallLayoutManager.start();
-
-        controlDeskLayoutManager = new ControlDeskLayoutManager({
-            root: document.getElementById("studio-panel"),
-            onEditModeChange: (enabled) =>
-                monitorWallLayoutManager?.setEditMode(enabled),
-            onReset: () => monitorWallLayoutManager?.reset()
-        });
-        controlDeskLayoutManager.start();
 
         programFullscreenUI = new ProgramFullscreenUI({
             target: document.querySelector(".control-room-program"),
