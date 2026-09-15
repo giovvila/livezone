@@ -1,7 +1,8 @@
+import resources from '../studio/ControlMediaResources.js';
 export default class MediaLibraryManager {
     constructor(client, { durationProbe = probeMediaDuration } = {}) { this.client = client; this.durationProbe = durationProbe; this.assets = []; this.listeners = new Set(); this.state = "idle"; this.error = null; this.progress = null; }
     initialize() { if (!this.initializationPromise) this.initializationPromise = this.refresh().then(() => this.discoverUnknownDurations()); return this.initializationPromise; }
-    async refresh(kind = null) { return this.run("loading", async () => { const result = await this.client.list(kind); this.assets = result.assets.map((asset) => Object.freeze({ ...asset, metadata: asset.metadata && Object.freeze({ ...asset.metadata }) })); return this.getSnapshot(); }); }
+    async refresh(kind = null) { this.audits = {}; return this.run("loading", async () => { const result = await this.client.list(kind); this.audits = result.audits || {}; this.inventory = result.inventory; this.assets = result.assets.map((asset) => Object.freeze({ ...asset, metadata: asset.metadata && Object.freeze({ ...asset.metadata }) })); return this.getSnapshot(); }); }
     listAssets({ kind = null } = {}) { return Object.freeze(this.assets.filter((asset) => !kind || asset.kind === kind)); }
     getAsset(id) { return this.assets.find((asset) => asset.id === id) || null; }
     async importAsset(file) {
@@ -43,11 +44,18 @@ export default class MediaLibraryManager {
         catch { return asset; }
     }
     async deleteAsset(id, { referenceGuard } = {}) {
-        if (typeof referenceGuard !== "function" || await referenceGuard(this.getAsset(id)) !== false) throw Object.assign(new Error("Complete source reference guard is required."), { code: "REFERENCE_GUARD_REQUIRED" });
+        if(typeof referenceGuard==='function') {
+            if(await referenceGuard(this.getAsset(id))!==false)throw Object.assign(new Error('Media utilizzato.'),{code:'ASSET_REFERENCED'});
+        } else {
+            if(typeof this.client.references!=='function')throw Object.assign(new Error('Complete source reference guard is required.'),{code:'REFERENCE_GUARD_REQUIRED'});
+            const {audit}=await this.client.references(id);
+            if(!audit?.eligible)throw Object.assign(new Error('IMPOSSIBILE ELIMINARE'),{code:audit?.referenceCount?'ASSET_REFERENCED':'REFERENCE_AUDIT_UNAVAILABLE',details:audit});
+        }
         return this.run("deleting", async () => { const result = await this.client.remove(id); this.assets = this.assets.filter((asset) => asset.id !== id); return result.asset; });
     }
+    async auditDelete(id) {return (await this.client.references(id)).audit;}
     subscribe(listener) { if (typeof listener !== "function") return () => {}; this.listeners.add(listener); listener(this.getSnapshot()); return () => this.listeners.delete(listener); }
-    getSnapshot() { return Object.freeze({ state: this.state, error: this.error, progress: this.progress, assets: this.listAssets() }); }
+    getSnapshot() { return Object.freeze({ state: this.state, error: this.error, progress: this.progress, assets: this.listAssets(), audits: this.audits || {}, ...(this.inventory ? {inventory:this.inventory} : {}) }); }
     async run(state, operation) { this.state = state; this.error = null; this.notify(); try { const result = await operation(); this.state = "ready"; this.notify(); return result; } catch (error) { this.state = "error"; this.error = Object.freeze({ code: error.code || "UNKNOWN", message: error.message }); this.progress = null; this.notify(); throw error; } }
     notify() { const snapshot = this.getSnapshot(); this.listeners.forEach((listener) => listener(snapshot)); }
 }
@@ -59,6 +67,8 @@ export function probeMediaDuration(asset, { document = globalThis.document,
     }
     return new Promise((resolve) => {
         const media = document.createElement(asset.kind === "audio" ? "audio" : "video");
+        const diagnosticOwner={consumer:'library-metadata',sourceId:asset.id};
+        resources.watch(diagnosticOwner,media,'metadata-probe');
         let timer = null;
         let finished = false;
         const finish = (value = null) => {
@@ -68,6 +78,7 @@ export function probeMediaDuration(asset, { document = globalThis.document,
             if (timer !== null) clearTimeout(timer);
             media.removeAttribute?.("src");
             media.load?.();
+            resources.releaseSurface(diagnosticOwner);
             resolve(value);
         };
         const ready = () => finish(Number.isFinite(media.duration) && media.duration > 0

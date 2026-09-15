@@ -31,10 +31,13 @@ export default class SourcePresenceMonitor {
         this.abort?.abort(); this.source = null;
         this.externalUnsubscribe?.(); this.externalUnsubscribe = null;
         this.externalMonitor?.destroy(); this.externalMonitor = null;
+        this.externalHealthDemandRelease?.(); this.externalHealthDemandRelease=null;
         this.managedIngestId = null;
     }
     destroy() { this.stop(); this.listeners.clear(); }
     startExternal(source, lifecycle) {
+        this.externalHealthDemandRelease?.();
+        this.externalHealthDemandRelease=this.externalConsumerFactory?.retainSource?.(source);
         const monitor = this.externalMonitor = new LiveSourceMonitor({
             consumerFactory: this.externalConsumerFactory, clock: this.clock,
             setTimer: this.setTimer, clearTimer: this.clearTimer

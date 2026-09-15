@@ -1,4 +1,5 @@
 import trace from "../../core/RuntimeTrace.js";
+import resources from '../ControlMediaResources.js';
 
 export default class StudioHlsSurface {
 
@@ -40,6 +41,7 @@ export default class StudioHlsSurface {
         this.destroyed = false;
         this.root = root;
         this.video = document.createElement("video");
+        resources.watch(this,this.video,'hls');
         this.video.className = "studio-render-video";
         this.video.autoplay = true;
         this.setMuted(true);
@@ -114,6 +116,7 @@ export default class StudioHlsSurface {
 
     async tryPlay() {
         try {
+            resources.noteSurface('play-request',this);
             await this.video?.play();
             return true;
         }
@@ -401,6 +404,7 @@ export default class StudioHlsSurface {
         }
 
         this.readinessState = "failed";
+        resources.noteSurface('readiness-failed',this);
         this.readinessError = this.createReadinessError(reason);
         this.cancelPendingVideoFrameCallback();
         this.settleReadinessWaiters("reject", this.readinessError);
@@ -483,6 +487,7 @@ export default class StudioHlsSurface {
         this.root = null;
         this.setHealth("destroyed", null);
         this.healthListeners.clear();
+        resources.releaseSurface(this);
         this.onDestroyed?.(this);
         this.onDestroyed = null;
     }

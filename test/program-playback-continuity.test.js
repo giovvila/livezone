@@ -163,3 +163,63 @@ test("paused continuity publishes paused startup; ordinary TAKE still waits for 
     manager.handleProgramChanged(); assert.equal(published.length, 1);
     manager.destroy();
 });
+
+
+for (const kind of ['media','audio']) {
+ test(kind + ': hidden browser pause cannot replace retained playing timeline', t => {
+  const oldDocument=globalThis.document;t.after(()=>{if(oldDocument===undefined)delete globalThis.document;else globalThis.document=oldDocument;});
+  globalThis.document={visibilityState:'visible'};
+  const f=fixture(kind),published=[];
+  const playing={sourceId:f.source.id,state:'playing',currentTime:37,duration:120,ended:false};
+  const manager=new ProgramOutputManager({...f.options,renderer:{subscribeProgramTransport:fn=>{fn(playing);return()=>{};},getProgramTransport:()=>playing},
+   graphicsManager:{subscribe:()=>()=>{},getVisibleGraphics:()=>[]},transitionCoordinator:{getSnapshot:()=>({state:'idle'})},
+   transport:{start(){},destroy(){},publish:s=>published.push(s)},now:()=>at});
+  t.after(()=>manager.destroy());manager.start();assert.equal(published.length,1);
+  globalThis.document.visibilityState='hidden';manager.handleProgramTransport({...playing,state:'paused',currentTime:40});
+  assert.equal(published.length,1);assert.equal(manager.programTransport.state,'playing');
+  manager.handleGraphicsChanged();assert.equal(published.at(-1).playback.playing,true);
+  const restored=programPlaybackContinuity(published.at(-1),{...f.options,now:at+20000});
+  assert.equal(restored.transportCueTime,57);assert.equal(restored.transportInitialPlayback,'playing');
+  assert.equal(f.returning.getPreviewSceneId(),'preview');
+  globalThis.document.visibilityState='visible';manager.handleProgramTransport({...playing,state:'paused',currentTime:58});
+  assert.equal(published.at(-1).playback.playing,false);
+  const paused=programPlaybackContinuity(published.at(-1),{...f.options,now:at+30000});assert.equal(paused.transportCueTime,58);
+ });
+}
+
+for (const kind of ['media','audio']) for (const playing of [true,false,null]) {
+ test(kind + ': actual surface resumes projected navigation cue, playing=' + playing, async t => {
+  const {default:Media}=await import('../public/js/studio/renderers/StudioMediaSurface.js');
+  const {default:Audio}=await import('../public/js/studio/renderers/StudioAudioSurface.js');
+  class Element extends EventTarget {
+   constructor(){super();this.paused=true;this.currentTime=0;this.duration=120;this.readyState=4;this.seeking=false;this.ended=false;this.seekable={length:1,start:()=>0,end:()=>120};this.children=[];this.playCalls=0;}
+   replaceChildren(...x){this.children=x;} appendChild(x){this.children.push(x);} setAttribute(){} removeAttribute(){} remove(){} load(){}
+   pause(){this.paused=true;}
+   play(){this.playCalls++;this.paused=false;this.dispatchEvent(new Event('playing'));return Promise.resolve();}
+  }
+  const previous=globalThis.document;t.after(()=>{if(previous===undefined)delete globalThis.document;else globalThis.document=previous;});
+  globalThis.document={createElement:()=>new Element()};
+  const f=fixture(kind,playing!==false);const cue=programPlaybackContinuity(playing===null?null:f.snapshot,{...f.options,now:at+20000});let surface;
+  const renderer=new StudioRenderer({studioStateManager:f.returning,definitionRegistry:f.options.catalog,studioSourceManager:{
+   createInstance(id,options){surface=kind==='media'?new Media({sourceId:id,sourceUrl:f.source.url,...options}):new Audio({sourceId:id,audioUrl:f.source.audioUrl,...options});return surface;},destroyInstance(){return true;}
+  }});
+  renderer.program.baseRoot=new Element();
+  const pending=renderer.renderSlot(renderer.program,'a',cue);await Promise.resolve();
+  const element=surface.video||surface.audio;
+  element.dispatchEvent(new Event('loadedmetadata'));element.dispatchEvent(new Event('seeked'));element.dispatchEvent(new Event('loadeddata'));element.dispatchEvent(new Event('canplay'));
+  await pending;await Promise.resolve();
+  const expected=playing===null?0:playing?57:37;assert.equal(element.currentTime,expected);assert.equal(element.paused,playing===false);
+  if(!element.paused)element.currentTime+=1;
+  assert.equal(surface.getTransport().currentTime,expected+(playing===false?0:1));assert.equal(element.playCalls>0,playing!==false);
+  assert.equal(f.returning.getPreviewSceneId(),'preview');surface.destroy();
+ });
+}
+
+
+test('delayed retained response remains authoritative before renderer bootstrap', async t=>{
+ t.mock.timers.enable({apis:['setTimeout']});const stream=new EventTarget();stream.close=()=>{};
+ const transport=new NetworkProgramOutputTransport({role:'publisher',subscribeUrl:'http://example.test/events',eventSourceFactory:()=>stream});
+ const pending=transport.readRetained();t.mock.timers.tick(1500);
+ const f=fixture();stream.dispatchEvent(new MessageEvent('program',{data:JSON.stringify(createProgramOutputEnvelope(f.snapshot))}));
+ assert.equal(programPlaybackContinuity(await pending,f.options).transportCueTime,47);
+});

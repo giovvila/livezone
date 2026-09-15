@@ -1,3 +1,4 @@
+import resources from '../ControlMediaResources.js';
 export default class StudioAudioSurface {
 
     constructor({
@@ -74,6 +75,7 @@ export default class StudioAudioSurface {
         this.image = this.stillUrl ? document.createElement("img") : null;
         this.motion = this.motionUrl ? this.createMotionElement() : null;
         this.audio = document.createElement("audio");
+        resources.watch(this,this.audio,'audio');
         this.audioSource = document.createElement("source");
         if (this.image) {
             this.image.className = "studio-render-audio-still";
@@ -201,6 +203,7 @@ export default class StudioAudioSurface {
 
     createMotionElement() {
         const motion = document.createElement("video");
+        resources.watch(this,motion,'motion-artwork');
         motion.className = "studio-render-audio-motion";
         motion.muted = true;
         motion.defaultMuted = true;
@@ -225,6 +228,7 @@ export default class StudioAudioSurface {
         this.motion.removeAttribute("src");
         this.motion.load();
         this.motion.remove();
+        resources.releaseElement(this.motion);
         this.motion = null;
     }
 
@@ -414,6 +418,7 @@ export default class StudioAudioSurface {
         const audio = this.audio;
         this.pendingAudioPlays = (this.pendingAudioPlays || 0) + 1;
         try {
+            resources.noteSurface('play-request',this);
             await audio.play();
             if (this.preparingProgram || this.programDeactivated || this.interruptionPaused) { audio.pause(); return false; }
             if (this.destroyed || this.audio !== audio) {
@@ -662,6 +667,7 @@ export default class StudioAudioSurface {
     failReadiness(reason) {
         if (this.readinessState !== "pending") return;
         this.readinessState = "failed";
+        resources.noteSurface('readiness-failed',this);
         this.readinessError = this.createReadinessError(reason);
         this.settleReadinessWaiters("reject", this.readinessError);
     }
@@ -777,6 +783,7 @@ export default class StudioAudioSurface {
         this.setHealth("destroyed", null);
         this.healthListeners.clear();
         this.transportListeners.clear();
+        resources.releaseSurface(this);
         this.onDestroyed?.(this);
         this.onDestroyed = null;
     }

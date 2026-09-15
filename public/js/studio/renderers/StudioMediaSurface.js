@@ -1,3 +1,4 @@
+import resources from '../ControlMediaResources.js';
 export default class StudioMediaSurface {
 
     constructor({
@@ -57,6 +58,7 @@ export default class StudioMediaSurface {
         this.destroyed = false;
         this.root = root;
         this.video = document.createElement("video");
+        resources.watch(this,this.video,'video');
         this.video.className = "studio-render-video";
         this.video.autoplay = this.initialPlayback === "playing";
         this.video.muted = true;
@@ -206,6 +208,7 @@ export default class StudioMediaSurface {
         }
 
         try {
+            resources.noteSurface('play-request',this);
             await this.video.play();
             if (this.interruptionPaused) { this.video.pause(); return false; }
             return true;
@@ -223,6 +226,7 @@ export default class StudioMediaSurface {
         const video = this.video;
         this.setMuted(false);
         try {
+            resources.noteSurface('program-play-request',this);
             await video.play();
             if (this.destroyed || this.video !== video) return false;
             this.clearAudioRecovery();
@@ -497,6 +501,7 @@ export default class StudioMediaSurface {
         }
 
         this.readinessState = "failed";
+        resources.noteSurface('readiness-failed',this);
         this.readinessError = this.createReadinessError(reason);
         this.settleReadinessWaiters("reject", this.readinessError);
     }
@@ -566,6 +571,7 @@ export default class StudioMediaSurface {
         this.setHealth("destroyed", null);
         this.healthListeners.clear();
         this.transportListeners.clear();
+        resources.releaseSurface(this);
         this.onDestroyed?.(this);
         this.onDestroyed = null;
     }

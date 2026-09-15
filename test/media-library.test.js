@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { request as httpRequest } from "node:http";
 import MediaAssetRepository from "../server/media-library/MediaAssetRepository.js";
-import { createProgramOutputServer } from "../server/program-output-server.js";
+import { createProgramOutputServer } from '../test-support/ReferenceAuthorityTestServer.js';
 import OperatorAuth from "../server/auth/OperatorAuth.js";
 import MediaLibraryManager from "../public/js/media-library/MediaLibraryManager.js";
 import MediaLibraryUI from "../public/js/ui/MediaLibraryUI.js";
@@ -104,7 +104,8 @@ test("safe delete honors reference guard and reconstructs path from manifest", (
     const repository = new MediaAssetRepository({ root }); await repository.initialize();
     const asset = await importFixture(repository, root, { name: "x.png", mime: "image/png", bytes: fixtures.png });
     await assert.rejects(repository.delete(asset.id, { isReferenced: () => true }), { code: "ASSET_REFERENCED" });
-    await repository.delete(asset.id); assert.equal(repository.get(asset.id), null);
+    await assert.rejects(repository.delete(asset.id),{code:'REFERENCE_GUARD_REQUIRED'});
+    await repository.delete(asset.id,{isReferenced:()=>false}); assert.equal(repository.get(asset.id), null);
     await assert.rejects(repository.delete("../../x"), { code: "ASSET_ID_INVALID" });
 }));
 
@@ -125,7 +126,7 @@ test("physical delete failure leaves manifest authority unchanged", () => withRo
     const repository = new MediaAssetRepository({ root }); await repository.initialize();
     const asset = await importFixture(repository, root, { name: "x.png", mime: "image/png", bytes: fixtures.png });
     await rm(repository.safeFilePath(asset.kind, asset.storedName));
-    await assert.rejects(repository.delete(asset.id), { code: "ENOENT" }); assert.equal(repository.get(asset.id).id, asset.id);
+    await assert.rejects(repository.delete(asset.id,{isReferenced:()=>false}), { code: "ENOENT" }); assert.equal(repository.get(asset.id).id, asset.id);
 }));
 
 async function withServer(operation, options = {}) { return withRoot(async (root) => { const repository = new MediaAssetRepository({ root }); const { server } = createProgramOutputServer({ publisherToken: "0123456789abcdef", mediaAssetRepository: repository, operatorAuth: new OperatorAuth({ disabled: true }), ...options }); await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve)); const base = `http://127.0.0.1:${server.address().port}`; try { return await operation(base, root); } finally { await new Promise((resolve) => server.close(resolve)); } }); }
@@ -138,7 +139,9 @@ test("HTTP upload/list/get/serve/range/delete use structured API", () => withSer
     assert.equal((await fetch(`${base}/api/media-library/assets/${asset.id}`).then((r) => r.json())).asset.id, asset.id);
     const range = await fetch(`${base}${asset.url}`, { headers: { Range: "bytes=4-7" } });
     assert.equal(range.status, 206); assert.equal(range.headers.get("x-content-type-options"), "nosniff"); assert.equal(Buffer.from(await range.arrayBuffer()).toString(), "ftyp");
-    assert.equal((await fetch(`${base}/api/media-library/assets/${asset.id}`, { method: "DELETE" })).status, 200);
+    const deleted=await fetch(`${base}/api/media-library/assets/${asset.id}`,{method:'DELETE'});
+    assert.equal(deleted.status,409);assert.equal((await deleted.json()).error.code,'REFERENCE_AUDIT_UNAVAILABLE');
+    assert.equal((await fetch(base+asset.url)).status,200);
 }));
 
 test("HTTP metadata update exposes persisted finite duration", () => withServer(async (base) => {
@@ -268,12 +271,13 @@ test("Media Library lifecycle removes upload, filter, toggle and subscription ho
     h.ui.destroy(); assert.equal(h.listeners.size, 0);
 });
 
-test("B1 UI keeps destructive delete disabled and does not create Source or Scene", async () => {
+test("D UI requires reference audit and confirmation and does not create Source or Scene", async () => {
     const ui = await readFile(new URL("../public/js/ui/MediaLibraryUI.js", import.meta.url), "utf8");
     const css = await readFile(new URL("../public/css/studio.css", import.meta.url), "utf8");
-    assert.match(ui, /remove\.disabled = true/);
-    assert.match(ui, /DELETE · SOURCE INTEGRATION/);
-    assert.doesNotMatch(ui, /deleteAsset|data-delete|StudioSourceManager|StudioStateManager|createScene|addSource/);
+    assert.match(ui, /confirm\.disabled=true/);
+    assert.match(ui, /DELETE \/ REMOVE/);
+    assert.doesNotMatch(ui, /StudioSourceManager|StudioStateManager|createScene|addSource/);
+    assert.match(ui,/auditDelete/);assert.match(ui,/Eliminare definitivamente questo media/);
     assert.match(css, /\.media-library-item__delete:disabled\s*\{[^}]*opacity:\s*0\.42;[^}]*cursor:\s*not-allowed;[^}]*filter:\s*grayscale\(1\);/s);
     assert.match(css, /\.media-library__list\s*\{[^}]*max-height:\s*340px;[^}]*overflow-y:\s*auto;/s);
 });

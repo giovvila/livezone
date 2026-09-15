@@ -4,6 +4,46 @@ import trace, { programTraceFields } from "../core/RuntimeTrace.js";
 
 export const MAX_CONTINUITY_AGE_MS = 6 * 60 * 60 * 1000;
 
+// Bootstrap identity from the same retained authority before projecting a cue.
+// AutoLive authorization and Preview are deliberately not inputs to this choice.
+export function restoreRetainedProgramIdentity(candidate, { stateManager, catalog,
+    sourceManager, now = Date.now() }) {
+    const snapshot = validateProgramOutputSnapshot(candidate);
+    const reject = reason => {
+        trace.record("continuity", "identity-rejected", { ...programTraceFields(snapshot),
+            reason, previousSceneId: stateManager.getProgramSceneId() });
+        return false;
+    };
+    if (!snapshot) return reject("retained-unavailable");
+    const age = now - Date.parse(snapshot.publishedAt);
+    if (age < 0 || age > MAX_CONTINUITY_AGE_MS || Date.parse(snapshot.playback.startedAt) > now)
+        return reject("retained-stale");
+    const sceneId = snapshot.scene?.id ?? null;
+    if (sceneId !== null) {
+        const definition = catalog.getDefinition(sceneId);
+        if (!definition || !stateManager.getScene(sceneId)) return reject("scene-unavailable");
+        if (snapshot.source.kind === "break") {
+            if (definition.renderer.kind !== "slate" || snapshot.source.id !== sceneId)
+                return reject("source-mismatch");
+        } else {
+            const source = definition.renderer.kind === "source"
+                ? sourceManager.getSource(definition.renderer.sourceId) : null;
+            const urlField = snapshot.source.kind === "audio" ? "audioUrl" : "url";
+            if (!source || source.id !== snapshot.source.id || source.kind !== snapshot.source.kind ||
+                source[urlField] !== snapshot.source[urlField]) return reject("source-mismatch");
+        }
+    }
+    const previousSceneId = stateManager.getProgramSceneId();
+    if (sceneId !== previousSceneId) {
+        const context = { source: "program-output", reason: "retained-bootstrap" };
+        if (sceneId === null) stateManager.releaseProgram(context);
+        else stateManager.setProgramScene(sceneId, context);
+    }
+    if (stateManager.getProgramSceneId() !== sceneId) return reject("identity-guarded");
+    trace.record("continuity", "identity-accepted", { ...programTraceFields(snapshot), previousSceneId });
+    return true;
+}
+
 // Reconstruct from the existing output authority. Selection storage never owns a cue.
 export function programPlaybackContinuity(candidate, { stateManager, catalog,
     sourceManager, now = Date.now() }) {

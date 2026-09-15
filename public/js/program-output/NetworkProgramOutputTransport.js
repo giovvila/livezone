@@ -5,6 +5,7 @@ import {
 
 const PUBLISH_TIMEOUT_MS = 8000;
 import trace, { programTraceFields } from "../core/RuntimeTrace.js";
+import {getReferenceClientHeaders} from '../auth/OperatorSessionClient.js';
 
 export default class NetworkProgramOutputTransport {
     constructor({ role, publishUrl, subscribeUrl, tokenProvider = null,
@@ -29,6 +30,7 @@ export default class NetworkProgramOutputTransport {
         this.clearTimer = (timer) => clearTimer(timer);
         this.retryDelays = retryDelays;
         this.listeners = new Set();
+        this.retainedReads = new Set();
         this.statusListeners = new Set();
         this.status = "disconnected";
         this.started = false;
@@ -68,7 +70,11 @@ export default class NetworkProgramOutputTransport {
         return new Promise(resolve => {
             let stream = null;
             let timer = null;
+            let finished = false;
             const finish = snapshot => {
+                if (finished) return;
+                finished = true;
+                this.retainedReads.delete(fail);
                 this.clearTimer(timer);
                 stream?.removeEventListener("program", receive);
                 stream?.removeEventListener("error", fail);
@@ -76,10 +82,11 @@ export default class NetworkProgramOutputTransport {
                 resolve(snapshot);
             };
             const fail = () => finish(null);
+            this.retainedReads.add(fail);
             const receive = event => {
                 try {
                     const envelope = validateProgramOutputEnvelope(JSON.parse(event.data));
-                    if (envelope) finish(envelope.snapshot);
+                    if (envelope && !envelope.snapshot.output?.overlayOnly) finish(envelope.snapshot);
                 } catch { /* Ignore malformed events until the bounded deadline. */ }
             };
             try {
@@ -123,6 +130,7 @@ export default class NetworkProgramOutputTransport {
     }
 
     destroy() {
+        for (const finish of [...this.retainedReads]) finish();
         if (!this.started) return;
         this.abortController?.abort();
         this.eventSource?.removeEventListener("program", this.handleProgram);
@@ -182,6 +190,7 @@ export default class NetworkProgramOutputTransport {
             const response = await this.fetchImplementation(this.publishUrl.href, {
                 method: "POST",
                 headers: {
+                    ...(this.publishUrl.origin===globalThis.location?.origin?getReferenceClientHeaders():{}),
                     "Authorization": `Bearer ${token.trim()}`,
                     "Content-Type": "application/json"
                 },
@@ -276,6 +285,19 @@ export default class NetworkProgramOutputTransport {
             if (this.publisherBlockedByCredential) return;
         }
         this.setStatus("disconnected");
+        // CONNECTING is retried by EventSource itself; CLOSED needs a new stream.
+        if(this.role==='subscriber' && (!this.eventSource||this.eventSource.readyState===2) && this.retryTimer===null){
+            const generation=this.generation;
+            this.retryTimer=this.setTimer(()=>{
+                this.retryTimer=null;
+                if(!this.started||generation!==this.generation)return;
+                this.eventSource?.removeEventListener('program',this.handleProgram);
+                this.eventSource?.removeEventListener('open',this.handleOpen);
+                this.eventSource?.removeEventListener('error',this.handleError);
+                this.eventSource?.close();this.eventSource=null;
+                try{this.startSubscriber();}catch{this.handleError();}
+            },this.retryDelays[0]||1000);
+        }
     }
     refreshPublisherCredential() {
         if (this.role !== "publisher") return;

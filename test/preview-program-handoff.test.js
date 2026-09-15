@@ -129,9 +129,74 @@ async function selectPreview(h,id) {
 }
 
 const matrix=[];
+for(const [label,scene] of [['small-video','A'],['large-video','P'],['long-audio','AU']]){
+ test('Control resource inventory '+label+' with BREAK and small Preview',async()=>harness(async h=>{
+  registerFixtures(h,{still:false,motion:false});
+  h.state.programSceneId=scene;await h.renderer.renderSlot(h.renderer.program,scene);
+  const program=h.renderer.program.renderer;const primary=program.video||program.audio;
+  primary.duration=scene==='AU'?43140:scene==='P'?6914:34;
+  await selectPreview(h,'BREAK');
+  assert.deepEqual(counts(h),scene==='AU'?{video:0,audio:1}:{video:1,audio:0});
+  assert.equal(h.renderer.program.prepared,null);
+  const preview=await selectPreview(h,'A');
+  assert.equal(preview.readinessState,'ready');assert.equal(h.renderer.program.renderer,program);
+  assert.deepEqual(counts(h),scene==='AU'?{video:1,audio:1}:{video:2,audio:0});
+  await selectPreview(h,'BREAK');assert.equal(preview.destroyed,true);
+  assert.equal(preview.video,null);assert.equal(preview.transportListeners.size,0);
+  assert.equal(h.manager.getActiveInstances().length,1);
+ }));
+}
+for(const heavy of ['P','AU'])test('20 repeated '+heavy+' heavy BREAK handoff cycles have no ownership growth',async()=>harness(async h=>{
+ registerFixtures(h,{still:false,motion:false});
+ h.state.programSceneId='BREAK';await h.renderer.renderSlot(h.renderer.program,'BREAK');
+ await selectPreview(h,'BREAK');assert.equal(h.manager.getActiveInstances().length,0);
+ for(let cycle=0;cycle<20;cycle++){
+  const incoming=await selectPreview(h,heavy);const element=incoming.video||incoming.audio;
+  element.duration=heavy==='AU'?43140:6914;
+  const create=h.manager.createInstance.bind(h.manager);let peak=h.manager.getActiveInstances().length;
+  h.manager.createInstance=(...args)=>{const value=create(...args);peak=Math.max(peak,h.manager.getActiveInstances().length);return value;};
+  assert.ok(await h.coordinator.cut({source:'operator'}));await flush();
+  assert.equal(h.renderer.program.renderer,incoming);assert.equal(incoming.consumer,'program');
+  assert.equal(h.manager.getActiveInstances().length,1);assert.equal(peak,1,'no third/prepared heavy copy');
+  h.manager.createInstance=create;
+  await selectPreview(h,'BREAK');assert.ok(await h.coordinator.cut({source:'operator'}));await flush();
+  assert.equal(incoming.destroyed,true);assert.equal(incoming.video||incoming.audio||null,null);
+  await selectPreview(h,'BREAK');assert.equal(h.manager.getActiveInstances().length,0,'baseline restored after cycle '+cycle);
+  assert.deepEqual(counts(h),{video:0,audio:0});assert.equal(h.renderer.program.prepared,null);
+ }
+}));
+
 const counts = h => h.manager.getActiveInstances().reduce((n,s) => {
  n.video += Number(Boolean(s.video)) + Number(Boolean(s.motion)); n.audio += Number(Boolean(s.audio)); return n;
 }, {video:0,audio:0});
+test('20 heavy video to long audio TAKE alternations stay at two owned media',async()=>harness(async h=>{
+ registerFixtures(h,{still:false,motion:false});
+ h.state.programSceneId='P';await h.renderer.renderSlot(h.renderer.program,'P');
+ for(let cycle=0;cycle<20;cycle++){
+  const next=cycle%2===0?'AU':'P';const incoming=await selectPreview(h,next);
+  const outgoing=h.renderer.program.renderer;
+  assert.equal(h.manager.getActiveInstances().length,2);
+  assert.ok(await h.coordinator.cut({source:'operator'}));await flush();
+  assert.equal(h.renderer.program.renderer,incoming);assert.equal(outgoing.destroyed,true);
+  assert.equal(h.manager.getActiveInstances().length,2);assert.deepEqual(counts(h),{video:1,audio:1});
+  assert.equal(h.renderer.program.prepared,null);
+ }
+}));
+test('repeated failed small Preview startup releases candidate and preserves long audio Program',async()=>harness(async h=>{
+ registerFixtures(h,{still:false,motion:false});
+ h.state.programSceneId='AU';await h.renderer.renderSlot(h.renderer.program,'AU');
+ const program=h.renderer.program.renderer,create=h.manager.createInstance.bind(h.manager);
+ const candidates=[];
+ h.manager.createInstance=(...args)=>{const surface=create(...args);if(args[1].consumer==='preview'){
+  const start=surface.start.bind(surface);surface.start=async root=>{await start(root);throw Error('simulated resource failure');};candidates.push(surface);
+ }return surface;};
+ for(let cycle=0;cycle<20;cycle++){
+  h.state.previewSceneId='A';await h.renderer.renderSlot(h.renderer.preview,'A');
+  assert.equal(h.renderer.preview.renderer,null);assert.equal(h.renderer.program.renderer,program);
+  assert.equal(program.destroyed,false);assert.equal(h.manager.getActiveInstances().length,1);
+  assert.deepEqual(counts(h),{video:0,audio:1});assert.equal(candidates.at(-1).destroyed,true);
+ }
+}));
 for (const type of ['cut','dissolve']) for (const [label,from,to] of [
  ['A','BREAK','P'],['B','A','BREAK'],['C','A','P'],['D','A','AU'],['E','AU','P'],['F','AU','AU2']]) {
  test('prepared surface handoff '+label+' '+type, async()=>harness(async h=>{

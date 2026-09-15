@@ -1,13 +1,18 @@
 import StudioStateManager from "../core/StudioStateManager.js";
+import MediaLibraryUI from '../ui/MediaLibraryUI.js';
+import ScheduleWorkspacePanels from '../ui/ScheduleWorkspacePanels.js';
 import StudioSourceManager from "../studio/StudioSourceManager.js";
 import StudioGraphicsManager from "../studio/StudioGraphicsManager.js";
 import StudioAssetLibrary from "../studio/StudioAssetLibrary.js";
 import StudioAssetResolver from "../studio/StudioAssetResolver.js";
 import StudioCatalogManager from "../studio/StudioCatalogManager.js";
+import StudioReferenceAuthority from '../studio/StudioReferenceAuthority.js';
+import ReferenceClient from '../studio/ReferenceClient.js';
+import LegacyAssetReferenceAuthority from '../studio/LegacyAssetReferenceAuthority.js';
 import StudioBootstrap from "../studio/StudioBootstrap.js";
 import MediaLibraryClient from "../media-library/MediaLibraryClient.js";
 import MediaLibraryManager from "../media-library/MediaLibraryManager.js";
-import ScheduleStore from "../scheduler/ScheduleStore.js";
+import ScheduleStore from "../scheduler/ServerScheduleStore.js";
 import ScheduleWorkspaceUI from "../ui/ScheduleWorkspaceUI.js";
 import StudioAssetsUI from "../ui/StudioAssetsUI.js";
 import StudioLiveSourcesUI from "../ui/StudioLiveSourcesUI.js";
@@ -17,7 +22,14 @@ import initializeScheduleSources from "../scheduler/InitializeScheduleSources.js
 import { requireOperatorSession } from "../auth/OperatorSessionClient.js";
 import OperatorSessionUI from "../ui/OperatorSessionUI.js";
 
+// Panel visibility is independent of network/bootstrap success.
+const workspace = document.getElementById("schedule-workspace");
+const workspacePanels=new ScheduleWorkspacePanels(workspace);workspacePanels.start();
+globalThis.addEventListener('pagehide',()=>workspacePanels.destroy(),{once:true});
 await requireOperatorSession();
+const referenceClient=new ReferenceClient({role:'SCHEDULER'});
+try{await referenceClient.initialize();}catch{}
+globalThis.addEventListener('pagehide',()=>void referenceClient.close().catch(()=>{}),{once:true});
 const operatorSessionUI = new OperatorSessionUI(
     document.getElementById("operator-logout"));
 operatorSessionUI.start();
@@ -30,6 +42,8 @@ const assetLibrary = new StudioAssetLibrary();
 await assetLibrary.initialize();
 const mediaLibraryManager = new MediaLibraryManager(new MediaLibraryClient());
 await mediaLibraryManager.initialize();
+assetLibrary.referenceAuthority=new LegacyAssetReferenceAuthority({library:assetLibrary,mediaLibrary:mediaLibraryManager,client:referenceClient});
+await assetLibrary.referenceAuthority.initialize();
 const assetResolver = new StudioAssetResolver({
     legacyLibrary: assetLibrary,
     mediaLibraryManager
@@ -44,6 +58,8 @@ const bootstrap = new StudioBootstrap({
     studioGraphicsManager: StudioGraphicsManager
 });
 await bootstrap.initialize();
+catalog.referenceAuthority=new StudioReferenceAuthority({catalog,client:referenceClient});
+await catalog.referenceAuthority.initialize();
 
 assetLibrary.setReferenceGuard((asset) =>
     ["logo", "still"].includes(asset.kind) ||
@@ -52,8 +68,9 @@ assetLibrary.setReferenceGuard((asset) =>
         ? "asset-still-referenced"
         : null);
 
-const workspace = document.getElementById("schedule-workspace");
 const scheduleStore = new ScheduleStore();
+void scheduleStore.start();
+globalThis.addEventListener("pagehide", () => scheduleStore.destroy(), { once: true });
 const dominantLiveConfig = new DominantLiveConfig();
 const schedulerRuntimeState = new SchedulerRuntimeState();
 document.body.dataset.schedulerEnabled = String(schedulerRuntimeState.load().enabled);
@@ -71,5 +88,11 @@ const liveSourcesUI = new StudioLiveSourcesUI(
 );
 
 scheduleUI.start();
+const mediaLibraryUI=new MediaLibraryUI(document.getElementById('media-library'),mediaLibraryManager,{
+    manageCollapse:false,
+    storageKey:'livezone.scheduler.mediaLibrary.collapsed.v1',defaultCollapsed:true,collapseTarget:'#schedule-media-body',
+    onSelectAsset:asset=>scheduleUI.overlayEditor?.useAsset(asset)
+});mediaLibraryUI.start();
+globalThis.addEventListener('pagehide',()=>mediaLibraryUI.destroy(),{once:true});
 assetsUI.start();
 liveSourcesUI.start();

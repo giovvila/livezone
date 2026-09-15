@@ -323,6 +323,10 @@ export default class StudioGraphicsUI {
             return;
         }
 
+        if(this.logoAuthority&&!this.logoAuthorityApplying)return this.commitLogo('preview',payload.asset,()=>{
+            this.graphicsManager.setGraphicState(this.logoGraphicId,{consumer:'preview',visible:true,payload});
+            this.logoFeedbackMessage='Preview logo applied.';this.renderFromState();
+        });
         this.graphicsManager.setGraphicState(this.logoGraphicId, {
             consumer: "preview",
             visible: true,
@@ -333,12 +337,18 @@ export default class StudioGraphicsUI {
     }
 
     handleLogoHidePreview() {
+        if(this.logoAuthority&&!this.logoAuthorityApplying)return this.commitLogo('preview',null,()=>this.handleLogoHidePreview());
         this.graphicsManager.hide(this.logoGraphicId, { consumer: "preview" });
         this.logoFeedbackMessage = "Preview logo hidden.";
         this.renderFromState();
     }
 
     handleLogoTake() {
+        if(this.logoAuthority&&!this.logoAuthorityApplying){const state=this.getGraphicState('preview',this.logoGraphicId);
+            return this.commitLogo('program',state.visible?(state.payload?.asset||this.graphicsManager.getGraphic(this.logoGraphicId)?.asset):null,()=>{
+                this.graphicsManager.setGraphicState(this.logoGraphicId,{consumer:'program',visible:state.visible,payload:state.payload});
+                this.logoFeedbackMessage='Preview logo copied to Program.';this.renderFromState();
+            });}
         this.graphicsManager.copyGraphicState(this.logoGraphicId, {
             from: "preview",
             to: "program"
@@ -348,6 +358,7 @@ export default class StudioGraphicsUI {
     }
 
     handleLogoHideProgram() {
+        if(this.logoAuthority&&!this.logoAuthorityApplying)return this.commitLogo('program',null,()=>this.handleLogoHideProgram());
         this.graphicsManager.hide(this.logoGraphicId, { consumer: "program" });
         this.logoFeedbackMessage = "Program logo hidden.";
         this.renderFromState();
@@ -368,6 +379,14 @@ export default class StudioGraphicsUI {
         this.logoPositionInput.value = logo.position;
         this.logoFeedbackMessage = "Default logo loaded into draft.";
         this.renderFromState();
+    }
+
+    async commitLogo(consumer,asset,apply){
+        const resolved=asset===null?null:this.resolveLogoUrl(asset);
+        if(asset!==null&&!resolved)return false;
+        try{return await this.logoAuthority.execute(consumer,resolved,()=>{
+            this.logoAuthorityApplying=true;try{apply();}finally{this.logoAuthorityApplying=false;}
+        });}catch(error){this.logoFeedbackMessage=error.code==='REVISION_CONFLICT'?'Logo changed elsewhere. Reload required.':'ASSET NON DISPONIBILE — Logo reference could not be confirmed.';this.renderFromState();return false;}
     }
 
     renderFromState() {

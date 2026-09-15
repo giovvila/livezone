@@ -11,6 +11,9 @@ export default class ProgramOutputStore {
     }
 
     accept(candidate) {
+        // Composite revision and schedule timing are owned exclusively by the server merger.
+        if (candidate?.snapshot?.output !== undefined || candidate?.snapshot?.overlays?.sponsor !== undefined || candidate?.snapshot?.overlays?.textCrawl?.scheduled !== undefined)
+            return Object.freeze({ accepted: false, reason: "server-owned-output" });
         const envelope = validateProgramOutputEnvelope(candidate);
         if (!envelope) return Object.freeze({ accepted: false, reason: "invalid" });
         if (this.retiredSessions.has(envelope.publisherSessionId)) {

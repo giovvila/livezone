@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile, rename, unlink, stat, open } from "node:fs/promises";
+import { mkdir, readFile, rename, unlink, stat, open, lstat } from "node:fs/promises";
 import { basename, extname, join, relative, resolve } from "node:path";
 
 const VERSION = 1;
@@ -14,16 +14,18 @@ const TYPES = Object.freeze({
 });
 
 export default class MediaAssetRepository {
-    constructor({ root, uuidFactory = randomUUID, clock = () => new Date().toISOString() } = {}) {
+    constructor({ root, uuidFactory = randomUUID, clock = () => new Date().toISOString(),fileOperations={} } = {}) {
         if (!root) throw new TypeError("MediaAssetRepository requires a storage root.");
         this.root = resolve(root);
         this.filesRoot = join(this.root, "files");
         this.tempRoot = join(this.root, ".tmp");
         this.manifestPath = join(this.root, "assets.json");
+        this.deleteJournalPath = join(this.root, 'delete-journal.json');
         this.uuidFactory = uuidFactory;
         this.clock = clock;
         this.assets = new Map();
         this.queue = Promise.resolve();
+        this.deleteFs={rename,unlink,lstat,...fileOperations};
     }
 
     async initialize() {
@@ -41,6 +43,7 @@ export default class MediaAssetRepository {
             if (error?.code !== "ENOENT") throw error;
             await this.writeManifest();
         }
+        await this.recoverDelete();
         return this.list();
     }
 
@@ -101,25 +104,97 @@ export default class MediaAssetRepository {
         });
     }
 
-    async delete(id, { isReferenced = () => false } = {}) {
+    async delete(id, { isReferenced } = {}) {
         return this.serialize(async () => {
             if (!ID_PATTERN.test(String(id || ""))) throw this.error("ASSET_ID_INVALID", "Asset ID is invalid.");
             const asset = this.assets.get(id);
             if (!asset) throw this.error("ASSET_NOT_FOUND", "Asset was not found.");
+            if ([...this.assets.values()].some(other => other.id !== id && other.url === asset.url))
+                throw this.error('FILE_OWNERSHIP_CONFLICT', 'Managed file has multiple metadata owners.');
+            if(this.deleteRecoveryRequired)throw this.error('DELETE_RECOVERY_REQUIRED','Media deletion requires recovery.');
+            if(typeof isReferenced!=='function')throw this.error('REFERENCE_GUARD_REQUIRED','Complete reference audit is required.');
             if (await isReferenced(this.snapshot(asset))) throw this.error("ASSET_REFERENCED", "Asset is referenced and cannot be deleted.");
             const path = this.safeFilePath(asset.kind, asset.storedName);
+            // Reject junctions/symlinks in the owned delete path, not only lexical traversal.
+            for(const owned of [this.root,this.filesRoot,join(this.filesRoot,asset.kind),this.tempRoot,path]) {
+                if((await this.deleteFs.lstat(owned)).isSymbolicLink())throw this.error('PATH_INVALID','Managed path is a link.');
+            }
             const quarantine = join(this.tempRoot, `delete-${randomUUID()}.tmp`);
-            await rename(path, quarantine);
+            await this.writeDeleteJournal({ version: 1, asset, quarantine: basename(quarantine) });
+            try { await this.deleteFs.rename(path, quarantine); }
+            catch (error) { await this.clearDeleteJournal(); throw error; }
             this.assets.delete(id);
             try { await this.writeManifest(); }
             catch (error) {
                 this.assets.set(id, asset);
-                await rename(quarantine, path).catch(() => {});
+                try{await this.deleteFs.rename(quarantine,path);}catch{this.deleteRecoveryRequired=true;throw this.error('DELETE_RECOVERY_REQUIRED','Managed file restore failed.');}
+                await this.clearDeleteJournal();
                 throw error;
             }
-            await unlink(quarantine).catch(() => {});
+            try {await this.deleteFs.unlink(quarantine);}
+            catch {
+                this.assets.set(id,asset);
+                try {await this.deleteFs.rename(quarantine,path);await this.writeManifest();}
+                catch {this.deleteRecoveryRequired=true;throw this.error('DELETE_RECOVERY_REQUIRED','Media deletion rollback failed.');}
+                await this.clearDeleteJournal();
+                throw this.error('ASSET_DELETE_FAILED','Media deletion failed; asset was restored.');
+            }
+            await this.clearDeleteJournal();
             return this.snapshot(asset);
         });
+    }
+
+    async writeDeleteJournal(value) {
+        let handle;
+        try { handle = await open(this.deleteJournalPath, 'wx');
+            await handle.writeFile(JSON.stringify(value)); await handle.sync(); }
+        catch (error) { this.deleteRecoveryRequired = true; throw error; }
+        finally { await handle?.close(); }
+    }
+
+    async clearDeleteJournal() {
+        try { await unlink(this.deleteJournalPath); }
+        catch (error) { if (error.code !== 'ENOENT') {
+            this.deleteRecoveryRequired = true;
+            throw this.error('DELETE_RECOVERY_REQUIRED', 'Media deletion journal requires recovery.');
+        } }
+    }
+
+    async recoverDelete() {
+        let journal;
+        try { journal = JSON.parse(await readFile(this.deleteJournalPath, 'utf8')); }
+        catch (error) { if (error.code === 'ENOENT') return;
+            this.deleteRecoveryRequired = true;
+            throw this.error('DELETE_RECOVERY_REQUIRED', 'Invalid deletion journal.'); }
+        const asset = this.validateAsset(journal?.asset);
+        if (journal.version !== 1 || !asset || !/^delete-[0-9a-f-]{36}\.tmp$/.test(journal.quarantine)) {
+            this.deleteRecoveryRequired = true;
+            throw this.error('DELETE_RECOVERY_REQUIRED', 'Invalid deletion journal.');
+        }
+        const target = this.safeFilePath(asset.kind, asset.storedName);
+        const quarantine = join(this.tempRoot, journal.quarantine);
+        const info = async path => { try { return await this.deleteFs.lstat(path); }
+            catch (error) { if (error.code === 'ENOENT') return null; throw error; } };
+        try {
+            for (const owned of [this.root, this.filesRoot, join(this.filesRoot, asset.kind), this.tempRoot]) {
+                if ((await info(owned))?.isSymbolicLink()) throw new Error('link');
+            }
+            const original = await info(target), held = await info(quarantine);
+            if (original?.isSymbolicLink() || held?.isSymbolicLink() || original && held) throw new Error('ambiguous');
+            if (held) await this.deleteFs.rename(quarantine, target);
+            if (held || original) {
+                // Recovery prefers retaining the asset. Never finish an uncommitted delete.
+                this.assets.set(asset.id, asset);
+                await this.writeManifest();
+            }
+            else if (this.assets.has(asset.id)) throw new Error('missing');
+            // Neither file nor metadata: unlink committed before the process stopped.
+            await this.clearDeleteJournal();
+        }
+        catch {
+            this.deleteRecoveryRequired = true;
+            throw this.error('DELETE_RECOVERY_REQUIRED', 'Media deletion requires recovery.');
+        }
     }
 
     safeFilePath(kind, storedName) {
@@ -171,10 +246,15 @@ export default class MediaAssetRepository {
     }
 
     snapshot(asset) { return Object.freeze({ ...asset, metadata: asset.metadata && Object.freeze({ ...asset.metadata }) }); }
-    serialize(operation) { const next = this.queue.then(operation, operation); this.queue = next.catch(() => {}); return next; }
+    serialize(operation) { const coordinated = () => this.mutationCoordinator ? this.mutationCoordinator.run(operation) : operation(); const next = this.queue.then(coordinated, coordinated); this.queue = next.catch(() => {}); return next; }
     async writeManifest() {
         const temp = `${this.manifestPath}.${randomUUID()}.tmp`;
-        await writeFile(temp, `${JSON.stringify({ version: VERSION, assets: Array.from(this.assets.values()) }, null, 2)}\n`, { flag: "wx" });
+        let handle;
+        try { handle = await open(temp, 'wx');
+            await handle.writeFile(`${JSON.stringify({ version: VERSION, assets: Array.from(this.assets.values()) }, null, 2)}\n`);
+            await handle.sync(); }
+        catch (error) { await handle?.close(); handle = null; await unlink(temp).catch(() => {}); throw error; }
+        finally { await handle?.close(); }
         await rename(temp, this.manifestPath).catch(async (error) => { await unlink(temp).catch(() => {}); throw error; });
     }
     error(code, message) { const error = new Error(message); error.code = code; return error; }

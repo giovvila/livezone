@@ -1,3 +1,6 @@
+import SponsorView from '../studio/renderers/SponsorView.js';
+import OutputRevisionGate from '../program-output/OutputRevisionGate.js';
+import {TextCrawlView} from '../studio/renderers/TextCrawlElement.js';
 import { AUTO_LIVE_LOSS_SLATE_ID, createAutoLiveLossSlate } from "../program-output/AutoLiveLossSlate.js";
 import { expectedPlaybackTime } from "../program-output/ProgramOutputContract.js";
 import trace, { programTraceFields } from "../core/RuntimeTrace.js";
@@ -46,6 +49,8 @@ export default class PublicProgramController {
         this.pendingRender = null;
         clearTimeout(this.staleTimer);
         this.unsubscribe?.();
+        this.crawlView?.destroy();
+        this.sponsorView?.destroy();
         this.audioButton?.removeEventListener("click", this.enableAudio);
         this.transport.destroy();
         this.releaseCurrent();
@@ -54,9 +59,12 @@ export default class PublicProgramController {
     handleSnapshot(snapshot, { livePublisher = false } = {}) {
         this.trace("snapshot-received", snapshot);
         if (!this.acceptSnapshotRevision(snapshot, { livePublisher })) {
+            this.trace(this.outputMode==='obs'?'OBS_EFFECTIVE_REJECT':'PUBLIC_EFFECTIVE_REJECT',snapshot);
             this.trace("snapshot-rejected", snapshot); return;
         }
         this.trace("snapshot-accepted", snapshot);
+        this.trace(this.outputMode==='obs'?'OBS_EFFECTIVE_ACCEPT':'PUBLIC_EFFECTIVE_ACCEPT',snapshot);
+        if (snapshot.output?.serverTime) this.outputClockOffset = Date.parse(snapshot.output.serverTime) - this.now();
         this.latestSnapshot = snapshot;
         const recovering = this.lossRecovery;
         if (recovering && (this.activationKey(snapshot) !== recovering.key ||
@@ -70,6 +78,7 @@ export default class PublicProgramController {
         if (snapshot.scene === null && snapshot.source === null) {
             this.scheduleStaleState(snapshot, livePublisher ? this.now() : null);
             this.renderWaiting();
+            this.renderOverlays(snapshot.overlays);
             return;
         }
         if (!snapshot.scene || !snapshot.source) return;
@@ -114,6 +123,10 @@ export default class PublicProgramController {
     }
 
     acceptSnapshotRevision(snapshot, { livePublisher = false } = {}) {
+        if (snapshot?.output) {
+            this.outputRevisionGate ||= new OutputRevisionGate();
+            return this.outputRevisionGate.accept(snapshot);
+        }
         const sessionId = snapshot?.publisherSessionId;
         if (!sessionId || this.retiredPublisherSessions.has(sessionId)) return false;
         if (this.activePublisherSessionId &&
@@ -219,7 +232,9 @@ export default class PublicProgramController {
         if (source.kind === "break") return this.createBreak(root, source);
         if (source.kind === "audio") return this.createAudio(root, snapshot, { signal });
         if (source.kind === "image") return this.createImage(root, source, { signal });
+        if(source.kind==='media')this.trace('mp4-source-resolved',snapshot);
         const video = document.createElement("video");
+        if(source.kind==='media')this.trace('mp4-element-created',snapshot);
         video.className = "public-program__media";
         video.autoplay = source.kind === "hls" ||
             (snapshot.playback.playing && !snapshot.playback.ended);
@@ -234,14 +249,22 @@ export default class PublicProgramController {
         const preparationAbort = new AbortController();
         let lastSampleAt = -Infinity;
         const observedEvents = ["timeupdate", "waiting", "stalled", "pause", "seeked", "error"];
+        if(source.kind==='media')observedEvents.push('loadstart','loadedmetadata','durationchange','loadeddata','canplay','seeking');
         const observe = event => {
             if (released || event.type === "timeupdate" && this.now() - lastSampleAt < 1000) return;
             if (event.type === "timeupdate") lastSampleAt = this.now();
             const current = this.getCurrentMedia() === video ? this.current.snapshot : snapshot;
             this.trace(`player-${event.type}`, current, { currentTime: video.currentTime,
                 expectedTime: expectedPlaybackTime(current, this.now()), readyState: video.readyState,
-                networkState: video.networkState,
+                networkState: video.networkState, mediaErrorCode: video.error?.code ?? 0,
                 paused: video.paused, muted: video.muted, ended: video.ended });
+            if(source.kind==='media'&&trace.enabled){
+                for(const property of ['buffered','seekable']){
+                    try{const ranges=video[property];for(let index=0;index<Math.min(ranges.length,4);index++)
+                        this.trace('mp4-'+property,current,{phase:event.type,rangeIndex:index,rangeStart:ranges.start(index),rangeEnd:ranges.end(index)});
+                    }catch{/* Diagnostic ranges must never affect playback. */}
+                }
+            }
         };
         const handlePlaying = () => { if (!released) {
             this.trace("player-playing", snapshot, { muted: video.muted, currentTime: video.currentTime });
@@ -308,7 +331,9 @@ export default class PublicProgramController {
                 hls.loadSource(source.url);
                 hls.attachMedia(video);
             }
-            else { video.src = source.url; video.load(); }
+            else { video.src = source.url;
+                if(source.kind==='media')this.trace('mp4-src-assigned',snapshot,{state:video.preload});
+                video.load(); }
             const ready = this.waitForReady(video, ["loadeddata", "canplay"], 12000, preparationAbort.signal);
             // Some native HLS implementations do not decode enough data to emit
             // canplay until explicitly played, even with autoplay on the element.
@@ -504,6 +529,7 @@ export default class PublicProgramController {
         const target = duration === null || !Number.isFinite(duration)
             ? Math.max(0, expected)
             : Math.min(Math.max(0, expected), Math.max(0, duration - 0.05));
+        if(snapshot.source?.kind==='media')this.trace('mp4-seek-target',snapshot,{expectedTime:target,currentTime:element.currentTime,readyState:element.readyState,duration});
         if (Math.abs(element.currentTime - target) <= 0.05) return Promise.resolve();
         return new Promise((resolve, reject) => {
             let timer;
@@ -519,6 +545,7 @@ export default class PublicProgramController {
             element.addEventListener("error", fail, { once: true });
             signal?.addEventListener("abort", fail, { once: true });
             timer = setTimeout(fail, timeoutMs);
+            if(snapshot.source?.kind==='media')this.trace('mp4-seek-request',snapshot,{expectedTime:target,readyState:element.readyState});
             element.currentTime = target;
             queueMicrotask(() => {
                 if (!element.seeking && Math.abs(element.currentTime - target) <= 0.05) {
@@ -603,25 +630,32 @@ export default class PublicProgramController {
     }
 
     renderOverlays(overlays = {}) {
+        try {
+            const layer=(overlays.sponsor || this.sponsorView) && this.getGraphicsLayer('sponsor');
+            if(layer){
+                layer.style.zIndex=overlays.sponsor?.layout==='FULLSCREEN'?'5':'3';
+                this.sponsorView ||= new SponsorView({now:()=>this.now()+(this.outputClockOffset||0)});
+                const element=this.sponsorView.node(overlays.sponsor);
+                if(!element || element.parentNode!==layer)layer.replaceChildren(...(element?[element]:[]));
+            }
+        } catch { this.trace('sponsor-render-failed',this.latestSnapshot); }
+        try { this.renderCrawlOverlay(overlays); }
+        catch {
+            this.trace('crawl-render-failed',this.latestSnapshot);
+            try { this.crawlView?.destroy(); } catch {}
+            this.crawlView=null;
+            try { this.getGraphicsLayer('overlays')?.replaceChildren(); } catch {}
+        }
+    }
+
+    renderCrawlOverlay(overlays = {}) {
         const layer = this.getGraphicsLayer("overlays");
         if (!layer) return;
-        const item = overlays?.textCrawl;
-        if (!item?.enabled || !item.text) {
-            layer.replaceChildren();
-            return;
-        }
-        const overlay = document.createElement("div");
-        const text = document.createElement("span");
-        overlay.className = ["public-text-crawl", `public-text-crawl--${item.mode}`,
-            `public-text-crawl--${item.direction}`,
-            `public-text-crawl--${item.speed}`,
-            `public-text-crawl--${item.position}`,
-            item.background ? "public-text-crawl--background" : ""
-        ].filter(Boolean).join(" ");
-        text.className = "public-text-crawl__text";
-        text.textContent = item.text;
-        overlay.appendChild(text);
-        layer.replaceChildren(overlay);
+        if (this.graphicsRoot?.dataset) this.graphicsRoot.dataset.scheduledCrawlPosition = overlays?.textCrawl?.enabled && overlays.textCrawl.scheduled ? overlays.textCrawl.position : "";
+        this.crawlView ||= new TextCrawlView({ prefix: "public", now: () => this.now() + (this.outputClockOffset || 0) });
+        const element = this.crawlView.node(overlays?.textCrawl);
+        if (element && element.parentNode === layer) return;
+        layer.replaceChildren(...(element ? [element] : []));
     }
 
     getGraphicsLayer(kind) {
@@ -751,7 +785,10 @@ export default class PublicProgramController {
         this.staleTimer = setTimeout(() => {
             const current = this.current?.snapshot;
             if (current?.publisherSessionId === sessionId &&
-                current.revision === revision) this.renderWaiting("PROGRAM STATE STALE");
+                current.revision === revision) {
+                this.renderWaiting("PROGRAM STATE STALE");
+                this.renderOverlays(this.latestSnapshot?.overlays);
+            }
         }, remaining);
     }
     setStatus(text, variant) {

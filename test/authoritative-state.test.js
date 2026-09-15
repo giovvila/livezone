@@ -7,7 +7,7 @@ import AuthoritativeStateRepository from "../server/studio/AuthoritativeStateRep
 import StudioStateCoordinator from "../server/studio/StudioStateCoordinator.js";
 import { createInitializedState, createUninitializedState,
     validateAuthoritativeState } from "../server/studio/AuthoritativeStateContract.js";
-import { createProgramOutputServer } from "../server/program-output-server.js";
+import { createProgramOutputServer } from '../test-support/ReferenceAuthorityTestServer.js';
 import MediaAssetRepository from "../server/media-library/MediaAssetRepository.js";
 import OperatorAuth from "../server/auth/OperatorAuth.js";
 
@@ -25,7 +25,7 @@ test("contract strictly validates the envelope and legacy relationships", () => 
     const domains = initialDomains();
     const initialized = createInitializedState(domains,
         { stateId: ID, updatedAt: NOW, revision: 1 });
-    assert.equal(initialized.sources[0].assetId, "asset-video");
+    assert.equal(initialized.sources[0].assetId, "asset-00000000-0000-4000-8000-000000000001");
     assert.equal(createInitializedState({ ...domains, scenes: [
         { id: "scene-missing", name: "Missing", type: "VIDEO",
             renderer: { kind: "source", sourceId: "missing" } }
@@ -34,7 +34,7 @@ test("contract strictly validates the envelope and legacy relationships", () => 
 
 test("contract accepts every persisted legacy source authority shape", () => {
     const sources = [
-        { id: "media-managed", name: "Managed video", kind: "media", assetId: "asset-video" },
+        { id: "media-managed", name: "Managed video", kind: "media", assetId: "asset-00000000-0000-4000-8000-000000000001" },
         { id: "media-url", name: "URL video", kind: "media", url: "https://example.test/v.mp4" },
         { id: "image-managed", name: "Managed image", kind: "image", assetId: "asset-image" },
         { id: "image-url", name: "URL image", kind: "image", url: "https://example.test/i.png" },
@@ -327,7 +327,7 @@ test("configured Studio state path beneath public root is rejected", () => {
 
 function initialDomains() {
     return { sources: [{ id: "source-video", name: "Video", kind: "media",
-        assetId: "asset-video" }], scenes: [{ id: "scene-video", name: "Scene",
+        assetId: "asset-00000000-0000-4000-8000-000000000001" }], scenes: [{ id: "scene-video", name: "Scene",
         type: "VIDEO", renderer: { kind: "source", sourceId: "source-video" } }],
     scheduler: { version: 1, timezone: "Europe/Rome", items: [], enabled: false },
     globalOverlays: { textCrawl: null },
@@ -358,8 +358,15 @@ async function withServer(operation, { stateContent } = {}) {
     const root = await mkdtemp(join(tmpdir(), "livezone-state-server-"));
     const statePath = join(root, "studio-state.json");
     if (stateContent !== undefined) await writeFile(statePath, stateContent, "utf8");
+    const fixtureRepository = new MediaAssetRepository({ root: join(root, "media"),
+        uuidFactory: () => "00000000-0000-4000-8000-000000000001" });
+    await fixtureRepository.initialize();
+    const tempPath = join(fixtureRepository.tempRoot, "fixture.mp4");
+    const bytes = Buffer.from([0,0,0,0,102,116,121,112,105,115,111,109]);
+    await writeFile(tempPath, bytes);
+    await fixtureRepository.importTempFile({ tempPath, originalName: "fixture.mp4",
+        mimeType: "video/mp4", size: bytes.length });
     const mediaAssetRepository = new MediaAssetRepository({ root: join(root, "media") });
-    await mediaAssetRepository.initialize();
     const operatorAuth = new OperatorAuth({ username: "operator",
         password: "correct horse battery staple", secureCookie: false });
     const readiness = { evaluate: async () => ({ ok: true, service: "livezone",

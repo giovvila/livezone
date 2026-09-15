@@ -7,20 +7,113 @@ import { pipeline } from "node:stream/promises";
 import { ID_PATTERN } from "./MediaAssetRepository.js";
 
 export default class MediaLibraryRoutes {
-    constructor({ repository, maxUploadBytes = 2 * 1024 ** 3, referenceGuard = () => false } = {}) {
+    constructor({ repository, maxUploadBytes = 2 * 1024 ** 3, referenceGuard = null, referenceAudit = null } = {}) {
         this.repository = repository;
         this.maxUploadBytes = maxUploadBytes;
         this.referenceGuard = referenceGuard;
+        this.referenceAudit = referenceAudit;
     }
 
     async handle(request, response, url) {
+        if(url.pathname==='/api/media-library/reference-presence'&&request.method==='GET'&&this.referenceClients){
+            const client=request.referenceClient,principal=request.operatorReferencePrincipal;
+            if(!client)return this.failure(response,409,'CLIENT_CAPABILITY_REQUIRED','Control or Scheduler requires reload.');
+            const controlEvents=url.searchParams.get('controlEvents')==='1'&&client.role==='CONTROL'&&this.controlEventFeed;
+            let presenceState='CURRENT_CAPABLE';
+            try{await this.referenceClients.presence(client.id,client.generation,principal,true);}
+            catch(error){
+                if(!controlEvents||error.code!=='CLIENT_CAPABILITY_REQUIRED')return this.failure(response,409,'CLIENT_CAPABILITY_REQUIRED','Control or Scheduler requires reload.');
+                // After a server restart the reference epoch still requires a fresh
+                // handshake. Do not confirm it merely to restore Program monitoring.
+                // Public output/reconnect remains available; Safe Delete stays UNKNOWN.
+                presenceState='UNKNOWN';
+            }
+            this.presenceConnections??=new Map();const key=client.id+':'+client.generation;
+            this.presenceConnections.set(key,(this.presenceConnections.get(key)||0)+1);
+            response.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-store','X-Accel-Buffering':'no'});
+            response.write(`event: presence\ndata: ${JSON.stringify({state:presenceState})}\n\n`);
+            const offEvents=controlEvents?this.controlEventFeed.connect(response):null;
+            const timer=setInterval(()=>{if(!response.write(': presence\n\n'))response.destroy();},15000);timer.unref?.();
+            response.once('close',()=>{
+                offEvents?.();clearInterval(timer);const remaining=(this.presenceConnections.get(key)||1)-1;
+                if(remaining){this.presenceConnections.set(key,remaining);return;}this.presenceConnections.delete(key);
+                void this.referenceClients.presence(client.id,client.generation,principal,false)
+                    .then(()=>this.previewOwnership.disconnect(principal+'|'+client.id+'|'+client.generation)).catch(()=>{});
+            });return true;
+        }
+        const logoMatch=/^\/api\/media-library\/channel-logo\/(preview|program)$/.exec(url.pathname);
+        if(logoMatch&&this.channelLogoAuthority){
+            try{
+                await this.channelLogoAuthority.ready;
+                const client=request.referenceClient;
+                if(!client)throw Object.assign(Error(),{code:'CLIENT_CAPABILITY_REQUIRED'});
+                const consumer=logoMatch[1];let logo;
+                if(request.method==='GET')logo=this.channelLogoAuthority.get(client,consumer);
+                else if(request.method==='PUT')logo=await this.channelLogoAuthority.assign(client,consumer,await this.readJson(request,8192));
+                else if(request.method==='POST')logo=await this.channelLogoAuthority.acknowledge(client,consumer,(await this.readJson(request)).revision);
+                else return this.failure(response,405,'METHOD_NOT_ALLOWED','Method not allowed.');
+                return this.success(response,200,{logo});
+            }catch(error){return this.failure(response,409,error.code||'REFERENCE_AUDIT_UNAVAILABLE','ASSET NON DISPONIBILE');}
+        }
+        if(url.pathname==='/api/media-library/reference-inventory'&&request.method==='GET')return this.success(response,200,
+            {inventory:await this.referenceAudit.globalCompleteness(),diagnostics:this.referenceAudit.diagnostics?.snapshot()||[]});
+        if(url.pathname.startsWith('/api/media-library/reference-clients')&&this.referenceClients){
+            const match=/^\/api\/media-library\/reference-clients(?:\/([0-9a-f-]{36})(\/legacy-assets)?)?$/.exec(url.pathname);
+            if(!match)return this.failure(response,400,'INVALID_CLIENT','Invalid reference client.');
+            try{
+                const body=await this.readJson(request,16384);
+                if(match[1]&&match[2]&&request.method==='PUT')return this.success(response,200,
+                    {legacy:await this.referenceClients.updateLegacy(match[1],body.generation,body,request.operatorReferencePrincipal)});
+                if(!match[1]&&request.method==='POST')return this.success(response,201,{client:await this.referenceClients.register(body,request.operatorReferencePrincipal)});
+                if(match[1]&&request.method==='PUT'){
+                    if(body.appliedRevision!==undefined){await this.referenceClients.confirmCatalog(match[1],body.generation,body.appliedRevision,request.operatorReferencePrincipal);return this.success(response,200,{});}
+                    if(body.legacyAppliedRevision!==undefined){await this.referenceClients.confirmLegacy(match[1],body.generation,body.legacyAppliedRevision,request.operatorReferencePrincipal);return this.success(response,200,{});}
+                    if(body.catalog&&!['INVALID','CONFLICT'].includes(body.catalog))return this.failure(response,422,'INVALID_CLIENT_STATE','Catalog confirmation is server-owned.');
+                    const client=await this.referenceClients.update(match[1],body.generation,body,request.operatorReferencePrincipal);
+                    if(body.closed===true)await this.previewOwnership.revokePrincipal(request.operatorReferencePrincipal+'|'+match[1]);
+                    return this.success(response,200,{client});
+                }
+                return this.failure(response,405,'METHOD_NOT_ALLOWED','Method not allowed.');
+            }catch(error){return this.failure(response,409,error.code||'REFERENCE_AUDIT_UNAVAILABLE','REFERENCE INVENTORY INCOMPLETE');}
+        }
+        if (url.pathname.startsWith('/api/media-library/preview-ownership') && this.previewOwnership) {
+            const match = /^\/api\/media-library\/preview-ownership(?:\/([0-9a-f-]{36}))?$/.exec(url.pathname);
+            if (!match) return this.failure(response, 400, 'INVALID_OWNERSHIP', 'Invalid ownership path.');
+            if (!request.operatorReferencePrincipal) return this.failure(response, 401, 'AUTH_REQUIRED', 'Operator authorization required.');
+            const principal = request.operatorReferencePrincipal+(request.referenceClient?'|'+request.referenceClient.id+'|'+request.referenceClient.generation:'');
+            try {
+                if (!match[1] && request.method === 'POST') return this.success(response, 201,
+                    { ownership: await this.previewOwnership.open(principal,Number(request.headers['content-length'])>0||request.headers['transfer-encoding']?await this.readJson(request):{}) });
+                if (match[1] && request.method === 'PUT') return this.success(response, 200,
+                    { ownership: await this.previewOwnership.update(match[1], principal, await this.readJson(request, 16384)) });
+                if (match[1] && request.method === 'DELETE') {
+                    await this.previewOwnership.close(match[1], principal,Number(request.headers['x-livezone-ownership-generation']||1)); return this.success(response, 200, {});
+                }
+                return this.failure(response, 405, 'METHOD_NOT_ALLOWED', 'Method not allowed.');
+            } catch (error) { return this.failure(response, 409, error.code || 'REFERENCE_AUDIT_UNAVAILABLE',
+                error.message || 'REFERENCE INVENTORY INCOMPLETE'); }
+        }
+        const referenceMatch=/^\/api\/media-library\/assets\/([^/]+)\/references$/.exec(url.pathname);
+        if(referenceMatch&&request.method==='GET') {
+            try {
+                const id=decodeURIComponent(referenceMatch[1]);
+                if(!ID_PATTERN.test(id))return this.failure(response,400,'ASSET_ID_INVALID','Asset ID is invalid.');
+                const asset=this.repository.get(id);
+                if(!asset)return this.failure(response,404,'ASSET_NOT_FOUND','ASSET NON DISPONIBILE');
+                return this.success(response,200,{audit:await this.audit(asset)});
+            }catch(error){return this.repositoryFailure(response,error);}
+        }
         const collection = url.pathname === "/api/media-library/assets";
         const match = /^\/api\/media-library\/assets\/([^/]+)$/.exec(url.pathname);
         const file = /^\/media-library\/files\/(video|audio|image)\/([^/]+)$/.exec(url.pathname);
         if (collection && request.method === "GET") {
             const kind = url.searchParams.get("kind");
             if (kind && !["video", "audio", "image"].includes(kind)) return this.failure(response, 400, "KIND_INVALID", "Asset kind is invalid.");
-            return this.success(response, 200, { assets: this.repository.list({ kind }) });
+            const assets = this.repository.list({ kind });
+            const audits = url.searchParams.get('references') === '1'
+                ? Object.fromEntries(await Promise.all(assets.map(async asset => [asset.id, await this.audit(asset)]))) : undefined;
+            const inventory=audits&&this.referenceAudit?.globalCompleteness?await this.referenceAudit.globalCompleteness():undefined;
+            return this.success(response, 200, { assets, ...(audits ? { audits,inventory } : {}) });
         }
         if (collection && request.method === "POST") return this.upload(request, response);
         if (match && request.method === "GET") {
@@ -43,7 +136,12 @@ export default class MediaLibraryRoutes {
             try {
                 const id = decodeURIComponent(match[1]);
                 if (!ID_PATTERN.test(id)) return this.failure(response, 400, "ASSET_ID_INVALID", "Asset ID is invalid.");
-                const asset = await this.repository.delete(id, { isReferenced: this.referenceGuard });
+                const asset = await this.repository.delete(id, { isReferenced: async asset=>{
+                    const audit=await this.audit(asset);
+                    if(audit.referenceCount)throw Object.assign(new Error('IMPOSSIBILE ELIMINARE — Media utilizzato.'),{code:'ASSET_REFERENCED',details:audit});
+                    if(audit.complete!==true||audit.eligible!==true)throw Object.assign(new Error('IMPOSSIBILE ELIMINARE — Inventario riferimenti incompleto.'),{code:'REFERENCE_AUDIT_UNAVAILABLE',details:audit});
+                    return false;
+                } });
                 return this.success(response, 200, { asset });
             }
             catch (error) { return this.repositoryFailure(response, error); }
@@ -135,12 +233,19 @@ export default class MediaLibraryRoutes {
     }
 
     repositoryFailure(response, error) {
-        const status = ({ UPLOAD_TOO_LARGE: 413, ASSET_NOT_FOUND: 404, ASSET_REFERENCED: 409,
+        const status = ({ FILE_OWNERSHIP_CONFLICT:409, REFERENCE_AUDIT_UNAVAILABLE:409, UPLOAD_TOO_LARGE: 413, ASSET_NOT_FOUND: 404, ASSET_REFERENCED: 409,
             MIME_MISMATCH: 415, UNSUPPORTED_TYPE: 415, SIGNATURE_MISMATCH: 422,
             CLIENT_PATH_REJECTED: 400, PATH_INVALID: 400, ASSET_ID_INVALID: 400,
             UPLOAD_INVALID: 400, UPLOAD_ABORTED: 400, CONTENT_TYPE_INVALID: 415,
             METADATA_TOO_LARGE: 413, ASSET_METADATA_INVALID: 400 })[error?.code] || 500;
-        return this.failure(response, status, error?.code || "INTERNAL_ERROR", error?.message || "Internal error.");
+        return this.failure(response, status, error?.code || "INTERNAL_ERROR",
+            status >= 500 ? 'Media Library operation failed; no successful deletion confirmed.' : error?.message || "Internal error.",error?.details||null);
+    }
+    async audit(asset) {
+        if(this.referenceAudit)return this.referenceAudit.inspect(asset);
+        if(this.referenceGuard&&await this.referenceGuard(asset))return {assetId:asset.id,complete:false,eligible:false,referenceCount:1,references:[{type:'Riferimento esistente',name:'Media utilizzato'}],unavailable:['Inventario riferimenti completo']};
+        // Legacy boolean guards cannot prove that all persisted/runtime owners were audited.
+        return {assetId:asset.id,complete:false,eligible:false,referenceCount:0,references:[],unavailable:['Inventario riferimenti completo']};
     }
     success(response, status, value) { response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" }); response.end(JSON.stringify({ ok: true, ...value })); return true; }
     failure(response, status, code, message, details = null) { response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" }); response.end(JSON.stringify({ ok: false, error: { code, message, details } })); return true; }

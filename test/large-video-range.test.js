@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { statSync, existsSync, openSync, readSync, closeSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { once } from 'node:events';
-import { createProgramOutputServer } from '../server/program-output-server.js';
+import { createProgramOutputServer } from '../test-support/ReferenceAuthorityTestServer.js';
 
 for(const name of ['demo.mp4','demo3.mp4','demo2.mp4']) test(`production byte ranges and Content-Length: ${name}`, {skip:!existsSync(`public/media/${name}`)}, async () => {
     const path=resolve('public/media',name), size=statSync(path).size;

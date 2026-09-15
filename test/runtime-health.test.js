@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createProgramOutputServer, parseHttpBindConfig,
-    startProgramOutputServer } from "../server/program-output-server.js";
+    startProgramOutputServer } from '../test-support/ReferenceAuthorityTestServer.js';
 import MediaAssetRepository from "../server/media-library/MediaAssetRepository.js";
 import RuntimeReadiness from "../server/runtime/RuntimeReadiness.js";
 

@@ -9,7 +9,8 @@ import { applyInterruptionShift, calculateEffectiveSchedule,
 export default class SchedulerEngine {
     constructor({ command, catalog, eventBus = EventBus, clock = () => Date.now(),
         setTimer = globalThis.setTimeout, clearTimer = globalThis.clearTimeout,
-        programTransportProvider = null, runtimeState = null } = {}) {
+        programTransportProvider = null, runtimeState = null, programExecution = true } = {}) {
+        this.programExecution = programExecution;
         this.command = command;
         this.catalog = catalog;
         this.eventBus = eventBus;
@@ -43,7 +44,7 @@ export default class SchedulerEngine {
     setSchedule(schedule) {
         const externalContext = ["external", "empty-slot"].includes(this.interruptionContext?.kind)
             ? this.interruptionContext : null;
-        this.schedule = schedule;
+        this.schedule = this.programExecution ? schedule : createEmptySchedule();
         this.attemptedKey = null;
         this.overrideItemId = null;
         this.failure = null;
@@ -224,6 +225,7 @@ export default class SchedulerEngine {
 
     async reconcile(allowActivateCurrent = true, { releaseWhenEmpty = false } = {}) {
         if (!this.enabled || this.destroyed) return;
+        if (!this.programExecution) { this.emit(); return; }
         if (this.reconciling) {
             this.pendingReconcile = true;
             this.pendingActivation ||= allowActivateCurrent;

@@ -1,0 +1,2850 @@
+{
+  "baseline": "e249fa040b3ff5a94f00dd7efdcc978cd656d8f3",
+  "branch": "build/1003.4",
+  "categories": {
+    "A": "Validated build source/dependencies and covered compatibility",
+    "B": "Validated tests/fixtures",
+    "C": "Build documentation; final checkpoint supersedes intermediate outcomes",
+    "D": "Runtime/generated/diagnostics: exclude and preserve",
+    "E": "Explicit local media: exclude and preserve",
+    "F": "Unrelated: none",
+    "G": "Uncertain: none"
+  },
+  "counts": {
+    "A": 80,
+    "B": 37,
+    "C": 32,
+    "D": 342,
+    "E": 5,
+    "F": 0,
+    "G": 0
+  },
+  "ignoredExclusions": [
+    ".env",
+    "node_modules/",
+    "var/** including ignored runtime, logs, media library, upload temp, quarantine, journals, WinSW and MediaMTX state"
+  ],
+  "proposedCommitSet": [
+    "docs/BUILD-1003.4-CHECKPOINT-FILES.json",
+    "docs/BUILD-1003.4-CONTROL-COEXISTENCE-AUDIT.md",
+    "docs/BUILD-1003.4-CONTROL-HEAVY-MEDIA-RESOURCES-AUDIT.md",
+    "docs/BUILD-1003.4-CONTROL-SOCKET-POOL-SATURATION-AUDIT.md",
+    "docs/BUILD-1003.4-HEAVY-MEDIA-MULTI-TAB-AUDIT.md",
+    "docs/BUILD-1003.4-LARGE-MP4-PUBLIC-AUDIT.md",
+    "docs/BUILD-1003.4-MEDIA-B-REAL-CAPTURE-ANALYSIS.md",
+    "docs/BUILD-1003.4-OVERLAPPING-HAR-OWNERSHIP-AUDIT.md",
+    "docs/BUILD-1003.4-PROGRAMMABLE-OVERLAYS-ARCHITECTURE.md",
+    "docs/BUILD-1003.4-PUBLIC-STARTUP-RECONNECT-AUDIT.md",
+    "docs/BUILD-1003.4-RUNTIME-CHECKPOINT.md",
+    "docs/BUILD-1003.4-TECHNICAL-RETRY-CHURN-AUDIT.md",
+    "docs/BUILD-1003.4A-SERVER-SCHEDULER-AUTHORITY-ARCHITECTURE.md",
+    "docs/BUILD-1003.4A1-SERVER-SCHEDULER-CORE-AUDIT.md",
+    "docs/BUILD-1003.4A2-SCHEDULER-API-SSE-AUDIT.md",
+    "docs/BUILD-1003.4A3-BROWSER-SCHEDULER-MIGRATION-AUDIT.md",
+    "docs/BUILD-1003.4A3-CONTROL-CONTINUITY-AUDIT.md",
+    "docs/BUILD-1003.4A3-PROGRAM-IDENTITY-CONTINUITY-AUDIT.md",
+    "docs/BUILD-1003.4A3-REAL-BROWSER-SCHEDULER-AUDIT.md",
+    "docs/BUILD-1003.4B-CRAWL-PROGRAM-OUTPUT-RUNTIME-AUDIT.md",
+    "docs/BUILD-1003.4B-PROGRAMMABLE-CRAWL-AUDIT.md",
+    "docs/BUILD-1003.4C-FULLSCREEN-SPONSOR-AUDIT.md",
+    "docs/BUILD-1003.4C-SCHEDULER-OVERLAY-EDITOR-AUDIT.md",
+    "docs/BUILD-1003.4C-SPONSOR-RUNTIME-SCHEDULER-UX-AUDIT.md",
+    "docs/BUILD-1003.4D-SAFE-DELETE-USABILITY-AUDIT.md",
+    "docs/BUILD-1003.4D-SAFE-MEDIA-DELETE-AUDIT.md",
+    "docs/BUILD-1003.4D1-ASSET-REFERENCE-AUTHORITY-AUDIT.md",
+    "docs/BUILD-1003.4D2-SAFE-MEDIA-DELETE-AUTHORITY-AUDIT.md",
+    "docs/BUILD-1003.4D3-ASSET-AUTHORITY-CLOSURE-AUDIT.md",
+    "docs/BUILD-1003.4D3-REFERENCE-CHECK-CONVERGENCE-AUDIT.md",
+    "docs/BUILD-1003.4D3-STUDIO-RECONCILIATION-MEDIA-PANEL-AUDIT.md",
+    "docs/SPONSOR-CRAWL-CONCURRENCY.md",
+    "package-lock.json",
+    "package.json",
+    "public/control/schedule/index.html",
+    "public/css/public-viewer.css",
+    "public/css/schedule-workspace.css",
+    "public/css/studio-renderer.css",
+    "public/js/auth/OperatorSessionClient.js",
+    "public/js/core/ControlEventStream.js",
+    "public/js/core/RuntimeTrace.js",
+    "public/js/entries/control-room-app.js",
+    "public/js/entries/public-app.js",
+    "public/js/entries/schedule-app.js",
+    "public/js/media-library/MediaLibraryClient.js",
+    "public/js/media-library/MediaLibraryManager.js",
+    "public/js/media-library/ReferenceAuthorityNotifications.js",
+    "public/js/program-output/ControlCrawlObserver.js",
+    "public/js/program-output/NetworkProgramOutputTransport.js",
+    "public/js/program-output/OutputRevisionGate.js",
+    "public/js/program-output/ProgramOutputContract.js",
+    "public/js/program-output/ProgramOutputManager.js",
+    "public/js/public/PublicProgramBootstrap.js",
+    "public/js/public/PublicProgramController.js",
+    "public/js/scheduler/ProgramScheduleAdapter.js",
+    "public/js/scheduler/ScheduleApiClient.js",
+    "public/js/scheduler/ScheduleEventEditorAdapter.js",
+    "public/js/scheduler/SchedulerEngine.js",
+    "public/js/scheduler/ServerScheduleStore.js",
+    "public/js/studio/ChannelLogoReferenceClient.js",
+    "public/js/studio/ControlMediaResources.js",
+    "public/js/studio/LegacyAssetReferenceAuthority.js",
+    "public/js/studio/LiveSourceMonitor.js",
+    "public/js/studio/PreviewOwnershipClient.js",
+    "public/js/studio/ProgramPlaybackContinuity.js",
+    "public/js/studio/ReferenceClient.js",
+    "public/js/studio/SharedLiveHealthConsumer.js",
+    "public/js/studio/SourcePresenceMonitor.js",
+    "public/js/studio/StudioAssetLibrary.js",
+    "public/js/studio/StudioCatalogManager.js",
+    "public/js/studio/StudioReferenceAuthority.js",
+    "public/js/studio/StudioRenderer.js",
+    "public/js/studio/renderers/SponsorView.js",
+    "public/js/studio/renderers/StudioAudioSurface.js",
+    "public/js/studio/renderers/StudioGraphicsLayer.js",
+    "public/js/studio/renderers/StudioHlsSurface.js",
+    "public/js/studio/renderers/StudioMediaSurface.js",
+    "public/js/studio/renderers/TextCrawlElement.js",
+    "public/js/ui/CrawlScheduleUI.js",
+    "public/js/ui/MediaLibraryUI.js",
+    "public/js/ui/ScheduleOverlayEditorUI.js",
+    "public/js/ui/ScheduleWorkspacePanels.js",
+    "public/js/ui/ScheduleWorkspaceUI.js",
+    "public/js/ui/StudioAssetsUI.js",
+    "public/js/ui/StudioGraphicsUI.js",
+    "public/js/ui/StudioLiveSourcesUI.js",
+    "public/js/ui/StudioOperationalSourcesUI.js",
+    "public/js/ui/StudioScheduleSummaryUI.js",
+    "public/js/ui/StudioSourcesUI.js",
+    "public/js/ui/StudioUI.js",
+    "server/media-library/AssetAuthorityDiagnostics.js",
+    "server/media-library/AssetMutationCoordinator.js",
+    "server/media-library/AssetReferenceInventory.js",
+    "server/media-library/ChannelLogoAuthority.js",
+    "server/media-library/MediaAssetRepository.js",
+    "server/media-library/MediaLibraryRoutes.js",
+    "server/media-library/MediaReferenceAudit.js",
+    "server/media-library/PreviewOwnership.js",
+    "server/media-library/ReferenceClientRegistry.js",
+    "server/program-output-server.js",
+    "server/program-output/ControlEventFeed.js",
+    "server/program-output/EffectiveProgramOutput.js",
+    "server/program-output/ProgramOutputStore.js",
+    "server/scheduler/ScheduleAuthority.js",
+    "server/scheduler/ScheduleContract.js",
+    "server/scheduler/ScheduleDiagnostics.js",
+    "server/scheduler/ScheduleRoutes.js",
+    "server/scheduler/ScheduleStore.js",
+    "server/scheduler/SchedulerServer.js",
+    "server/studio/ReconcileReferenceCatalog.js",
+    "server/studio/StudioStateCoordinator.js",
+    "server/studio/StudioStateRoutes.js",
+    "test-support/ReferenceAuthorityTestServer.js",
+    "test/asset-authority-closure.test.js",
+    "test/asset-reference-adoption.test.js",
+    "test/asset-reference-authority.test.js",
+    "test/authoritative-state.test.js",
+    "test/control-media-resources.test.js",
+    "test/control-socket-pool-http.test.js",
+    "test/control-socket-pool.test.js",
+    "test/external-hls-public.test.js",
+    "test/fullscreen-sponsor.test.js",
+    "test/heavy-media-boundaries.test.js",
+    "test/large-mp4-preparation-order.test.js",
+    "test/large-video-range.test.js",
+    "test/media-library.test.js",
+    "test/media-request-diagnostics.test.js",
+    "test/operator-auth.test.js",
+    "test/preview-program-handoff.test.js",
+    "test/program-identity-continuity.test.js",
+    "test/program-output-network.test.js",
+    "test/program-playback-continuity.test.js",
+    "test/programmable-crawl.test.js",
+    "test/public-startup-reconnect.test.js",
+    "test/reference-check-convergence.test.js",
+    "test/runtime-determinism.test.js",
+    "test/runtime-health.test.js",
+    "test/safe-delete-usability.test.js",
+    "test/safe-media-delete.test.js",
+    "test/schedule-api-client.test.js",
+    "test/schedule-overlay-editor.test.js",
+    "test/scheduler-production-startup.test.js",
+    "test/server-schedule-api.test.js",
+    "test/server-schedule-core.test.js",
+    "test/server-schedule-migration.test.js",
+    "test/sponsor-runtime-workspace.test.js",
+    "test/studio-reconciliation-media-panel.test.js",
+    "test/technical-retry-backoff.test.js",
+    "test/unified-sources.test.js"
+  ],
+  "files": [
+    {
+      "path": "docs/BUILD-1003.4-CHECKPOINT-FILES.json",
+      "category": "C",
+      "reason": "Final checkpoint documentation / exact file inventory"
+    },
+    {
+      "path": "docs/BUILD-1003.4-CONTROL-COEXISTENCE-AUDIT.md",
+      "category": "C",
+      "reason": "Historical four-stream topology and bounded coexistence evidence preceding the shared-stream resolution."
+    },
+    {
+      "path": "docs/BUILD-1003.4-CONTROL-HEAVY-MEDIA-RESOURCES-AUDIT.md",
+      "category": "C",
+      "reason": "Ownership and bounded resource diagnostics retained in ControlMediaResources with regression coverage."
+    },
+    {
+      "path": "docs/BUILD-1003.4-CONTROL-SOCKET-POOL-SATURATION-AUDIT.md",
+      "category": "C",
+      "reason": "Authoritative NetLog cause, shared-stream implementation, lifecycle tests and final manual acceptance."
+    },
+    {
+      "path": "docs/BUILD-1003.4-HEAVY-MEDIA-MULTI-TAB-AUDIT.md",
+      "category": "C",
+      "reason": "Historical media boundary evidence and regression safeguards; no speculative Range fix."
+    },
+    {
+      "path": "docs/BUILD-1003.4-LARGE-MP4-PUBLIC-AUDIT.md",
+      "category": "C",
+      "reason": "Provenance of retained bounded startup tracing and preparation-order regression tests."
+    },
+    {
+      "path": "docs/BUILD-1003.4-MEDIA-B-REAL-CAPTURE-ANALYSIS.md",
+      "category": "C",
+      "reason": "Capture timestamp limitations and evidence motivating bounded resource timing diagnostics."
+    },
+    {
+      "path": "docs/BUILD-1003.4-OVERLAPPING-HAR-OWNERSHIP-AUDIT.md",
+      "category": "C",
+      "reason": "Historical HAR ownership limitations and source-health demand lifetime evidence."
+    },
+    {
+      "path": "docs/BUILD-1003.4-PROGRAMMABLE-OVERLAYS-ARCHITECTURE.md",
+      "category": "C",
+      "reason": "Build architecture/audit documentation; intermediate decisions superseded by final checkpoint"
+    },
+    {
+      "path": "docs/BUILD-1003.4-PUBLIC-STARTUP-RECONNECT-AUDIT.md",
+      "category": "C",
+      "reason": "Accepted BFCache, terminal EventSource and failed-bootstrap lifecycle corrections."
+    },
+    {
+      "path": "docs/BUILD-1003.4-RUNTIME-CHECKPOINT.md",
+      "category": "C",
+      "reason": "Final checkpoint documentation / exact file inventory"
+    },
+    {
+      "path": "docs/BUILD-1003.4-TECHNICAL-RETRY-CHURN-AUDIT.md",
+      "category": "C",
+      "reason": "Accepted bounded passive retry backoff and retained authoritative health-demand policy."
+    },
+    {
+      "path": "docs/BUILD-1003.4A-SERVER-SCHEDULER-AUTHORITY-ARCHITECTURE.md",
+      "category": "C",
+      "reason": "Build architecture/audit documentation; intermediate decisions superseded by final checkpoint"
+    },
+    {
+      "path": "docs/BUILD-1003.4A1-SERVER-SCHEDULER-CORE-AUDIT.md",
+      "category": "C",
+      "reason": "Build architecture/audit documentation; intermediate decisions superseded by final checkpoint"
+    },
+    {
+      "path": "docs/BUILD-1003.4A2-SCHEDULER-API-SSE-AUDIT.md",
+      "category": "C",
+      "reason": "Build architecture/audit documentation; intermediate decisions superseded by final checkpoint"
+    },
+    {
+      "path": "docs/BUILD-1003.4A3-BROWSER-SCHEDULER-MIGRATION-AUDIT.md",
+      "category": "C",
+      "reason": "Build architecture/audit documentation; intermediate decisions superseded by final checkpoint"
+    },
+    {
+      "path": "docs/BUILD-1003.4A3-CONTROL-CONTINUITY-AUDIT.md",
+      "category": "C",
+      "reason": "Build architecture/audit documentation; intermediate decisions superseded by final checkpoint"
+    },
+    {
+      "path": "docs/BUILD-1003.4A3-PROGRAM-IDENTITY-CONTINUITY-AUDIT.md",
+      "category": "C",
+      "reason": "Build architecture/audit documentation; intermediate decisions superseded by final checkpoint"
+    },
+    {
+      "path": "docs/BUILD-1003.4A3-REAL-BROWSER-SCHEDULER-AUDIT.md",
+      "category": "C",
+      "reason": "Build architecture/audit documentation; intermediate decisions superseded by final checkpoint"
+    },
+    {
+      "path": "docs/BUILD-1003.4B-CRAWL-PROGRAM-OUTPUT-RUNTIME-AUDIT.md",
+      "category": "C",
+      "reason": "Build architecture/audit documentation; intermediate decisions superseded by final checkpoint"
+    },
+    {
+      "path": "docs/BUILD-1003.4B-PROGRAMMABLE-CRAWL-AUDIT.md",
+      "category": "C",
+      "reason": "Build architecture/audit documentation; intermediate decisions superseded by final checkpoint"
+    },
+    {
+      "path": "docs/BUILD-1003.4C-FULLSCREEN-SPONSOR-AUDIT.md",
+      "category": "C",
+      "reason": "Accepted CORNER/FULLSCREEN and CONTAIN/COVER contracts, rendering and validation."
+    },
+    {
+      "path": "docs/BUILD-1003.4C-SCHEDULER-OVERLAY-EDITOR-AUDIT.md",
+      "category": "C",
+      "reason": "Build architecture/audit documentation; intermediate decisions superseded by final checkpoint"
+    },
+    {
+      "path": "docs/BUILD-1003.4C-SPONSOR-RUNTIME-SCHEDULER-UX-AUDIT.md",
+      "category": "C",
+      "reason": "Build architecture/audit documentation; intermediate decisions superseded by final checkpoint"
+    },
+    {
+      "path": "docs/BUILD-1003.4D-SAFE-DELETE-USABILITY-AUDIT.md",
+      "category": "C",
+      "reason": "Build architecture/audit documentation; intermediate decisions superseded by final checkpoint"
+    },
+    {
+      "path": "docs/BUILD-1003.4D-SAFE-MEDIA-DELETE-AUDIT.md",
+      "category": "C",
+      "reason": "Build architecture/audit documentation; intermediate decisions superseded by final checkpoint"
+    },
+    {
+      "path": "docs/BUILD-1003.4D1-ASSET-REFERENCE-AUTHORITY-AUDIT.md",
+      "category": "C",
+      "reason": "Build architecture/audit documentation; intermediate decisions superseded by final checkpoint"
+    },
+    {
+      "path": "docs/BUILD-1003.4D2-SAFE-MEDIA-DELETE-AUTHORITY-AUDIT.md",
+      "category": "C",
+      "reason": "Build architecture/audit documentation; intermediate decisions superseded by final checkpoint"
+    },
+    {
+      "path": "docs/BUILD-1003.4D3-ASSET-AUTHORITY-CLOSURE-AUDIT.md",
+      "category": "C",
+      "reason": "Build architecture/audit documentation; intermediate decisions superseded by final checkpoint"
+    },
+    {
+      "path": "docs/BUILD-1003.4D3-REFERENCE-CHECK-CONVERGENCE-AUDIT.md",
+      "category": "C",
+      "reason": "Build architecture/audit documentation; intermediate decisions superseded by final checkpoint"
+    },
+    {
+      "path": "docs/BUILD-1003.4D3-STUDIO-RECONCILIATION-MEDIA-PANEL-AUDIT.md",
+      "category": "C",
+      "reason": "Build architecture/audit documentation; intermediate decisions superseded by final checkpoint"
+    },
+    {
+      "path": "docs/SPONSOR-CRAWL-CONCURRENCY.md",
+      "category": "C",
+      "reason": "Build architecture/audit documentation; intermediate decisions superseded by final checkpoint"
+    },
+    {
+      "path": "package-lock.json",
+      "category": "A",
+      "reason": "jsdom dev dependency and resolved lockfile for build DOM regression tests"
+    },
+    {
+      "path": "package.json",
+      "category": "A",
+      "reason": "jsdom dev dependency and resolved lockfile for build DOM regression tests"
+    },
+    {
+      "path": "public/assets/logo/logo-test.svg",
+      "category": "E",
+      "reason": "Explicit operator local-media exclusion; preserve"
+    },
+    {
+      "path": "public/control/schedule/index.html",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/css/public-viewer.css",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/css/schedule-workspace.css",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/css/studio-renderer.css",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/auth/OperatorSessionClient.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/core/ControlEventStream.js",
+      "category": "A",
+      "reason": "Reviewed accepted shared-stream, public lifecycle, resource diagnostics or technical health-sharing implementation."
+    },
+    {
+      "path": "public/js/core/RuntimeTrace.js",
+      "category": "A",
+      "reason": "Reviewed accepted shared-stream, public lifecycle, resource diagnostics or technical health-sharing implementation."
+    },
+    {
+      "path": "public/js/entries/control-room-app.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/entries/public-app.js",
+      "category": "A",
+      "reason": "Reviewed accepted shared-stream, public lifecycle, resource diagnostics or technical health-sharing implementation."
+    },
+    {
+      "path": "public/js/entries/schedule-app.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/media-library/MediaLibraryClient.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/media-library/MediaLibraryManager.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/media-library/ReferenceAuthorityNotifications.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/program-output/ControlCrawlObserver.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/program-output/NetworkProgramOutputTransport.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/program-output/OutputRevisionGate.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/program-output/ProgramOutputContract.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/program-output/ProgramOutputManager.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/public/PublicProgramBootstrap.js",
+      "category": "A",
+      "reason": "Reviewed accepted shared-stream, public lifecycle, resource diagnostics or technical health-sharing implementation."
+    },
+    {
+      "path": "public/js/public/PublicProgramController.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/scheduler/ProgramScheduleAdapter.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/scheduler/ScheduleApiClient.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/scheduler/ScheduleEventEditorAdapter.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/scheduler/SchedulerEngine.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/scheduler/ServerScheduleStore.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/studio/ChannelLogoReferenceClient.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/studio/ControlMediaResources.js",
+      "category": "A",
+      "reason": "Reviewed accepted shared-stream, public lifecycle, resource diagnostics or technical health-sharing implementation."
+    },
+    {
+      "path": "public/js/studio/LegacyAssetReferenceAuthority.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/studio/LiveSourceMonitor.js",
+      "category": "A",
+      "reason": "Reviewed accepted shared-stream, public lifecycle, resource diagnostics or technical health-sharing implementation."
+    },
+    {
+      "path": "public/js/studio/PreviewOwnershipClient.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/studio/ProgramPlaybackContinuity.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/studio/ReferenceClient.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/studio/SharedLiveHealthConsumer.js",
+      "category": "A",
+      "reason": "Reviewed accepted shared-stream, public lifecycle, resource diagnostics or technical health-sharing implementation."
+    },
+    {
+      "path": "public/js/studio/SourcePresenceMonitor.js",
+      "category": "A",
+      "reason": "Reviewed accepted shared-stream, public lifecycle, resource diagnostics or technical health-sharing implementation."
+    },
+    {
+      "path": "public/js/studio/StudioAssetLibrary.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/studio/StudioCatalogManager.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/studio/StudioReferenceAuthority.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/studio/StudioRenderer.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/studio/renderers/SponsorView.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/studio/renderers/StudioAudioSurface.js",
+      "category": "A",
+      "reason": "Reviewed accepted shared-stream, public lifecycle, resource diagnostics or technical health-sharing implementation."
+    },
+    {
+      "path": "public/js/studio/renderers/StudioGraphicsLayer.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/studio/renderers/StudioHlsSurface.js",
+      "category": "A",
+      "reason": "Reviewed accepted shared-stream, public lifecycle, resource diagnostics or technical health-sharing implementation."
+    },
+    {
+      "path": "public/js/studio/renderers/StudioMediaSurface.js",
+      "category": "A",
+      "reason": "Reviewed accepted shared-stream, public lifecycle, resource diagnostics or technical health-sharing implementation."
+    },
+    {
+      "path": "public/js/studio/renderers/TextCrawlElement.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/ui/CrawlScheduleUI.js",
+      "category": "A",
+      "reason": "Test-covered build compatibility artifact; not an active production authority"
+    },
+    {
+      "path": "public/js/ui/MediaLibraryUI.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/ui/ScheduleOverlayEditorUI.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/ui/ScheduleWorkspacePanels.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/ui/ScheduleWorkspaceUI.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/ui/StudioAssetsUI.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/ui/StudioGraphicsUI.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/ui/StudioLiveSourcesUI.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/ui/StudioOperationalSourcesUI.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/ui/StudioScheduleSummaryUI.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/ui/StudioSourcesUI.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/js/ui/StudioUI.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "public/media/demo2.mp4",
+      "category": "E",
+      "reason": "Explicit operator local-media exclusion; preserve"
+    },
+    {
+      "path": "public/media/demo3.mp4",
+      "category": "E",
+      "reason": "Explicit operator local-media exclusion; preserve"
+    },
+    {
+      "path": "public/media/imm.jpg",
+      "category": "E",
+      "reason": "Explicit operator local-media exclusion; preserve"
+    },
+    {
+      "path": "public/media/test-audio.mp3",
+      "category": "E",
+      "reason": "Explicit operator local-media exclusion; preserve"
+    },
+    {
+      "path": "server/media-library/AssetAuthorityDiagnostics.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "server/media-library/AssetMutationCoordinator.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "server/media-library/AssetReferenceInventory.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "server/media-library/ChannelLogoAuthority.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "server/media-library/MediaAssetRepository.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "server/media-library/MediaLibraryRoutes.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "server/media-library/MediaReferenceAudit.js",
+      "category": "A",
+      "reason": "Test-covered build compatibility artifact; not an active production authority"
+    },
+    {
+      "path": "server/media-library/PreviewOwnership.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "server/media-library/ReferenceClientRegistry.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "server/program-output-server.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "server/program-output/ControlEventFeed.js",
+      "category": "A",
+      "reason": "Reviewed accepted shared-stream, public lifecycle, resource diagnostics or technical health-sharing implementation."
+    },
+    {
+      "path": "server/program-output/EffectiveProgramOutput.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "server/program-output/ProgramOutputStore.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "server/scheduler/ScheduleAuthority.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "server/scheduler/ScheduleContract.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "server/scheduler/ScheduleDiagnostics.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "server/scheduler/ScheduleRoutes.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "server/scheduler/ScheduleStore.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "server/scheduler/SchedulerServer.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "server/studio/ReconcileReferenceCatalog.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "server/studio/StudioStateCoordinator.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "server/studio/StudioStateRoutes.js",
+      "category": "A",
+      "reason": "Validated scheduler, overlay, continuity or asset-reference implementation/dependencies"
+    },
+    {
+      "path": "test-support/ReferenceAuthorityTestServer.js",
+      "category": "B",
+      "reason": "Build regression tests and isolated server fixture"
+    },
+    {
+      "path": "test/asset-authority-closure.test.js",
+      "category": "B",
+      "reason": "Build regression tests and isolated server fixture"
+    },
+    {
+      "path": "test/asset-reference-adoption.test.js",
+      "category": "B",
+      "reason": "Build regression tests and isolated server fixture"
+    },
+    {
+      "path": "test/asset-reference-authority.test.js",
+      "category": "B",
+      "reason": "Build regression tests and isolated server fixture"
+    },
+    {
+      "path": "test/authoritative-state.test.js",
+      "category": "B",
+      "reason": "Build regression tests and isolated server fixture"
+    },
+    {
+      "path": "test/control-media-resources.test.js",
+      "category": "B",
+      "reason": "Regression coverage for accepted socket sharing, media ownership, overlays, startup or bounded health retry behavior."
+    },
+    {
+      "path": "test/control-socket-pool-http.test.js",
+      "category": "B",
+      "reason": "Regression coverage for accepted socket sharing, media ownership, overlays, startup or bounded health retry behavior."
+    },
+    {
+      "path": "test/control-socket-pool.test.js",
+      "category": "B",
+      "reason": "Regression coverage for accepted socket sharing, media ownership, overlays, startup or bounded health retry behavior."
+    },
+    {
+      "path": "test/external-hls-public.test.js",
+      "category": "B",
+      "reason": "Build regression tests and isolated server fixture"
+    },
+    {
+      "path": "test/fullscreen-sponsor.test.js",
+      "category": "B",
+      "reason": "Regression coverage for accepted socket sharing, media ownership, overlays, startup or bounded health retry behavior."
+    },
+    {
+      "path": "test/heavy-media-boundaries.test.js",
+      "category": "B",
+      "reason": "Regression coverage for accepted socket sharing, media ownership, overlays, startup or bounded health retry behavior."
+    },
+    {
+      "path": "test/large-mp4-preparation-order.test.js",
+      "category": "B",
+      "reason": "Regression coverage for accepted socket sharing, media ownership, overlays, startup or bounded health retry behavior."
+    },
+    {
+      "path": "test/large-video-range.test.js",
+      "category": "B",
+      "reason": "Build regression tests and isolated server fixture"
+    },
+    {
+      "path": "test/media-library.test.js",
+      "category": "B",
+      "reason": "Build regression tests and isolated server fixture"
+    },
+    {
+      "path": "test/media-request-diagnostics.test.js",
+      "category": "B",
+      "reason": "Regression coverage for accepted socket sharing, media ownership, overlays, startup or bounded health retry behavior."
+    },
+    {
+      "path": "test/operator-auth.test.js",
+      "category": "B",
+      "reason": "Build regression tests and isolated server fixture"
+    },
+    {
+      "path": "test/preview-program-handoff.test.js",
+      "category": "B",
+      "reason": "Regression coverage for accepted socket sharing, media ownership, overlays, startup or bounded health retry behavior."
+    },
+    {
+      "path": "test/program-identity-continuity.test.js",
+      "category": "B",
+      "reason": "Build regression tests and isolated server fixture"
+    },
+    {
+      "path": "test/program-output-network.test.js",
+      "category": "B",
+      "reason": "Build regression tests and isolated server fixture"
+    },
+    {
+      "path": "test/program-playback-continuity.test.js",
+      "category": "B",
+      "reason": "Build regression tests and isolated server fixture"
+    },
+    {
+      "path": "test/programmable-crawl.test.js",
+      "category": "B",
+      "reason": "Build regression tests and isolated server fixture"
+    },
+    {
+      "path": "test/public-startup-reconnect.test.js",
+      "category": "B",
+      "reason": "Regression coverage for accepted socket sharing, media ownership, overlays, startup or bounded health retry behavior."
+    },
+    {
+      "path": "test/reference-check-convergence.test.js",
+      "category": "B",
+      "reason": "Build regression tests and isolated server fixture"
+    },
+    {
+      "path": "test/runtime-determinism.test.js",
+      "category": "B",
+      "reason": "Build regression tests and isolated server fixture"
+    },
+    {
+      "path": "test/runtime-health.test.js",
+      "category": "B",
+      "reason": "Build regression tests and isolated server fixture"
+    },
+    {
+      "path": "test/safe-delete-usability.test.js",
+      "category": "B",
+      "reason": "Build regression tests and isolated server fixture"
+    },
+    {
+      "path": "test/safe-media-delete.test.js",
+      "category": "B",
+      "reason": "Build regression tests and isolated server fixture"
+    },
+    {
+      "path": "test/schedule-api-client.test.js",
+      "category": "B",
+      "reason": "Build regression tests and isolated server fixture"
+    },
+    {
+      "path": "test/schedule-overlay-editor.test.js",
+      "category": "B",
+      "reason": "Build regression tests and isolated server fixture"
+    },
+    {
+      "path": "test/scheduler-production-startup.test.js",
+      "category": "B",
+      "reason": "Build regression tests and isolated server fixture"
+    },
+    {
+      "path": "test/server-schedule-api.test.js",
+      "category": "B",
+      "reason": "Build regression tests and isolated server fixture"
+    },
+    {
+      "path": "test/server-schedule-core.test.js",
+      "category": "B",
+      "reason": "Build regression tests and isolated server fixture"
+    },
+    {
+      "path": "test/server-schedule-migration.test.js",
+      "category": "B",
+      "reason": "Build regression tests and isolated server fixture"
+    },
+    {
+      "path": "test/sponsor-runtime-workspace.test.js",
+      "category": "B",
+      "reason": "Build regression tests and isolated server fixture"
+    },
+    {
+      "path": "test/studio-reconciliation-media-panel.test.js",
+      "category": "B",
+      "reason": "Build regression tests and isolated server fixture"
+    },
+    {
+      "path": "test/technical-retry-backoff.test.js",
+      "category": "B",
+      "reason": "Regression coverage for accepted socket sharing, media ownership, overlays, startup or bounded health retry behavior."
+    },
+    {
+      "path": "test/unified-sources.test.js",
+      "category": "B",
+      "reason": "Build regression tests and isolated server fixture"
+    },
+    {
+      "path": "var/1003-4c-diff-check.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4c-focused-test.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4c-full-test.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4c-runtime-focused-initial.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4c-sponsor-ux-diff.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4c-sponsor-ux-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4c-sponsor-ux-full.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4c-sponsor-ux-new-tests.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d-delete-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d-full-final.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d-full.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d-initial.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d-usability-diff.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d-usability-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d-usability-full-recheck.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d-usability-full.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d-usability-new.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d1-authority-final.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d1-authority.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d1-delete-final.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d1-diff-check.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d1-focused-final.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d1-focused-initial.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d1-full-final.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d1-full-initial.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d1-full.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d1-initial.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d1-races-ui.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d2-adoption.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d2-baseline-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d2-diff-warnings.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d2-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d2-full.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d2-initial.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d2-new-tests.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d2-regression-fixes.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d2-syntax-summary.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d2-syntax.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d3-closure-only.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d3-closure.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d3-convergence-debug.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d3-convergence-diff-warnings.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d3-convergence-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d3-convergence-full.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d3-convergence-initial.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d3-convergence-new.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d3-convergence-syntax-summary.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d3-convergence-syntax.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d3-diff-warnings.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d3-final-diff-warnings.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d3-final-focused-core.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d3-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d3-full.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d3-initial.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d3-studio-panel-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d3-studio-panel-full.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d3-studio-panel-initial.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d3-studio-panel-new.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d3-syntax-summary.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/1003-4d3-syntax.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/autolive-authorization-all.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/autolive-authorization-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/autolive-authorization-runtime-all.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/autolive-authorization-runtime-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/autolive-checking-all.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/autolive-checking-before.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/autolive-checking-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/autolive-config-persistence-all.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/autolive-config-persistence-before.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/autolive-config-persistence-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/autolive-source-routing-all.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/autolive-source-routing-before.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/autolive-source-routing-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/build1003-4-checkpoint-final-tests.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/build1003-4-final-classification.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/build1003-4-final-proposed.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/build1003-4-final-syntax.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/checkpoint-baseline-status.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/checkpoint-cached-check.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/checkpoint-classification.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/checkpoint-diff-check.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/checkpoint-ignored.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/checkpoint-proposed-files.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/checkpoint-source.diff",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/checkpoint-staged-files.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/checkpoint-syntax.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/checkpoint-tests.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/confirmed-loss-all.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/confirmed-loss-baseline.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/confirmed-loss-before.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/confirmed-loss-changed-files.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/confirmed-loss-diff-check.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/confirmed-loss-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/confirmed-loss-new.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/confirmed-loss-persistent-timeline.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/confirmed-loss-persistent-trace.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/confirmed-loss-recovery-timeline.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/confirmed-loss-recovery-trace.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/confirmed-loss-status.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/control-coexistence-network.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/control-coexistence-startup.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/control-resources-diagnostics.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/control-resources-diff.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/control-resources-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/control-resources-full.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/control-resources-new.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/diagnostics/MEDIA-B-CONTROL-KO-2.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/diagnostics/MEDIA-B-CONTROL-KO.har.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/diagnostics/MEDIA-B-CONTROL-KO.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/diagnostics/MEDIA-B-CONTROL-NETLOG-KO.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/diagnostics/MEDIA-B-CONTROL-PUBLIC-KO-NETLOG.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/diagnostics/MEDIA-B-PUBLIC-KO-2.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/diagnostics/MEDIA-B-PUBLIC-KO.har.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/diagnostics/MEDIA-B-PUBLIC-KO.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/diagnostics/MEDIA-B-PUBLIC-NETLOG-KO.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/entry-60s-all.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/entry-60s-baseline.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/entry-60s-changed-baseline.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/entry-60s-first-regression.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/entry-60s-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/entry-60s-new.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/entry-60s-public.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/entry-60s-return.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/entry30-all.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/entry30-changed-files.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/entry30-diff-check.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/entry30-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/entry30-status.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/entry30-subscriber-baseline.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/entry30-subscriber.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/external-hls-public-all.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/external-hls-public-baseline.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/external-hls-public-before.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/external-hls-public-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/external-hls-public-new-tests.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/external-hls-stability-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/final-consolidation/branch-before.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/final-consolidation/cached-diff-check.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/final-consolidation/diff-check.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/final-consolidation/final-integrity.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/final-consolidation/focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/final-consolidation/full.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/final-consolidation/head-before.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/final-consolidation/index-before.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/final-consolidation/inventory.cjs",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/final-consolidation/new-candidates.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/final-consolidation/prepare.cjs",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/final-consolidation/reviewed-map.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/final-consolidation/source-hashes.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/final-consolidation/stage-paths.nul",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/final-consolidation/staged-before.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/final-consolidation/staged-stat-before.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/final-consolidation/status-before.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/final-consolidation/syntax.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/final-consolidation/unstaged-before.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/final-consolidation/unstaged-stat-before.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/final-consolidation/verify.cjs",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/fullscreen-diff.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/fullscreen-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/fullscreen-full.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/fullscreen-initial.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/fullscreen-new.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/generic-take-all.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/generic-take-baseline.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/generic-take-before.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/generic-take-changed-files.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/generic-take-diff-check.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/generic-take-final-status.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/generic-take-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/generic-take-http-matrix.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/generic-take-matrix.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/generic-take-regression-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/generic-take-resource-matrix.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/health-debounce-60min-history.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/health-debounce-all.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/health-debounce-baseline.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/health-debounce-before.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/health-debounce-changed-files.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/health-debounce-decisions.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/health-debounce-diff-check.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/health-debounce-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/health-debounce-new.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/health-debounce-status.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/heavy-media-diff.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/heavy-media-focused-new.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/heavy-media-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/heavy-media-full.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/heavy-media-real-ranges.jsonl",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/hls-recovery-all.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/hls-recovery-attempt-timeline.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/hls-recovery-attempt-trace.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/hls-recovery-baseline.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/hls-recovery-before.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/hls-recovery-changed-files.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/hls-recovery-diff-check.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/hls-recovery-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/hls-recovery-new.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/hls-recovery-status.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/inspect-heavy-media.mjs",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/large-mp4-diff.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/large-mp4-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/large-mp4-full.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/large-mp4-order-new.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/large-take-all.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/large-take-baseline-hashes.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/large-take-changed-baseline.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/large-take-diff-check.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/large-take-final-status.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/large-take-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/large-take-regression-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/large-take-unit.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/large-video-mp4-inspection.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/large-video-range-demo.mp4.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/large-video-range-demo2.mp4.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/large-video-range-demo3.mp4.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/latency-slate-all.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/latency-slate-baseline.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/latency-slate-focused-initial.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/latency-slate-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/latency-slate-http.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/latency-slate-late-frame-after.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/latency-slate-late-frame-before.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/latency-slate-new.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/latency-slate-player.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/loss-grace-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/loss-slate-baseline.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/loss-slate-extra.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/loss-slate-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/loss-slate-regression.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/media-library-diagnostic-rerun.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/media-request-diff.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/media-request-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/media-request-full-rerun.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/media-request-full.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/overlap-diff-check.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/overlap-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/overlap-full.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/overlap-ownership-tests.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/post-take-all.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/post-take-baseline-hashes.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/post-take-baseline-status.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/post-take-changed-files.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/post-take-diff-check.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/post-take-false-loop-timeline.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/post-take-false-loop-trace.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/post-take-final-status.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/post-take-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/post-take-healthy-10min.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/post-take-healthy-30min.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/post-take-healthy-60min.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/post-take-regression-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/post-take-session-all.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/post-take-session-baseline.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/post-take-session-before.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/post-take-session-changed-files.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/post-take-session-diff-check.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/post-take-session-final-diff-check.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/post-take-session-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/post-take-session-new.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/post-take-session-status.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/post-take-simulated-trace.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/preroll-new-tests.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/preroll-obs-all.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/preroll-obs-baseline.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/preroll-obs-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/preroll-obs-viewer-tests.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/preroll-stability-tests.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/preview-program-concurrent-range.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/preview-take-after.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/preview-take-all.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/preview-take-baseline.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/preview-take-before.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/preview-take-changed-files.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/preview-take-diff-check.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/preview-take-final-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/preview-take-final-status.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/preview-take-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/preview-take-regression-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/public-startup-diff.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/public-startup-focused-final.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/public-startup-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/public-startup-full.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/public-startup-new-fixed.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/public-startup-new.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/restore-guard-all.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/restore-guard-baseline.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/restore-guard-before.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/restore-guard-changed-files.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/restore-guard-command-trace.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/restore-guard-diff-check.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/restore-guard-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/restore-guard-legacy-path.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/restore-guard-new.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/restore-guard-status.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/scheduler/schedule.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/socket-pool-audit/baseline.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/socket-pool-audit/connection-tests-first.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/socket-pool-audit/connection-tests.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/socket-pool-audit/diff-warnings.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/socket-pool-audit/final-results.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/socket-pool-audit/focused-initial.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/socket-pool-audit/focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/socket-pool-audit/full-final.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/socket-pool-audit/full.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/socket-pool-audit/http-tests-first.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/socket-pool-audit/http-tests.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/socket-pool-audit/public__js__entries__control-room-app.js.before",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/socket-pool-audit/public__js__program-output__ControlCrawlObserver.js.before",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/socket-pool-audit/public__js__program-output__NetworkProgramOutputTransport.js.before",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/socket-pool-audit/public__js__scheduler__ScheduleApiClient.js.before",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/socket-pool-audit/public__js__studio__ReferenceClient.js.before",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/socket-pool-audit/restart-after.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/socket-pool-audit/restart-before.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/socket-pool-audit/restart-endpoints.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/socket-pool-audit/server__media-library__MediaLibraryRoutes.js.before",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/socket-pool-audit/server__program-output-server.js.before",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/source-presence-binding-all.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/source-presence-binding-before.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/source-presence-binding-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/stability-counter-all.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/stability-counter-baseline.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/stability-counter-diff-check.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/stability-counter-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/studio-state/state.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/studio-state/state.json.asset-authority.clients.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/studio-state/state.json.asset-authority.logos.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/studio-state/state.json.asset-authority.preview.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/subscriber-test-fragment.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/surface-handoff-all.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/surface-handoff-baseline.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/surface-handoff-changed-files.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/surface-handoff-diff-check.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/surface-handoff-final-diff-check.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/surface-handoff-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/surface-handoff-new.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/surface-handoff-resource-matrix.json",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/surface-handoff-status.txt",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/technical-retry-diff.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/technical-retry-focused.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/technical-retry-full.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    },
+    {
+      "path": "var/technical-retry-new.log",
+      "category": "D",
+      "reason": "Runtime/generated state, logs, captures or review artifacts; preserve and exclude."
+    }
+  ],
+  "checkpointPhase": "Final consolidated staging; commit/push not authorized",
+  "finalCommitSet": [
+    "docs/BUILD-1003.4-CHECKPOINT-FILES.json",
+    "docs/BUILD-1003.4-CONTROL-COEXISTENCE-AUDIT.md",
+    "docs/BUILD-1003.4-CONTROL-HEAVY-MEDIA-RESOURCES-AUDIT.md",
+    "docs/BUILD-1003.4-CONTROL-SOCKET-POOL-SATURATION-AUDIT.md",
+    "docs/BUILD-1003.4-HEAVY-MEDIA-MULTI-TAB-AUDIT.md",
+    "docs/BUILD-1003.4-LARGE-MP4-PUBLIC-AUDIT.md",
+    "docs/BUILD-1003.4-MEDIA-B-REAL-CAPTURE-ANALYSIS.md",
+    "docs/BUILD-1003.4-OVERLAPPING-HAR-OWNERSHIP-AUDIT.md",
+    "docs/BUILD-1003.4-PROGRAMMABLE-OVERLAYS-ARCHITECTURE.md",
+    "docs/BUILD-1003.4-PUBLIC-STARTUP-RECONNECT-AUDIT.md",
+    "docs/BUILD-1003.4-RUNTIME-CHECKPOINT.md",
+    "docs/BUILD-1003.4-TECHNICAL-RETRY-CHURN-AUDIT.md",
+    "docs/BUILD-1003.4A-SERVER-SCHEDULER-AUTHORITY-ARCHITECTURE.md",
+    "docs/BUILD-1003.4A1-SERVER-SCHEDULER-CORE-AUDIT.md",
+    "docs/BUILD-1003.4A2-SCHEDULER-API-SSE-AUDIT.md",
+    "docs/BUILD-1003.4A3-BROWSER-SCHEDULER-MIGRATION-AUDIT.md",
+    "docs/BUILD-1003.4A3-CONTROL-CONTINUITY-AUDIT.md",
+    "docs/BUILD-1003.4A3-PROGRAM-IDENTITY-CONTINUITY-AUDIT.md",
+    "docs/BUILD-1003.4A3-REAL-BROWSER-SCHEDULER-AUDIT.md",
+    "docs/BUILD-1003.4B-CRAWL-PROGRAM-OUTPUT-RUNTIME-AUDIT.md",
+    "docs/BUILD-1003.4B-PROGRAMMABLE-CRAWL-AUDIT.md",
+    "docs/BUILD-1003.4C-FULLSCREEN-SPONSOR-AUDIT.md",
+    "docs/BUILD-1003.4C-SCHEDULER-OVERLAY-EDITOR-AUDIT.md",
+    "docs/BUILD-1003.4C-SPONSOR-RUNTIME-SCHEDULER-UX-AUDIT.md",
+    "docs/BUILD-1003.4D-SAFE-DELETE-USABILITY-AUDIT.md",
+    "docs/BUILD-1003.4D-SAFE-MEDIA-DELETE-AUDIT.md",
+    "docs/BUILD-1003.4D1-ASSET-REFERENCE-AUTHORITY-AUDIT.md",
+    "docs/BUILD-1003.4D2-SAFE-MEDIA-DELETE-AUTHORITY-AUDIT.md",
+    "docs/BUILD-1003.4D3-ASSET-AUTHORITY-CLOSURE-AUDIT.md",
+    "docs/BUILD-1003.4D3-REFERENCE-CHECK-CONVERGENCE-AUDIT.md",
+    "docs/BUILD-1003.4D3-STUDIO-RECONCILIATION-MEDIA-PANEL-AUDIT.md",
+    "docs/SPONSOR-CRAWL-CONCURRENCY.md",
+    "package-lock.json",
+    "package.json",
+    "public/control/schedule/index.html",
+    "public/css/public-viewer.css",
+    "public/css/schedule-workspace.css",
+    "public/css/studio-renderer.css",
+    "public/js/auth/OperatorSessionClient.js",
+    "public/js/core/ControlEventStream.js",
+    "public/js/core/RuntimeTrace.js",
+    "public/js/entries/control-room-app.js",
+    "public/js/entries/public-app.js",
+    "public/js/entries/schedule-app.js",
+    "public/js/media-library/MediaLibraryClient.js",
+    "public/js/media-library/MediaLibraryManager.js",
+    "public/js/media-library/ReferenceAuthorityNotifications.js",
+    "public/js/program-output/ControlCrawlObserver.js",
+    "public/js/program-output/NetworkProgramOutputTransport.js",
+    "public/js/program-output/OutputRevisionGate.js",
+    "public/js/program-output/ProgramOutputContract.js",
+    "public/js/program-output/ProgramOutputManager.js",
+    "public/js/public/PublicProgramBootstrap.js",
+    "public/js/public/PublicProgramController.js",
+    "public/js/scheduler/ProgramScheduleAdapter.js",
+    "public/js/scheduler/ScheduleApiClient.js",
+    "public/js/scheduler/ScheduleEventEditorAdapter.js",
+    "public/js/scheduler/SchedulerEngine.js",
+    "public/js/scheduler/ServerScheduleStore.js",
+    "public/js/studio/ChannelLogoReferenceClient.js",
+    "public/js/studio/ControlMediaResources.js",
+    "public/js/studio/LegacyAssetReferenceAuthority.js",
+    "public/js/studio/LiveSourceMonitor.js",
+    "public/js/studio/PreviewOwnershipClient.js",
+    "public/js/studio/ProgramPlaybackContinuity.js",
+    "public/js/studio/ReferenceClient.js",
+    "public/js/studio/SharedLiveHealthConsumer.js",
+    "public/js/studio/SourcePresenceMonitor.js",
+    "public/js/studio/StudioAssetLibrary.js",
+    "public/js/studio/StudioCatalogManager.js",
+    "public/js/studio/StudioReferenceAuthority.js",
+    "public/js/studio/StudioRenderer.js",
+    "public/js/studio/renderers/SponsorView.js",
+    "public/js/studio/renderers/StudioAudioSurface.js",
+    "public/js/studio/renderers/StudioGraphicsLayer.js",
+    "public/js/studio/renderers/StudioHlsSurface.js",
+    "public/js/studio/renderers/StudioMediaSurface.js",
+    "public/js/studio/renderers/TextCrawlElement.js",
+    "public/js/ui/CrawlScheduleUI.js",
+    "public/js/ui/MediaLibraryUI.js",
+    "public/js/ui/ScheduleOverlayEditorUI.js",
+    "public/js/ui/ScheduleWorkspacePanels.js",
+    "public/js/ui/ScheduleWorkspaceUI.js",
+    "public/js/ui/StudioAssetsUI.js",
+    "public/js/ui/StudioGraphicsUI.js",
+    "public/js/ui/StudioLiveSourcesUI.js",
+    "public/js/ui/StudioOperationalSourcesUI.js",
+    "public/js/ui/StudioScheduleSummaryUI.js",
+    "public/js/ui/StudioSourcesUI.js",
+    "public/js/ui/StudioUI.js",
+    "server/media-library/AssetAuthorityDiagnostics.js",
+    "server/media-library/AssetMutationCoordinator.js",
+    "server/media-library/AssetReferenceInventory.js",
+    "server/media-library/ChannelLogoAuthority.js",
+    "server/media-library/MediaAssetRepository.js",
+    "server/media-library/MediaLibraryRoutes.js",
+    "server/media-library/MediaReferenceAudit.js",
+    "server/media-library/PreviewOwnership.js",
+    "server/media-library/ReferenceClientRegistry.js",
+    "server/program-output-server.js",
+    "server/program-output/ControlEventFeed.js",
+    "server/program-output/EffectiveProgramOutput.js",
+    "server/program-output/ProgramOutputStore.js",
+    "server/scheduler/ScheduleAuthority.js",
+    "server/scheduler/ScheduleContract.js",
+    "server/scheduler/ScheduleDiagnostics.js",
+    "server/scheduler/ScheduleRoutes.js",
+    "server/scheduler/ScheduleStore.js",
+    "server/scheduler/SchedulerServer.js",
+    "server/studio/ReconcileReferenceCatalog.js",
+    "server/studio/StudioStateCoordinator.js",
+    "server/studio/StudioStateRoutes.js",
+    "test-support/ReferenceAuthorityTestServer.js",
+    "test/asset-authority-closure.test.js",
+    "test/asset-reference-adoption.test.js",
+    "test/asset-reference-authority.test.js",
+    "test/authoritative-state.test.js",
+    "test/control-media-resources.test.js",
+    "test/control-socket-pool-http.test.js",
+    "test/control-socket-pool.test.js",
+    "test/external-hls-public.test.js",
+    "test/fullscreen-sponsor.test.js",
+    "test/heavy-media-boundaries.test.js",
+    "test/large-mp4-preparation-order.test.js",
+    "test/large-video-range.test.js",
+    "test/media-library.test.js",
+    "test/media-request-diagnostics.test.js",
+    "test/operator-auth.test.js",
+    "test/preview-program-handoff.test.js",
+    "test/program-identity-continuity.test.js",
+    "test/program-output-network.test.js",
+    "test/program-playback-continuity.test.js",
+    "test/programmable-crawl.test.js",
+    "test/public-startup-reconnect.test.js",
+    "test/reference-check-convergence.test.js",
+    "test/runtime-determinism.test.js",
+    "test/runtime-health.test.js",
+    "test/safe-delete-usability.test.js",
+    "test/safe-media-delete.test.js",
+    "test/schedule-api-client.test.js",
+    "test/schedule-overlay-editor.test.js",
+    "test/scheduler-production-startup.test.js",
+    "test/server-schedule-api.test.js",
+    "test/server-schedule-core.test.js",
+    "test/server-schedule-migration.test.js",
+    "test/sponsor-runtime-workspace.test.js",
+    "test/studio-reconciliation-media-panel.test.js",
+    "test/technical-retry-backoff.test.js",
+    "test/unified-sources.test.js"
+  ],
+  "stagingChanges": {
+    "previousCount": 117,
+    "added": [
+      "docs/BUILD-1003.4-CONTROL-COEXISTENCE-AUDIT.md",
+      "docs/BUILD-1003.4-CONTROL-HEAVY-MEDIA-RESOURCES-AUDIT.md",
+      "docs/BUILD-1003.4-CONTROL-SOCKET-POOL-SATURATION-AUDIT.md",
+      "docs/BUILD-1003.4-HEAVY-MEDIA-MULTI-TAB-AUDIT.md",
+      "docs/BUILD-1003.4-LARGE-MP4-PUBLIC-AUDIT.md",
+      "docs/BUILD-1003.4-MEDIA-B-REAL-CAPTURE-ANALYSIS.md",
+      "docs/BUILD-1003.4-OVERLAPPING-HAR-OWNERSHIP-AUDIT.md",
+      "docs/BUILD-1003.4-PUBLIC-STARTUP-RECONNECT-AUDIT.md",
+      "docs/BUILD-1003.4-TECHNICAL-RETRY-CHURN-AUDIT.md",
+      "docs/BUILD-1003.4C-FULLSCREEN-SPONSOR-AUDIT.md",
+      "public/js/core/ControlEventStream.js",
+      "public/js/core/RuntimeTrace.js",
+      "public/js/entries/public-app.js",
+      "public/js/public/PublicProgramBootstrap.js",
+      "public/js/studio/ControlMediaResources.js",
+      "public/js/studio/LiveSourceMonitor.js",
+      "public/js/studio/SharedLiveHealthConsumer.js",
+      "public/js/studio/SourcePresenceMonitor.js",
+      "public/js/studio/renderers/StudioAudioSurface.js",
+      "public/js/studio/renderers/StudioHlsSurface.js",
+      "public/js/studio/renderers/StudioMediaSurface.js",
+      "server/program-output/ControlEventFeed.js",
+      "test/control-media-resources.test.js",
+      "test/control-socket-pool-http.test.js",
+      "test/control-socket-pool.test.js",
+      "test/fullscreen-sponsor.test.js",
+      "test/heavy-media-boundaries.test.js",
+      "test/large-mp4-preparation-order.test.js",
+      "test/media-request-diagnostics.test.js",
+      "test/preview-program-handoff.test.js",
+      "test/public-startup-reconnect.test.js",
+      "test/technical-retry-backoff.test.js"
+    ],
+    "removed": []
+  }
+}

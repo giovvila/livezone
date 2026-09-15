@@ -245,6 +245,7 @@ export default class StudioCatalogManager {
     }
 
     addMedia({ name, url, assetId = null } = {}) {
+        if (this.referenceAuthority && !this.referenceAuthorityApplying) return this.referenceAuthority.execute('addMedia', Array.from(arguments));
         if (!this.initialized || this.mutating) {
             return this.failure("catalog-unavailable");
         }
@@ -327,6 +328,7 @@ export default class StudioCatalogManager {
     }
 
     addAudio({ name, audioAssetId, stillAssetId } = {}) {
+        if (this.referenceAuthority && !this.referenceAuthorityApplying) return this.referenceAuthority.execute('addAudio', Array.from(arguments));
         if (!this.initialized || this.mutating) {
             return this.failure("catalog-unavailable");
         }
@@ -379,6 +381,7 @@ export default class StudioCatalogManager {
     }
 
     addLiveSource({ name, url, enabled = true } = {}) {
+        if (this.referenceAuthority && !this.referenceAuthorityApplying) return this.referenceAuthority.execute('addLiveSource', Array.from(arguments));
         if (!this.initialized || this.mutating) return this.failure("catalog-unavailable");
         const normalizedName = this.normalizeString(name, MAX_NAME_LENGTH);
         const canonicalUrl = this.createHttpUrl(url, this.baseUrl);
@@ -396,6 +399,7 @@ export default class StudioCatalogManager {
 
     addSource({ kind, name, url, stillUrl, assetId, audioAssetId, stillAssetId,
         motionAssetId } = {}) {
+        if (this.referenceAuthority && !this.referenceAuthorityApplying) return this.referenceAuthority.execute('addSource', Array.from(arguments));
         const normalizedKind = this.normalizeString(kind, 20)?.toLowerCase();
         const runtimeKind = ({ live: "hls", video: "media", audio: "audio", image: "image" })[normalizedKind];
         if (!runtimeKind) return this.failure("invalid-kind");
@@ -446,6 +450,7 @@ export default class StudioCatalogManager {
     }
 
     addUrlSourcePair({ name, url, kind, prefix, type }) {
+        if (this.referenceAuthority && !this.referenceAuthorityApplying) return this.referenceAuthority.execute('addUrlSourcePair', Array.from(arguments));
         if (!this.initialized || this.mutating) return this.failure("catalog-unavailable");
         const normalizedName = this.normalizeString(name, MAX_NAME_LENGTH);
         const canonicalUrl = this.createHttpUrl(url, this.baseUrl);
@@ -465,6 +470,7 @@ export default class StudioCatalogManager {
     }
 
     createSceneForSource(sourceId, { name } = {}) {
+        if (this.referenceAuthority && !this.referenceAuthorityApplying) return this.referenceAuthority.execute('createSceneForSource', Array.from(arguments));
         if (!this.initialized || this.mutating) return this.failure("catalog-unavailable");
         const id = this.normalizeString(sourceId, MAX_ID_LENGTH);
         const source = id ? this.sources.get(id) : null;
@@ -495,6 +501,7 @@ export default class StudioCatalogManager {
 
     updateSource(sourceId, { name, url, stillUrl, enabled, assetId, audioAssetId,
         stillAssetId, motionAssetId } = {}) {
+        if (this.referenceAuthority && !this.referenceAuthorityApplying) return this.referenceAuthority.execute('updateSource', Array.from(arguments));
         const id = this.normalizeString(sourceId, MAX_ID_LENGTH);
         const current = id ? this.sources.get(id) : null;
         if (!current) return this.failure("source-not-editable");
@@ -563,6 +570,7 @@ export default class StudioCatalogManager {
     }
 
     updateLiveSource(sourceId, { name, url, enabled } = {}) {
+        if (this.referenceAuthority && !this.referenceAuthorityApplying) return this.referenceAuthority.execute('updateLiveSource', Array.from(arguments));
         if (!this.initialized || this.mutating) return this.failure("catalog-unavailable");
         const id = this.normalizeString(sourceId, MAX_ID_LENGTH);
         const current = id ? this.sources.get(id) : null;
@@ -659,6 +667,7 @@ export default class StudioCatalogManager {
     }
 
     updateScene(sceneId, { name, sourceId } = {}) {
+        if (this.referenceAuthority && !this.referenceAuthorityApplying) return this.referenceAuthority.execute('updateScene', Array.from(arguments));
         if (!this.initialized || this.mutating) return this.failure("catalog-unavailable");
         const id = this.normalizeString(sceneId, MAX_ID_LENGTH);
         const current = id ? this.definitions.get(id) : null;
@@ -695,6 +704,7 @@ export default class StudioCatalogManager {
     }
 
     removeScene(sceneId) {
+        if (this.referenceAuthority && !this.referenceAuthorityApplying) return this.referenceAuthority.execute('removeScene', Array.from(arguments));
         if (!this.initialized || this.mutating) return this.failure("catalog-unavailable");
         const id = this.normalizeString(sceneId, MAX_ID_LENGTH);
         const scene = id ? this.definitions.get(id) : null;
@@ -727,6 +737,7 @@ export default class StudioCatalogManager {
     }
 
     removeSource(sourceId) {
+        if (this.referenceAuthority && !this.referenceAuthorityApplying) return this.referenceAuthority.execute('removeSource', Array.from(arguments));
         if (!this.initialized || this.mutating) {
             return this.failure("catalog-unavailable");
         }
@@ -1241,6 +1252,11 @@ export default class StudioCatalogManager {
     }
 
     handleStorage(event) {
+        if (this.referenceAuthority && event?.key === STORAGE_KEY) {
+            this.referenceAuthority.ready = false;
+            this.referenceAuthority.issue = 'CATALOG_AUTHORITY_CONFLICT';
+            return;
+        }
         if (!this.initialized || this.mutating || event?.key !== STORAGE_KEY) return;
         const overlay = this.loadOverlay();
         if (overlay.issues.length) return;

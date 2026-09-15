@@ -10,6 +10,42 @@ export default class StudioStateRoutes {
     }
 
     async handle(request, response, url) {
+        if(url.pathname==='/api/studio/state/catalog/reconcile'&&request.method==='POST'){
+            const client=this.referenceClients?.identify(request.headers['x-livezone-reference-client'],Number(request.headers['x-livezone-reference-generation']),request.operatorReferencePrincipal);
+            if(this.referenceClients&&!client){sendError(response,409,'CLIENT_CAPABILITY_REQUIRED');return true;}
+            try{
+                if(!String(request.headers['content-type']||'').startsWith('application/json')){sendError(response,415,'CONTENT_TYPE_REQUIRED');return true;}
+                const body=JSON.parse(await readBody(request));
+                if(client)await this.referenceClients.update(client.id,client.generation,{catalog:'PENDING'},request.operatorReferencePrincipal);
+                const result=await this.coordinator.reconcileCatalog(body);
+                if(client)await this.referenceClients.update(client.id,client.generation,{catalog:result.status==='CONFLICT'?'CONFLICT':'RECONCILED'},request.operatorReferencePrincipal);
+                sendJson(response,result.status==='CONFLICT'?409:200,{ok:result.status!=='CONFLICT',...result,
+                    ...(result.status==='CONFLICT'?{error:{code:'CATALOG_AUTHORITY_CONFLICT'}}:{})});
+            }catch(error){
+                if(client)await this.referenceClients.update(client.id,client.generation,{catalog:'INVALID'},request.operatorReferencePrincipal).catch(()=>{});
+                sendError(response,error.code==='REVISION_CONFLICT'?409:422,error.code||'INVALID_STATE');
+            }
+            return true;
+        }
+        if (url.pathname === '/api/studio/state/catalog' && request.method === 'PUT') {
+            if (!String(request.headers['content-type'] || '').startsWith('application/json')) {
+                sendError(response, 415, 'CONTENT_TYPE_REQUIRED'); return true;
+            }
+            try {
+                const payload = JSON.parse(await readBody(request));
+                if (!payload || Object.keys(payload).some(key => !['sources','scenes','revision'].includes(key))) {
+                    sendError(response, 422, 'INVALID_STATE'); return true;
+                }
+                if(request.referenceClient)await this.referenceClients.pendingCatalog(request.referenceClient.id,request.referenceClient.generation,payload.revision+1,request.operatorReferencePrincipal);
+                const state = await this.coordinator.updateCatalog(payload);
+                sendJson(response, 200, { ok: true, state });
+            } catch (error) {
+                sendError(response, error.code === 'REVISION_CONFLICT' ? 409 : error.code === 'PAYLOAD_TOO_LARGE' ? 413 :
+                    ['INVALID_STATE','ASSET_UNAVAILABLE','ASSET_TYPE_MISMATCH'].includes(error.code) ? 422 : 503,
+                    error.code || 'STATE_UNAVAILABLE');
+            }
+            return true;
+        }
         if (url.pathname === "/api/studio/state" && request.method === "GET") {
             const state = this.coordinator.getSnapshot();
             if (!state) return sendError(response, 503, "STATE_UNAVAILABLE");
@@ -31,7 +67,7 @@ export default class StudioStateRoutes {
             }
             catch (error) {
                 const status = error?.code === "STATE_ALREADY_INITIALIZED" ? 409
-                    : error?.code === "INVALID_STATE" ? 422 : 503;
+                    : ['INVALID_STATE','ASSET_UNAVAILABLE','ASSET_TYPE_MISMATCH'].includes(error?.code) ? 422 : 503;
                 sendError(response, status, error?.code || "STATE_INITIALIZATION_FAILED");
             }
             return true;
@@ -71,6 +107,8 @@ function formatEvent(event) { return `id: ${event.revision}\nevent: studio-state
 function sendError(response, status, code) { sendJson(response, status,
     { ok: false, error: { code, message: messageFor(code) } }); }
 function messageFor(code) { return ({ STATE_UNAVAILABLE: "Studio state is unavailable.",
+    ASSET_UNAVAILABLE: 'ASSET NON DISPONIBILE', ASSET_TYPE_MISMATCH: 'ASSET NON DISPONIBILE',
+    REVISION_CONFLICT: 'Studio catalog changed. Refresh before saving.',
     STATE_ALREADY_INITIALIZED: "Studio state is already initialized.",
     INVALID_STATE: "Studio state is invalid.", INVALID_JSON: "Request JSON is invalid.",
     PAYLOAD_TOO_LARGE: "Request payload is too large.",

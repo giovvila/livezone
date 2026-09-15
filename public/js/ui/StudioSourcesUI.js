@@ -71,10 +71,10 @@ export default class StudioSourcesUI {
         this.started = false;
     }
 
-    handleSubmit(event) {
+    async handleSubmit(event) {
         event.preventDefault();
         const audio = this.typeInput.value === "audio";
-        const result = audio
+        let result = audio
             ? this.catalog.addAudio({
                 name: this.nameInput.value,
                 audioAssetId: this.audioAssetSelect.value,
@@ -85,6 +85,7 @@ export default class StudioSourcesUI {
                 url: this.urlInput.value,
                 assetId: this.assetSelect.value || null
             });
+        if (result?.then) result = await result;
 
         if (!result.ok) {
             this.setFeedback(this.messageFor(result.reason), true);
@@ -170,13 +171,14 @@ export default class StudioSourcesUI {
         }
     }
 
-    handleListClick(event) {
+    async handleListClick(event) {
         const button = event.target.closest("[data-remove-source-id]");
         if (!button || !this.list.contains(button)) {
             return;
         }
 
-        const result = this.catalog.removeSource(button.dataset.removeSourceId);
+        let result = this.catalog.removeSource(button.dataset.removeSourceId);
+        if (result?.then) result = await result;
         if (!result.ok) {
             this.setFeedback(this.messageFor(result.reason), true);
             return;

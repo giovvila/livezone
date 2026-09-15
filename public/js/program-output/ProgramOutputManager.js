@@ -74,6 +74,19 @@ export default class ProgramOutputManager {
     }
 
     handleProgramTransport(snapshot) {
+        // A browser can suspend media while navigating away. That pause is not
+        // an operator transport command and must not replace the retained clock.
+        if (globalThis.document?.visibilityState === "hidden" &&
+            snapshot?.state === "paused" && !snapshot.ended &&
+            this.snapshot?.playback.playing &&
+            snapshot.sourceId === this.snapshot.source?.id &&
+            !this.pendingProgramPublishReason) {
+            trace.record("continuity", "hidden-pause-ignored", {
+                ...programTraceFields(this.snapshot), currentTime: snapshot.currentTime,
+                paused: true
+            });
+            return;
+        }
         this.programTransport = snapshot;
         const signature = this.transportSignature(snapshot);
         if (this.started && signature !== this.lastTransportSignature) {

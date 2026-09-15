@@ -1,3 +1,5 @@
+import {TextCrawlView} from './TextCrawlElement.js';
+import SponsorView from './SponsorView.js';
 import StudioLowerThirdGraphic from "./StudioLowerThirdGraphic.js";
 
 export default class StudioGraphicsLayer {
@@ -7,6 +9,8 @@ export default class StudioGraphicsLayer {
         this.consumer = consumer;
         this.graphicsManager = graphicsManager;
         this.started = false;
+        this.crawlView = new TextCrawlView();
+        this.sponsorView = new SponsorView();
         this.render = this.render.bind(this);
     }
 
@@ -30,6 +34,8 @@ export default class StudioGraphicsLayer {
 
         this.unsubscribe?.();
         this.unsubscribe = null;
+        this.crawlView.destroy();
+        this.sponsorView.destroy();
         this.root.replaceChildren();
         this.started = false;
     }
@@ -37,12 +43,34 @@ export default class StudioGraphicsLayer {
     render() {
         const elements = this.graphicsManager
             .getVisibleGraphics(this.consumer)
+            .filter(({ graphic }) => !(this.consumer === "program" && this.effectiveCrawl !== undefined && graphic.kind === "text-crawl"))
             .map(({ graphic, payload }) =>
                 this.createGraphicElement(graphic, payload)
             )
             .filter(Boolean);
 
-        this.root.replaceChildren(...elements);
+        if (this.consumer === "program" && this.effectiveCrawl !== undefined) {
+            const crawl = this.crawlView.node(this.effectiveCrawl);
+            if (crawl) elements.push(crawl);
+        }
+        if (this.root.dataset) this.root.dataset.scheduledCrawlPosition = this.effectiveCrawl?.enabled && this.effectiveCrawl?.scheduled ? this.effectiveCrawl.position : "";
+        if (this.consumer === 'program') {
+            const sponsor=this.sponsorView.node(this.effectiveSponsor);
+            if(sponsor)elements.push(sponsor);
+        }
+        for (const child of [...this.root.children]) if (!elements.includes(child)) child.remove();
+        for (const element of elements) if(element.parentNode!==this.root)this.root.appendChild(element);
+    }
+
+    setEffectiveCrawl(item) {
+        this.effectiveCrawl = item || null;
+        this.render();
+    }
+
+    setEffectiveOverlays(overlays={}) {
+        this.effectiveCrawl=overlays.textCrawl||null;
+        this.effectiveSponsor=overlays.sponsor||null;
+        this.render();
     }
 
     createGraphicElement(graphic, payload) {
@@ -67,19 +95,8 @@ export default class StudioGraphicsLayer {
         }
 
         if (graphic.kind === "text-crawl" && payload?.enabled) {
-            const overlay = document.createElement("div");
-            const text = document.createElement("span");
-            overlay.className = ["studio-text-crawl",
-                `studio-text-crawl--${payload.mode}`,
-                `studio-text-crawl--${payload.direction}`,
-                `studio-text-crawl--${payload.speed}`,
-                `studio-text-crawl--${payload.position}`,
-                payload.background ? "studio-text-crawl--background" : ""
-            ].filter(Boolean).join(" ");
-            text.className = "studio-text-crawl__text";
-            text.textContent = payload.text;
-            overlay.appendChild(text);
-            overlay.dataset.studioGraphicId = graphic.id;
+            const overlay = this.crawlView.node(payload);
+            if (overlay) overlay.dataset.studioGraphicId = graphic.id;
             return overlay;
         }
 

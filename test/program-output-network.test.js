@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import ProgramOutputStore from "../server/program-output/ProgramOutputStore.js";
-import { createProgramOutputServer } from "../server/program-output-server.js";
+import { createProgramOutputServer } from '../test-support/ReferenceAuthorityTestServer.js';
 import { createProgramOutputEnvelope } from
     "../public/js/program-output/ProgramOutputEnvelope.js";
 import NetworkProgramOutputTransport from

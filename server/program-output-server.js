@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { createReadStream, statSync } from "node:fs";
 import { extname, join, normalize, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { timingSafeEqual } from "node:crypto";
+import { timingSafeEqual, createHash } from "node:crypto";
 import { isIP } from "node:net";
 import ProgramOutputStore from "./program-output/ProgramOutputStore.js";
 import MediaAssetRepository from "./media-library/MediaAssetRepository.js";
@@ -16,12 +16,24 @@ import OperatorRequestGuard from "./auth/OperatorRequestGuard.js";
 import AuthoritativeStateRepository from "./studio/AuthoritativeStateRepository.js";
 import StudioStateCoordinator from "./studio/StudioStateCoordinator.js";
 import StudioStateRoutes from "./studio/StudioStateRoutes.js";
+import SchedulerServer from "./scheduler/SchedulerServer.js";
+import ScheduleRoutes from "./scheduler/ScheduleRoutes.js";
+import EffectiveProgramOutput from "./program-output/EffectiveProgramOutput.js";
+import ControlEventFeed from "./program-output/ControlEventFeed.js";
+import AssetReferenceInventory from './media-library/AssetReferenceInventory.js';
+import AssetMutationCoordinator from './media-library/AssetMutationCoordinator.js';
+import PreviewOwnership from './media-library/PreviewOwnership.js';
+import ReferenceClientRegistry from './media-library/ReferenceClientRegistry.js';
+import ChannelLogoAuthority from './media-library/ChannelLogoAuthority.js';
+import AssetAuthorityDiagnostics from './media-library/AssetAuthorityDiagnostics.js';
+import { readFile } from 'node:fs/promises';
 
 const MAX_BODY_BYTES = 64 * 1024;
 const SSE_KEEPALIVE_MS = 15000;
 const PUBLIC_ROOT = fileURLToPath(new URL("../public/", import.meta.url));
 const DEFAULT_MEDIA_LIBRARY_ROOT = fileURLToPath(new URL("../var/media-library/", import.meta.url));
 const DEFAULT_STUDIO_STATE_PATH = fileURLToPath(new URL("../var/studio-state/state.json", import.meta.url));
+const DEFAULT_SCHEDULE_PATH = fileURLToPath(new URL("../var/scheduler/schedule.json", import.meta.url));
 const MIME_TYPES = new Map([
     [".html", "text/html; charset=utf-8"], [".js", "text/javascript; charset=utf-8"],
     [".css", "text/css; charset=utf-8"], [".json", "application/json; charset=utf-8"],
@@ -43,11 +55,20 @@ export function createProgramOutputServer({
     operatorAuth = OperatorAuth.fromEnvironment(),
     operatorAllowedOrigins = parseOrigins(process.env.LIVEZONE_OPERATOR_ALLOWED_ORIGINS),
     studioStatePath = process.env.LIVEZONE_STUDIO_STATE_PATH || DEFAULT_STUDIO_STATE_PATH,
+    assetAuthorityPath = studioStatePath + '.asset-authority',
     authoritativeStateRepository = new AuthoritativeStateRepository({ path: studioStatePath }),
     studioStateCoordinator = new StudioStateCoordinator({ repository: authoritativeStateRepository }),
-    readiness
+    readiness,
+    schedulePath = process.env.LIVEZONE_SCHEDULE_PATH || DEFAULT_SCHEDULE_PATH,
+    scheduleClock = () => Date.now(),
+    scheduleSetTimer = setTimeout,
+    scheduleClearTimer = clearTimeout
 } = {}) {
     assertPrivateStudioStatePath(studioStatePath);
+    assertPrivateStudioStatePath(assetAuthorityPath + '.clients.json');
+    assertPrivateStudioStatePath(schedulePath);
+    if (resolve(schedulePath) === resolve(studioStatePath))
+        throw new TypeError("Schedule and Studio state paths must be distinct.");
     if (typeof publisherToken !== "string" || publisherToken.length < 16) {
         throw new Error("LIVEZONE_PROGRAM_OUTPUT_TOKEN must contain at least 16 characters.");
     }
@@ -55,6 +76,9 @@ export function createProgramOutputServer({
         throw new TypeError("LIVEZONE_MEDIA_LIBRARY_MAX_BYTES must be a positive integer.");
     }
     const clients = new Set();
+    const assetMutations = new AssetMutationCoordinator();
+    mediaAssetRepository.mutationCoordinator = assetMutations;
+    studioStateCoordinator.mutationCoordinator = assetMutations;
     const mediaReady = mediaAssetRepository.initialize();
     // Readiness and Media Library requests still observe this rejection. Attach a
     // handler immediately so delayed probes cannot produce an unhandled rejection.
@@ -67,9 +91,62 @@ export function createProgramOutputServer({
     const studioStateReady = studioStateCoordinator.initialize();
     studioStateReady.catch(() => {});
     const studioStateRoutes = new StudioStateRoutes({ coordinator: studioStateCoordinator });
+    const scheduler = new SchedulerServer({ path: schedulePath, clock: scheduleClock,
+        setTimer: scheduleSetTimer, clearTimer: scheduleClearTimer });
+    const scheduleRoutes = new ScheduleRoutes({ owner: scheduler });
+    const effectiveOutput = new EffectiveProgramOutput({ store, scheduler, clock: scheduleClock, mediaAssetRepository });
+    const controlEventFeed = new ControlEventFeed({effectiveOutput, scheduler});
+    mediaRoutes.controlEventFeed = controlEventFeed;
+    const staticReferences = Promise.all(['studio.json', 'assets.json', 'config.json'].map(async name =>
+        ({ name: 'Configurazione ' + name, complete: true, data: JSON.parse(await readFile(join(PUBLIC_ROOT, 'config', name), 'utf8')) })))
+        .catch(() => [{ name: 'Configurazione bootstrap', complete: false }]);
+    const assetDiagnostics=new AssetAuthorityDiagnostics({clock:scheduleClock});
+    const referenceClients=new ReferenceClientRegistry({coordinator:assetMutations,path:assetAuthorityPath+'.clients.json',diagnostics:assetDiagnostics,
+        coverageProven:true,minimumVersion:3,requireEpoch:true,
+        // The authoritative auth store is process-local. Missing old credentials
+        // are revoked, not merely network-silent. Reference records are retained.
+        isSessionRevoked:principal=>!operatorAuth.disabled&&![...operatorAuth.sessions.sessions.values()].some(session=>createHash('sha256').update(session.id).digest('hex')===principal)});
+    referenceClients.authenticatedPrincipals=()=>operatorAuth.disabled?[]:[...operatorAuth.sessions.sessions.values()].map(session=>createHash('sha256').update(session.id).digest('hex'));
+    const identifyReferenceRequest=async(request,session)=>{
+        await referenceClients.ready;
+        const principal=createHash('sha256').update(session.id||'development-bypass').digest('hex');
+        request.operatorReferencePrincipal=principal;
+        if(!request.url.startsWith('/api/media-library/reference-clients')){
+            const query=new URL(request.url,'http://reference.invalid').searchParams;
+            const client=referenceClients.identify(request.headers['x-livezone-reference-client']||query.get('referenceClient'),Number(request.headers['x-livezone-reference-generation']||query.get('referenceGeneration')),principal);
+            request.referenceClient=client?.supported&&client.active?client:null;
+            const cleanup=client&&!client.active&&request.method==='DELETE'&&request.url.startsWith('/api/media-library/preview-ownership/');
+            if(!client||!client.active&&!cleanup)await referenceClients.observeObsolete(principal).catch(()=>{});
+        }
+    };
+    const previewOwnership = new PreviewOwnership({ coordinator: assetMutations,
+        validate: value => assetReferences.validate(value), clock: scheduleClock,path:assetAuthorityPath+'.preview.json',diagnostics:assetDiagnostics });
+    previewOwnership.requiredPrincipals=()=>[...referenceClients.clients.values()].filter(client=>client.active&&client.role==='CONTROL').map(client=>client.principal+'|'+client.id+'|'+client.generation);
+    const assetReferences=new AssetReferenceInventory({repository:mediaAssetRepository,preview:previewOwnership,diagnostics:assetDiagnostics,
+        completeness:()=>referenceClients.snapshot(),inventories:async()=>[
+        ...await staticReferences,
+        {name:'Channel Logo confirmation pending',complete:channelLogoAuthority.snapshot().complete,data:channelLogoAuthority.snapshot().references},
+        {name:'Catalogo asset legacy',complete:true,data:referenceClients.legacyReferences()},
+        {name:'Evento palinsesto',complete:!!scheduler.store.getSnapshot(),data:scheduler.store.getSnapshot()},
+        {name:'Stato Studio server',complete:studioStateCoordinator.getSnapshot()?.initialized===true,data:studioStateCoordinator.getSnapshot()},
+        {name:'PROGRAM',classification:'RUNTIME',complete:!!store.getCurrent(),data:store.getCurrent()?.snapshot},
+        {name:'Output effettivo',classification:'RUNTIME',complete:true,data:effectiveOutput.getCurrent()?.snapshot},
+    ]});
+    mediaRoutes.referenceAudit=assetReferences;
+    const channelLogoAuthority=new ChannelLogoAuthority({path:assetAuthorityPath+'.logos.json',coordinator:assetMutations,inventory:assetReferences,clients:referenceClients});
+    mediaRoutes.channelLogoAuthority=channelLogoAuthority;
+    mediaRoutes.previewOwnership=previewOwnership;
+    mediaRoutes.referenceClients=referenceClients;studioStateRoutes.referenceClients=referenceClients;
+    studioStateCoordinator.diagnostics=assetDiagnostics;
+    referenceClients.validateLegacy=values=>assetReferences.validate(values.map(value=>({...value,kind:value.kind==='video'?'media':value.kind})));
+    referenceClients.currentCatalogRevision=()=>studioStateCoordinator.getSnapshot()?.revision;
+    scheduler.store.mutationCoordinator=assetMutations;
+    scheduler.store.referenceValidator=async value=>{await mediaReady;assetReferences.validate(value);};
+    studioStateCoordinator.referenceValidator=async value=>{await mediaReady;assetReferences.validate(value);};
+    void mediaReady.then(()=>effectiveOutput.reconcile(),()=>{});
     const runtimeReadiness = readiness || new RuntimeReadiness({ mediaReady,
         mediaAssetRepository, mediaIngestStatusClient });
-    const unsubscribe = store.subscribe((envelope) => {
+    const unsubscribe = effectiveOutput.subscribe((envelope) => {
         const event = formatSse(envelope);
         clients.forEach((response) => {
             if (response.destroyed || response.writableEnded) {
@@ -109,7 +186,10 @@ export function createProgramOutputServer({
                 return;
             }
             if (url.pathname === "/api/operator/logout" && request.method === "POST") {
-                handleOperatorLogout(request, response, operatorGuard, operatorAuth);
+                await handleOperatorLogout(request, response, operatorGuard, operatorAuth,async session=>{
+                    const principal=createHash('sha256').update(session.id||'development-bypass').digest('hex');
+                    await referenceClients.revokePrincipal(principal);await previewOwnership.revokePrincipal(principal);
+                });
                 return;
             }
             if (securityPath === "operator" && !operatorGuard.session(request)) {
@@ -131,27 +211,48 @@ export function createProgramOutputServer({
                     ? operatorGuard.authorizeMutation(request, response)
                     : operatorGuard.authorize(request, response);
                 if (!authorized) return;
-                await mediaReady;
+                await Promise.all([mediaReady,previewOwnership.ready,channelLogoAuthority.ready]);
+                await identifyReferenceRequest(request,authorized);
                 if (await mediaRoutes.handle(request, response, url)) return;
             }
             if (url.pathname.startsWith("/api/studio/state")) {
-                const authorized = request.method === "POST"
+                const authorized = ['POST','PUT','PATCH','DELETE'].includes(request.method)
                     ? operatorGuard.authorizeMutation(request, response)
                     : operatorGuard.authorize(request, response);
                 if (!authorized) return;
                 await studioStateReady;
+                await identifyReferenceRequest(request,authorized);
                 if (await studioStateRoutes.handle(request, response, url)) return;
+            }
+            if (url.pathname === "/api/studio/schedule" || url.pathname.startsWith("/api/studio/schedule/")) {
+                const authorized = ["POST", "PUT", "PATCH", "DELETE"].includes(request.method)
+                    ? operatorGuard.authorizeMutation(request, response)
+                    : operatorGuard.authorize(request, response);
+                if (!authorized) return;
+                await identifyReferenceRequest(request,authorized);
+                await scheduleRoutes.handle(request, response, url);
+                return;
             }
             if (url.pathname === "/api/program-output" && request.method === "OPTIONS") {
                 handlePublishOptions(request, response, allowedOrigins);
                 return;
             }
             if (url.pathname === "/api/program-output" && request.method === "POST") {
-                await handlePublish(request, response, { publisherToken, allowedOrigins, store });
+                await handlePublish(request, response, { publisherToken, allowedOrigins, store,
+                    accept: async payload => {
+                        await referenceClients.ready;
+                        const client=referenceClients.clients.get(request.headers['x-livezone-reference-client']);
+                        if(!client?.supported||!client.active||client.generation!==Number(request.headers['x-livezone-reference-generation']))await referenceClients.observeObsolete('publisher').catch(()=>{});
+                        return assetMutations.run(async () => {
+                        await mediaReady;
+                        try { assetReferences.validate(payload, { classification: 'RUNTIME', kind: 'PROGRAM' }); }
+                        catch (error) { return { accepted: false, reason: error.code }; }
+                        return store.accept(payload);
+                    });} });
                 return;
             }
             if (url.pathname === "/api/program-output/events" && request.method === "GET") {
-                handleEvents(request, response, clients, store);
+                handleEvents(request, response, clients, effectiveOutput);
                 return;
             }
             if (url.pathname === "/config/program-output.json" && request.method === "GET") {
@@ -168,13 +269,26 @@ export function createProgramOutputServer({
                 { ok: false, error: error?.statusCode === 400 ? "invalid-path" : "internal-error" });
         }
     });
+    // Close private long-lived connections before HTTP close waits for them.
+    const close = server.close.bind(server);
+    server.close = (...args) => {
+        controlEventFeed.close();
+        scheduleRoutes.close();
+        effectiveOutput.close();
+        const drained = scheduler.close();
+        const callback = args[0];
+        return close(error => { void drained.then(() => callback?.(error)); });
+    };
     server.on("close", () => {
+        scheduleRoutes.close();
+        void scheduler.close();
         unsubscribe();
         studioStateRoutes.close();
         clients.forEach((response) => response.end());
         clients.clear();
     });
-    return { server, store, clients, studioStateCoordinator };
+    return { server, store, clients, studioStateCoordinator, scheduler, effectiveOutput,
+        assetReferences, assetMutations, previewOwnership,referenceClients,assetDiagnostics };
 }
 
 function assertPrivateStudioStatePath(path) {
@@ -215,10 +329,11 @@ async function handleOperatorLogin(request, response, guard, auth) {
     { "Set-Cookie": auth.createCookie(session) });
 }
 
-function handleOperatorLogout(request, response, guard, auth) {
+async function handleOperatorLogout(request, response, guard, auth, onRevoked) {
     const session = guard.authorizeMutation(request, response);
     if (!session) return;
     if (session.id) auth.sessions.delete(session.id);
+    await onRevoked?.(session);
     sendJson(response, 200, { ok: true, authenticated: false },
         { "Set-Cookie": auth.clearCookie() });
 }
@@ -292,7 +407,7 @@ function validateBindHost(value) {
     return value;
 }
 
-async function handlePublish(request, response, { publisherToken, allowedOrigins, store }) {
+async function handlePublish(request, response, { publisherToken, allowedOrigins, store, accept }) {
     const cors = publishCorsHeaders(request, allowedOrigins);
     if (!originAllowed(request, allowedOrigins)) {
         sendJson(response, 403, { ok: false, error: "origin-rejected" });
@@ -315,7 +430,7 @@ async function handlePublish(request, response, { publisherToken, allowedOrigins
                 ? "payload-too-large" : "invalid-json" }, cors);
         return;
     }
-    const result = store.accept(payload);
+    const result = accept ? await accept(payload) : store.accept(payload);
     if (!result.accepted) {
         const stale = ["stale-revision", "retired-session"]
             .includes(result.reason);

@@ -35,21 +35,22 @@ export default class StudioLiveSourcesUI {
         this.started = false;
     }
 
-    handleSubmit(event) {
+    async handleSubmit(event) {
         event.preventDefault();
         const values = new FormData(this.form);
         const data = { name: String(values.get("name") || ""),
             url: String(values.get("url") || ""), enabled: values.get("enabled") === "on" };
         const wasEditing = Boolean(this.editingId);
-        const result = this.editingId
+        let result = this.editingId
             ? this.catalog.updateLiveSource(this.editingId, data)
             : this.catalog.addLiveSource(data);
+        if (result?.then) result = await result;
         if (!result.ok) return this.show(`Operazione rifiutata: ${result.reason}.`, true);
         this.reset();
         this.show(wasEditing ? "Sorgente LIVE aggiornata." : "Sorgente LIVE aggiunta.", false);
     }
 
-    handleClick(event) {
+    async handleClick(event) {
         const button = event.target.closest("button[data-action]");
         if (!button) return;
         const source = this.catalog.getSources().find(({ id }) => id === button.dataset.id);
@@ -77,11 +78,12 @@ export default class StudioLiveSourcesUI {
             return this.show(`Modifica ${source.name}.`, false);
         }
         if (button.dataset.action === "toggle") {
-            const result = this.catalog.updateLiveSource(source.id, {
+            let result = this.catalog.updateLiveSource(source.id, {
                 name: source.name,
                 url: source.url,
                 enabled: source.enabled === false
             });
+            if (result?.then) result = await result;
             if (result.ok && !result.source.enabled &&
                 this.dominantLiveConfig?.getSnapshot?.().authorizedSourceId === source.id) {
                 this.dominantLiveConfig.setAuthorizedSourceId(null);
@@ -97,7 +99,8 @@ export default class StudioLiveSourcesUI {
         });
         unsubscribe?.();
         if (referenced) return this.show("Rimozione bloccata: scena referenziata dal palinsesto.", true);
-        const result = this.catalog.removeSource(source.id);
+        let result = this.catalog.removeSource(source.id);
+        if (result?.then) result = await result;
         if (!result.ok) return this.show(`Rimozione rifiutata: ${result.reason}.`, true);
         if (this.dominantLiveConfig?.getSnapshot?.().authorizedSourceId === source.id) {
             this.dominantLiveConfig.setAuthorizedSourceId(null);

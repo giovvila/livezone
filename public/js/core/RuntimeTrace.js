@@ -1,5 +1,5 @@
 // Local-only, bounded, in-memory diagnostics. Never record raw snapshots, URLs or errors.
-const NUMBERS = new Set(["generation", "monitorGeneration", "consumerGeneration", "lossGeneration", "remainingMs", "revision",
+const NUMBERS = new Set(["mediaErrorCode", "retryDelayMs", "maxRetryDelayMs", "retryFailures", "healthDemandCount", "generation", "monitorGeneration", "consumerGeneration", "lossGeneration", "remainingMs", "revision",
     "currentTime", "lastProgressTime", "readyState", "bufferedSeconds", "watchdogDeadline",
     "graceDeadline", "readinessDeadline", "retryDeadline", "retryAttempt", "httpStatus",
     "initialTime", "expectedTime", "eventSourceState", "playbackStartedAt",
@@ -13,6 +13,32 @@ const LABELS = new Set(["sourceId", "programSourceId", "sceneId", "previousScene
     "sourceState", "ownershipState", "acquisitionState", "consumer", "instanceId",
     "selectedPath", "probedPath", "apiState", "playerState", "phase", "authority", "sessionId", "transportState"]);
 const label = value => typeof value === "string" && /^[a-zA-Z0-9_ .-]{1,128}$/.test(value);
+
+// Export-only inspection: no observer, new requests, timers or performance-buffer changes.
+// Resource Timing does not expose pending requests, Range headers or socket occupancy.
+export function mediaResourceTiming(performance = globalThis.performance, location = globalThis.location) {
+    const result = { timeOrigin: performance?.timeOrigin, pendingRequests: "not-exposed",
+        rangeHeaders: "not-exposed", entries: [] };
+    try {
+        const entries = performance.getEntriesByType("resource").filter(entry => {
+            const url = new URL(entry.name, location.href);
+            return url.origin === location.origin && url.pathname.startsWith("/media/");
+        });
+        result.truncated = entries.length > 128;
+        result.entries = entries.slice(-128).map(entry => {
+            const url = new URL(entry.name, location.href);
+            const row = { pathname: url.pathname };
+            for (const key of ["startTime", "duration", "fetchStart", "workerStart", "redirectStart", "redirectEnd",
+                "domainLookupStart", "domainLookupEnd", "connectStart", "connectEnd", "secureConnectionStart",
+                "requestStart", "responseStart", "responseEnd", "transferSize", "encodedBodySize", "decodedBodySize", "responseStatus"])
+                if (Number.isFinite(entry[key])) row[key] = entry[key];
+            for (const key of ["initiatorType", "nextHopProtocol", "deliveryType"])
+                if (label(entry[key])) row[key] = entry[key];
+            return row;
+        });
+    } catch { result.unavailable = true; }
+    return result;
+}
 
 export class RuntimeTrace {
     constructor({ enabled = false, capacity = 1000, now = () => Date.now() } = {}) {
@@ -40,7 +66,8 @@ export class RuntimeTrace {
     }
     snapshot() { return Object.freeze([...this.entries]); }
     clear() { this.entries = []; }
-    exportJSON() { return JSON.stringify({ version: 1, entries: this.snapshot() }, null, 2); }
+    exportJSON() { return JSON.stringify({ version: 1, entries: this.snapshot(),
+        mediaResourceTiming: this.enabled ? mediaResourceTiming() : undefined }, null, 2); }
     download() {
         if (!this.enabled || !globalThis.document) return;
         const url = URL.createObjectURL(new Blob([this.exportJSON()], { type: "application/json" }));

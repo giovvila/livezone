@@ -1,5 +1,5 @@
 import { AUTO_LIVE_ENTRY_ID, AUTO_LIVE_ENTRY_TITLE, AUTO_LIVE_ENTRY_MESSAGE } from "../public/js/program-output/AutoLiveEntrySlate.js";
-import { createProgramOutputServer } from "../server/program-output-server.js";
+import { createProgramOutputServer } from '../test-support/ReferenceAuthorityTestServer.js';
 import { AUTO_LIVE_LOSS_SLATE_ID, AUTO_LIVE_LOSS_TEXT } from "../public/js/program-output/AutoLiveLossSlate.js";
 import test from "node:test";
 import assert from "node:assert/strict";

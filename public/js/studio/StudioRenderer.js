@@ -5,6 +5,7 @@ import StudioGraphicsLayer from "./renderers/StudioGraphicsLayer.js";
 import { waitForLivePlaybackStability, LIVE_PLAYBACK_PROGRESS_GAP_MS } from "./LivePlaybackStability.js";
 import trace from "../core/RuntimeTrace.js";
 import PreviewProgramHandoff from "./PreviewProgramHandoff.js";
+import resources from './ControlMediaResources.js';
 
 const PROGRAM_READINESS_TIMEOUT_MS = 12000;
 
@@ -526,6 +527,7 @@ export default class StudioRenderer {
     }
 
     async renderSlot(slot, sceneId, preparationContext = null) {
+        resources.mark(slot===this.preview?'preview-selection':'program-selection',sceneId);
         const generation = ++slot.generation;
         const outgoing = slot.renderer;
 
@@ -569,11 +571,18 @@ export default class StudioRenderer {
 
             if (slot === this.program && preparationContext) {
                 await renderer.waitUntilReady?.({ timeoutMs: PROGRAM_READINESS_TIMEOUT_MS });
+                if (slot.generation === generation) this.traceContinuityPlayback(renderer, preparationContext, "ready");
             }
 
             if (slot === this.program && slot.generation === generation &&
                 preparationContext?.transportInitialPlayback !== "paused") {
-                void renderer.activateProgram?.();
+                const activation = renderer.activateProgram?.();
+                if (preparationContext) void Promise.resolve(activation).then(result => {
+                    if (slot.generation === generation) this.traceContinuityPlayback(renderer, preparationContext,
+                        result === false ? "resume-blocked" : "resume-complete");
+                }, () => {
+                    if (slot.generation === generation) this.traceContinuityPlayback(renderer, preparationContext, "resume-rejected");
+                });
             }
 
             if (slot.generation !== generation) {
@@ -605,6 +614,13 @@ export default class StudioRenderer {
                 "error"
             );
         }
+    }
+
+    traceContinuityPlayback(renderer, context, phase) {
+        const media = renderer.video || renderer.audio;
+        trace.record("continuity", phase, { sceneId: context.sceneId, sourceId: context.sourceId,
+            expectedTime: context.transportCueTime, state: context.transportInitialPlayback,
+            readyState: media?.readyState, currentTime: media?.currentTime, paused: media?.paused });
     }
 
     createRenderer(definition, slot, preparationContext = null) {

@@ -3,7 +3,7 @@ import trace from "../core/RuntimeTrace.js";
 // Reuse observations, not ownership of the operator's Technical Monitor surface.
 // Called only after SourcePresenceMonitor has classified the endpoint as external.
 export function shareTechnicalLiveHealth(monitor, fallbackFactory) {
-    return (source, handlers, options) => {
+    const factory = (source, handlers, options) => {
         let unsubscribe, fallback, stopped = false, usingTechnical = false, generation = 0;
         const matches = snapshot => snapshot.sourceId === source.id && snapshot.endpoint === source.url;
         const observe = snapshot => {
@@ -33,4 +33,9 @@ export function shareTechnicalLiveHealth(monitor, fallbackFactory) {
             destroy() { stopped = true; unsubscribe?.(); fallback?.destroy(); fallback = null; }
         };
     };
+    // Demand belongs to the source-health monitor lifetime, not to one failed
+    // consumer attempt. Keep Technical's recovery cadence while AutoLive relies
+    // on this source, including the gap between its own consumer retries.
+    factory.retainSource = source => monitor.retainHealthDemand?.(source) || (()=>{});
+    return factory;
 }

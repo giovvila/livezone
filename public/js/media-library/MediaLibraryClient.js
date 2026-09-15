@@ -6,8 +6,9 @@ export default class MediaLibraryClient {
         this.baseUrl = baseUrl;
         this.xhrFactory = xhrFactory;
     }
-    async list(kind = null) { return this.request(`${this.baseUrl}${kind ? `?kind=${encodeURIComponent(kind)}` : ""}`); }
+    async list(kind = null) { return this.request(`${this.baseUrl}?references=1${kind ? `&kind=${encodeURIComponent(kind)}` : ""}`); }
     async get(id) { return this.request(`${this.baseUrl}/${encodeURIComponent(id)}`); }
+    async references(id) {return this.request(`${this.baseUrl}/${encodeURIComponent(id)}/references`);}
     async updateMetadata(id, metadata) {
         return this.request(`${this.baseUrl}/${encodeURIComponent(id)}`, {
             method: "PATCH",

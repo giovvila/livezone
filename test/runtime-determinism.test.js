@@ -6,7 +6,7 @@ import NetworkProgramOutputTransport from "../public/js/program-output/NetworkPr
 import { createProgramOutputEnvelope } from "../public/js/program-output/ProgramOutputEnvelope.js";
 import ProgramOutputManager from "../public/js/program-output/ProgramOutputManager.js";
 import { bootstrapPublicProgram } from "../public/js/public/PublicProgramBootstrap.js";
-import { createProgramOutputServer } from "../server/program-output-server.js";
+import { createProgramOutputServer } from '../test-support/ReferenceAuthorityTestServer.js';
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, dirname, basename, resolve } from "node:path";

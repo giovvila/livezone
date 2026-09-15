@@ -296,3 +296,11 @@
         min-height: 0;
     }
 }
+
+/* Reserve the scheduled crawl band without changing manual graphic layout. */
+[data-scheduled-crawl-position="top"] .studio-graphic--image.studio-graphic--top-left,
+[data-scheduled-crawl-position="top"] .studio-graphic--image.studio-graphic--top-right { top: 22%; }
+[data-scheduled-crawl-position="bottom"] .studio-graphic--bottom-left,
+[data-scheduled-crawl-position="bottom"] .studio-graphic--bottom-right { bottom: 22%; }
+.studio-graphic--image { z-index: 1; }
+.studio-lower-third { z-index: 2; }

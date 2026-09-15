@@ -124,6 +124,7 @@ export default class StudioAssetLibrary {
     }
 
     addAsset({ name, kind, url } = {}) {
+        if(this.referenceAuthority&&!this.referenceAuthorityApplying)return this.referenceAuthority.execute('addAsset',Array.from(arguments));
         if (!this.initialized || this.mutating) {
             return this.failure("library-unavailable");
         }
@@ -177,6 +178,7 @@ export default class StudioAssetLibrary {
     }
 
     removeAsset(assetId) {
+        if(this.referenceAuthority&&!this.referenceAuthorityApplying)return this.referenceAuthority.execute('removeAsset',Array.from(arguments));
         if (!this.initialized || this.mutating) {
             return this.failure("library-unavailable");
         }

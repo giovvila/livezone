@@ -677,7 +677,11 @@ test("Control Room ENGINE_STOP teardown destroys operational sources UI", async 
     assert.match(source, /function destroyControlRoom\(\)[\s\S]*?studioSourcesUI\?\.destroy\(\)/);
     assert.match(source, /EventBus\.on\(Events\.ENGINE_STOP, destroyControlRoom\)/);
     assert.match(source, /function destroyControlRoom\(\)[\s\S]*?studioUI\?\.destroy\(\)/);
-    assert.doesNotMatch(source, /(?:pagehide|beforeunload|unload)/);
+    // Page lifecycle may release reference ownership, but must not tear down playback.
+    assert.doesNotMatch(source, /addEventListener\(['"](?:pagehide|beforeunload|unload)['"],\s*destroyControlRoom/);
+    const pagehide=source.match(/addEventListener\('pagehide',\(\)=>\{([\s\S]*?)\}\)/)?.[1];
+    assert.ok(pagehide);
+    assert.doesNotMatch(pagehide,/destroyControlRoom|runtime\.stop|studioSourcesUI|studioUI/);
 });
 
 for (const [kind, runtimeKind, field] of [

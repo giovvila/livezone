@@ -75,6 +75,9 @@
             <section class="schedule-card" aria-labelledby="schedule-editor-title">
                 <div class="schedule-section-heading"><div><span class="schedule-kicker">CONFIGURAZIONE</span><h2 id="schedule-editor-title">EDITOR ELEMENTO</h2></div></div>
                 <form id="schedule-item-form" class="schedule-form">
+                    <label for="schedule-event-type">TIPO ELEMENTO</label>
+                    <select id="schedule-event-type" name="eventMode"><option value="PROGRAMMA" selected>PROGRAMMA</option><option value="CRAWL">TEXT CRAWL</option><option value="SPONSOR">SPONSOR</option></select>
+                    <fieldset id="schedule-program-fields" class="schedule-mode-fields">
                     <label for="schedule-item-title">Titolo</label>
                     <input id="schedule-item-title" name="title" maxlength="120" required>
                     <fieldset id="schedule-content-kind" class="schedule-choice-group">
@@ -119,19 +122,55 @@
                     <input id="schedule-item-duration" name="duration" value="00:30:00" pattern="[0-9]{2,3}:[0-9]{2}:[0-9]{2}" required>
                     <label for="schedule-item-transition">TRANSITION</label>
                     <select id="schedule-item-transition" name="transition"><option>CUT</option><option>DISSOLVE</option></select>
+                    </fieldset>
+                    <fieldset id="schedule-overlay-fields" class="schedule-mode-fields" hidden disabled>
+                        <label>Titolo evento <input name="overlayTitle" maxlength="120" required></label>
+                        <p class="schedule-field-help">Orari nel fuso del palinsesto: <span data-overlay-timezone>Europe/Rome</span>. Gli overlay sono eseguiti dal server anche con Regia chiusa.</p>
+                        <div class="schedule-form-grid">
+                            <label>Data <input name="overlayDate" type="date" required></label>
+                            <label>Ora inizio <input name="overlayTime" type="time" step="1" required></label>
+                            <label>Durata (secondi) <input name="overlayDuration" type="number" min="1" max="604800" step="1" value="300" required></label>
+                            <label>Priorità <input name="overlayPriority" type="number" min="-100" max="100" step="1" value="0" required></label>
+                        </div>
+                        <label><input name="overlayEnabled" type="checkbox" checked> Enabled</label>
+                        <fieldset id="schedule-crawl-fields" class="schedule-mode-fields" hidden disabled>
+                            <label>Testo crawl <textarea name="crawlText" maxlength="500" required></textarea></label>
+                            <label>Posizione <select name="crawlPosition"><option value="bottom">BOTTOM</option><option value="top">TOP</option></select></label>
+                            <label>Direzione <select name="crawlDirection"><option value="rtl">RIGHT_TO_LEFT</option><option value="ltr">LEFT_TO_RIGHT</option></select></label>
+                            <label>Velocità <select name="crawlSpeed"><option value="slow">SLOW</option><option value="medium" selected>NORMAL</option><option value="fast">FAST</option></select></label>
+                            <label><input name="crawlBackground" type="checkbox" checked> Sfondo crawl</label>
+                        </fieldset>
+                        <fieldset id="schedule-sponsor-fields" class="schedule-mode-fields" hidden disabled>
+                            <label>ASSET SPONSOR <input name="sponsorAssetId" type="hidden"></label>
+                            <button type="button" id="schedule-sponsor-pick">SELEZIONA DA MEDIA LIBRARY</button>
+                            <span id="schedule-sponsor-asset-name">Nessuna immagine selezionata</span>
+                            <img id="schedule-sponsor-thumbnail" class="schedule-sponsor-thumbnail" alt="Anteprima sponsor" hidden>
+                            <p class="schedule-field-help">PNG / WebP trasparenti e JPEG. Overlay temporaneo, separato dal Channel Logo.</p>
+                            <label>LAYOUT <select name="sponsorLayout"><option value="CORNER">CORNER</option><option value="FULLSCREEN">FULLSCREEN</option></select></label>
+                            <label data-sponsor-fit hidden>FIT <select name="sponsorFit"><option value="CONTAIN">CONTAIN</option><option value="COVER">COVER</option></select></label>
+                            <label data-sponsor-corner>Posizione <select name="sponsorPosition"><option value="top-left">TOP_LEFT</option><option value="top-right" selected>TOP_RIGHT</option><option value="bottom-left">BOTTOM_LEFT</option><option value="bottom-right">BOTTOM_RIGHT</option></select></label>
+                            <label data-sponsor-corner>Dimensione (% larghezza) <input name="sponsorSize" type="number" min="5" max="30" step="0.1" value="12" required></label>
+                            <label>Opacità (%) <input name="sponsorOpacity" type="number" min="0" max="100" step="0.1" value="100" required></label>
+                            <p class="schedule-field-help">Sponsor sovrapposti: prevale la priorità più alta. Crawl e sponsor possono condividere lo stesso intervallo.</p>
+                        </fieldset>
+                    </fieldset>
                     <div class="schedule-form-actions"><button type="submit">SALVA ELEMENTO</button><button id="schedule-item-cancel" type="button">ANNULLA MODIFICA</button></div>
                 </form>
                 <p id="schedule-feedback" class="schedule-feedback" role="status" aria-live="polite"></p>
             </section>
         </div>
 
-        <section class="schedule-card" aria-labelledby="schedule-sources-title">
+        <section class="schedule-card" data-schedule-panel="configured" aria-labelledby="schedule-sources-title">
             <div class="schedule-section-heading"><div><span class="schedule-kicker">METADATA</span><h2 id="schedule-sources-title">SORGENTI CONFIGURATE</h2></div><p>Vista read-only: le azioni operative e la rimozione sicura restano nella Regia.</p></div>
+<button type="button" data-panel-toggle aria-expanded="false" aria-controls="schedule-panel-configured">ESPANDI ▼</button>
+<div id="schedule-panel-configured" data-panel-body hidden>
             <ul id="schedule-source-list" class="schedule-library-list"></ul>
-        </section>
+        </div></section>
 
-        <section class="schedule-card" aria-labelledby="live-sources-title">
+        <section class="schedule-card" data-schedule-panel="live" aria-labelledby="live-sources-title">
             <div class="schedule-section-heading"><div><span class="schedule-kicker">CONTRIBUTIONS</span><h2 id="live-sources-title">LIVE SOURCES</h2></div><p>Configurazione HLS. Le sorgenti abilitate diventano operative in Regia.</p></div>
+<button type="button" data-panel-toggle aria-expanded="false" aria-controls="schedule-panel-live">ESPANDI ▼</button>
+<div id="schedule-panel-live" data-panel-body hidden>
             <form id="live-source-form" class="schedule-form schedule-live-form">
                 <div><label for="live-source-name">Nome</label><input id="live-source-name" name="name" maxlength="120" required></div>
                 <div><label for="live-source-url">HLS URL</label><input id="live-source-url" name="url" maxlength="4096" type="url" spellcheck="false" required></div>
@@ -140,6 +179,20 @@
             </form>
             <p id="live-source-feedback" class="schedule-feedback" role="status" aria-live="polite"></p>
             <ul id="live-source-list" class="schedule-library-list"></ul>
+        </div></section>
+
+
+        <section id="media-library" class="schedule-card media-library" data-schedule-panel="media" data-panel-storage-key="livezone.scheduler.mediaLibrary.collapsed.v1" aria-labelledby="media-library-title">
+            <div class="schedule-section-heading"><h2 id="media-library-title">MEDIA LIBRARY</h2><button id="media-library-toggle" data-panel-toggle data-expand-label="EXPAND ▼" data-collapse-label="COLLAPSE ▲" type="button" aria-expanded="false" aria-controls="schedule-media-body">EXPAND ▼</button></div>
+            <div id="schedule-media-body" data-panel-body hidden>
+                <div class="schedule-form-grid">
+                    <label>BROWSE PC / IMPORT<input id="media-library-input" type="file" accept="video/mp4,audio/mpeg,image/jpeg,image/png,image/webp"></label>
+                    <label>FILTER<select id="media-library-filter"><option value="">ALL</option><option value="video">VIDEO</option><option value="audio">AUDIO</option><option value="image">IMAGE</option></select></label>
+                    <button id="media-library-refresh" type="button">AGGIORNA LIBRERIA</button>
+                </div>
+                <p id="media-library-status" role="status" aria-live="polite">IDLE</p>
+                <ul id="media-library-list" class="schedule-library-list"></ul>
+            </div>
         </section>
 
         <section class="schedule-card studio-assets" aria-labelledby="studio-assets-title">
@@ -154,6 +207,7 @@
             <p id="studio-asset-feedback" class="schedule-feedback" role="status" aria-live="polite"></p>
             <ul id="studio-asset-list" class="schedule-library-list"></ul>
         </section>
+
     </main>
     <script type="module" src="../../js/entries/schedule-app.js"></script>
 </body>

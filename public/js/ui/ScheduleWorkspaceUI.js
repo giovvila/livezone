@@ -2,6 +2,7 @@ import { getActiveItem, getNextItem, validateSchedule,
     zonedLocalToIso, getScheduleTarget } from "../scheduler/ScheduleContract.js";
 import { addLocalDays, calculateDayMetrics } from "../scheduler/ScheduleDayMetrics.js";
 import { formatMediaDuration, getFiniteAssetDuration } from "./MediaDuration.js";
+import ScheduleOverlayEditorUI from './ScheduleOverlayEditorUI.js';
 
 export default class ScheduleWorkspaceUI {
     constructor({ root, store, catalog, assetLibrary = null, assetResolver = null,
@@ -93,6 +94,9 @@ export default class ScheduleWorkspaceUI {
             (!this.readOnly && editorNodes.some((node) => !node))) return false;
 
         this.started = true;
+        if(this.root.querySelector('#schedule-event-type')) {
+            this.overlayEditor=new ScheduleOverlayEditorUI(this);this.overlayEditor.start();
+        }
         this.dateInput.addEventListener("change", this.handleDateChange);
         this.previous.addEventListener("click", () => this.selectDate(addLocalDays(this.selectedDate, -1)));
         this.todayButton.addEventListener("click", () => this.selectDate(todayInTimezone(this.schedule?.timezone, this.clock())));
@@ -129,6 +133,7 @@ export default class ScheduleWorkspaceUI {
 
     destroy() {
         if (!this.started) return;
+        this.overlayEditor?.destroy();
         this.dateInput.removeEventListener("change", this.handleDateChange);
         this.form?.removeEventListener("submit", this.handleFormSubmit);
         this.list.removeEventListener("click", this.handleListClick);
@@ -150,9 +155,26 @@ export default class ScheduleWorkspaceUI {
         this.started = false;
     }
 
-    handleSchedule({ schedule, issues }) {
+    handleSchedule({ schedule, issues, connection, reason, feedback, migration, revision }) {
         if (!schedule) return;
         this.schedule = schedule;
+        if (this.store?.serverAuthoritative) {
+            this.serverBanner ||= document.createElement("p");
+            this.serverBanner.setAttribute("role", "status");
+            const deadline = this.store.runtime?.nextDeadline;
+            const connectionDetail = { API_NOT_FOUND: "SCHEDULER API NOT FOUND — CHECK SERVER VERSION / RESTART",
+                AUTH_REQUIRED: "OPERATOR LOGIN REQUIRED", SERVER_UNAVAILABLE: "SCHEDULER SERVER / STORE UNAVAILABLE",
+                API_UNREACHABLE: "SCHEDULER API UNREACHABLE", API_HTTP_ERROR: "SCHEDULER API REQUEST FAILED",
+                INVALID_API_RESPONSE: "INVALID SCHEDULER RESPONSE", SSE_UNAVAILABLE: "LIVE CONNECTION UNAVAILABLE",
+                SSE_DISCONNECTED: "LIVE CONNECTION LOST — RECONNECTING" }[reason] || "";
+            this.serverBanner.textContent = `SERVER ${connection?.toUpperCase()} · REV ${revision ?? "—"} · NEXT ${deadline == null ? "—" : new Date(deadline).toISOString()} · PROGRAM EXECUTION SUSPENDED · ${connectionDetail || feedback || migration || ""}`;
+            this.root.prepend(this.serverBanner);
+            this.serverEvents ||= document.createElement("div");
+            const events = this.store.runtime?.events || [];
+            this.serverEvents.replaceChildren(...events.map(event => { const row = document.createElement("p"); row.textContent = `${event.type} · ${event.id} · ${event.status} ${event.type.startsWith('overlay.') ? "(overlay)" : "(not broadcast)"}`; return row; }));
+            this.serverBanner.after(this.serverEvents);
+            this.form?.querySelectorAll("button, input, select").forEach(node => { node.disabled = !this.store.writable; });
+        }
         if (!this.selectedDate) this.selectedDate = todayInTimezone(schedule.timezone, this.clock());
         this.dateInput.value = this.selectedDate;
         if (this.selectedDateLabel) this.selectedDateLabel.textContent = `· ${this.selectedDate}`;
@@ -161,6 +183,7 @@ export default class ScheduleWorkspaceUI {
         this.renderSourceTargets();
         this.renderMediaDuration();
         this.render();
+        this.overlayEditor?.applyState();
     }
 
     handleDateChange() { this.selectDate(this.dateInput.value); }
@@ -173,8 +196,10 @@ export default class ScheduleWorkspaceUI {
         this.render();
     }
 
-    handleFormSubmit(event) {
+    async handleFormSubmit(event) {
         event.preventDefault();
+        if (this.store?.serverAuthoritative && !this.store.writable) return this.showFeedback("SERVER UNAVAILABLE — READ ONLY", true);
+        if(this.overlayEditor && this.overlayEditor.mode!=='PROGRAMMA')return this.overlayEditor.save();
         const data = new FormData(this.form);
         const startMode = String(data.get("startMode") || "ABSOLUTE");
         const behavior = String(data.get("behavior") || "NORMAL");
@@ -207,14 +232,14 @@ export default class ScheduleWorkspaceUI {
         items.push(item);
         const result = validateSchedule({ version: 1, timezone: this.schedule.timezone, items });
         if (!result.ok) return this.showFeedback(`Elemento rifiutato: ${result.issues.join(", ")}`, true);
-        const saved = this.store.save(result.schedule);
-        if (!saved.ok) return this.showFeedback("Salvataggio non riuscito.", true);
+        const saved = await this.store.save(result.schedule);
+        if (!saved.ok) return this.showFeedback(this.store.client?.state.feedback || "Salvataggio non riuscito.", true);
         this.schedule = saved.schedule;
         this.resetEditor();
         this.showFeedback("Palinsesto salvato. La Regia riceverà l'aggiornamento.", false);
     }
 
-    handleListClick(event) {
+    async handleListClick(event) {
         const button = event.target.closest("button[data-action]");
         if (!button) return;
         if (this.readOnly) {
@@ -223,18 +248,21 @@ export default class ScheduleWorkspaceUI {
             }
             return;
         }
+        if (this.store?.serverAuthoritative && !this.store.writable) return this.showFeedback("SERVER UNAVAILABLE — READ ONLY", true);
+        if(button.dataset.overlay==='true')return this.overlayEditor?.handleListClick(button);
         const item = this.schedule.items.find(({ id }) => id === button.dataset.id);
         if (!item) return;
         if (button.dataset.action === "remove") {
             const result = validateSchedule({ version: 1, timezone: this.schedule.timezone,
                 items: this.schedule.items.filter(({ id }) => id !== item.id).map(stripDerived) });
             if (!result.ok) return this.showFeedback("Rimozione non valida.", true);
-            const saved = this.store.save(result.schedule);
+            const saved = await this.store.save(result.schedule);
             if (!saved.ok) return this.showFeedback("Rimozione non persistita.", true);
             this.schedule = saved.schedule;
             if (this.editingId === item.id) this.resetEditor();
             return this.showFeedback("Elemento rimosso.", false);
         }
+        this.overlayEditor?.setMode('PROGRAMMA');
         this.editingId = item.id;
         this.editingLegacySceneId = Object.hasOwn(item, "sceneId");
         const target = getScheduleTarget(item);
@@ -297,6 +325,7 @@ export default class ScheduleWorkspaceUI {
     }
 
     resetEditor() {
+        if(this.overlayEditor)this.overlayEditor.setMode('PROGRAMMA');
         this.editingId = null;
         this.editingLegacySceneId = false;
         this.autoPrefilledValue = null;
@@ -306,6 +335,7 @@ export default class ScheduleWorkspaceUI {
         this.renderScenes();
         this.renderSourceTargets();
         this.updateEditorState();
+        this.overlayEditor?.applyState();
         void this.prefillDuration();
     }
 
@@ -402,7 +432,7 @@ export default class ScheduleWorkspaceUI {
 
     render() {
         if (!this.schedule || !this.selectedDate) return;
-        const displaySchedule = this.readOnly
+        const displaySchedule = this.readOnly && !this.store?.serverAuthoritative
             ? this.schedulerEngine?.getEffectiveSchedule?.() || this.schedule
             : this.schedule;
         const metrics = calculateDayMetrics(displaySchedule, this.selectedDate,
@@ -477,9 +507,10 @@ export default class ScheduleWorkspaceUI {
     renderItems(metrics, displaySchedule = this.schedule) {
         const now = this.clock();
         const current = this.selectedDate === todayInTimezone(this.schedule.timezone, now)
-            ? getActiveItem(displaySchedule, now) : null;
-        const rows = [...metrics.items].sort((a, b) => a.startMs - b.startMs)
-            .map((item) => this.createItem(item, current?.id === item.id));
+            ? (this.store?.serverAuthoritative ? displaySchedule.items.find(item => item.id === this.store.runtime?.programPlan?.activeId) : getActiveItem(displaySchedule, now)) : null;
+        const entries=[...metrics.items.map(item=>({start:item.startMs,node:this.createItem(item,current?.id===item.id)})),
+            ...(this.overlayEditor?.dayEvents(metrics)||[]).map(item=>({start:Date.parse(item.startAt),node:this.overlayEditor.createItem(item)}))];
+        const rows=entries.sort((a,b)=>a.start-b.start).map(entry=>entry.node);
         this.list.replaceChildren(...rows);
         this.empty.hidden = rows.length > 0;
     }
@@ -514,7 +545,7 @@ export default class ScheduleWorkspaceUI {
         sceneName.className = "schedule-item__scene";
         sceneName.textContent = `${target.kind.toUpperCase()} · ${content.name} · ${target.id}`;
         type.className = "schedule-item__type";
-        [active ? "NOW" : null, item.behavior === "INTERRUPT" ? "INTERRUPT" : "NORMAL",
+        ['PROGRAM', active ? "NOW" : null, item.behavior === "INTERRUPT" ? "INTERRUPT" : "NORMAL",
             item.startMode === "AFTER_PREVIOUS" ? "AFTER PREV" : null,
             content.resolved ? null : "UNRESOLVED"].filter(Boolean).forEach((label) => {
             const badge = document.createElement("strong");
@@ -556,9 +587,9 @@ export default class ScheduleWorkspaceUI {
         const today = todayInTimezone(this.schedule.timezone, this.clock());
         let nowItem;
         let nextItem;
-        if (this.selectedDate === today) {
-            nowItem = getActiveItem(displaySchedule, this.clock());
-            nextItem = getNextItem(displaySchedule, this.clock());
+        if (this.store?.serverAuthoritative || this.selectedDate === today) {
+            nowItem = this.store?.serverAuthoritative ? displaySchedule.items.find(item => item.id === this.store.runtime?.programPlan?.activeId) : getActiveItem(displaySchedule, this.clock());
+            nextItem = this.store?.serverAuthoritative ? displaySchedule.items.find(item => item.id === this.store.runtime?.programPlan?.nextId) : getNextItem(displaySchedule, this.clock());
         }
         else {
             [nowItem, nextItem] = metrics.items.filter(({ behavior }) => behavior === "NORMAL");

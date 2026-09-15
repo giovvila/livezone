@@ -24,6 +24,10 @@ export function validateProgramOutputSnapshot(candidate) {
     const overlays = candidate.overlays === undefined
         ? undefined : validateOverlays(candidate.overlays);
     const transition = validateTransition(candidate.transition);
+    const output = candidate.output;
+    if (output !== undefined && (!isObject(output) || output.version !== 1 ||
+        !isText(output.sessionId, 120) || !Number.isSafeInteger(output.revision) || output.revision < 1 ||
+        typeof output.overlayOnly !== "boolean" || output.serverTime !== undefined && !isTimestamp(output.serverTime))) return null;
 
     if ((!isEmpty && (!scene || !source)) || !playback || !graphics ||
         !transition || candidate.overlays !== undefined && !overlays || (!isEmpty &&
@@ -41,6 +45,8 @@ export function validateProgramOutputSnapshot(candidate) {
         source,
         playback,
         graphics,
+        ...(output ? { output: { version: 1, sessionId: output.sessionId, revision: output.revision, overlayOnly: output.overlayOnly,
+            ...(output.serverTime ? { serverTime: output.serverTime } : {}) } } : {}),
         ...(overlays ? { overlays } : {}),
         transition
     });
@@ -146,8 +152,24 @@ function validateTransition(value) {
 function validateOverlays(value) {
     if (!isObject(value)) return null;
     const keys = Object.keys(value);
-    if (keys.some((key) => key !== "textCrawl")) return null;
-    if (value.textCrawl === undefined) return {};
+    if (keys.some((key) => key !== "textCrawl" && key !== "sponsor")) return null;
+    const sponsor = value.sponsor;
+    let extra = {};
+    if (sponsor !== undefined) {
+        if (!isObject(sponsor) || typeof sponsor.enabled !== 'boolean' ||
+            !(validateUrl(sponsor.url) || typeof sponsor.url === 'string' && /^\/media-library\/files\/image\/[a-zA-Z0-9_.-]+$/.test(sponsor.url)) ||
+            !['CORNER','FULLSCREEN'].includes(sponsor.layout===undefined?'CORNER':sponsor.layout) ||
+            ((sponsor.layout||'CORNER')==='CORNER' && (!POSITIONS.has(sponsor.position) || !Number.isFinite(sponsor.sizePercent) || sponsor.sizePercent < 5 || sponsor.sizePercent > 30)) ||
+            (sponsor.layout==='FULLSCREEN' && !['CONTAIN','COVER'].includes(sponsor.fit)) ||
+            !Number.isFinite(sponsor.opacity) || sponsor.opacity < 0 || sponsor.opacity > 1 ||
+            !isObject(sponsor.scheduled) || !isText(sponsor.scheduled.eventId,120) ||
+            !isTimestamp(sponsor.scheduled.startAt) || !isTimestamp(sponsor.scheduled.endAt) ||
+            Date.parse(sponsor.scheduled.endAt)<=Date.parse(sponsor.scheduled.startAt)) return null;
+        extra = {sponsor:{enabled:sponsor.enabled,url:sponsor.url,layout:sponsor.layout||'CORNER',
+            ...(sponsor.layout==='FULLSCREEN'?{fit:sponsor.fit}:{position:sponsor.position,sizePercent:sponsor.sizePercent}),
+            opacity:sponsor.opacity,scheduled:{...sponsor.scheduled}}};
+    }
+    if (value.textCrawl === undefined) return extra;
     const item = value.textCrawl;
     if (!isObject(item) || typeof item.enabled !== "boolean" ||
         !["crawl", "fixed"].includes(item.mode) ||
@@ -156,9 +178,14 @@ function validateOverlays(value) {
         !["slow", "medium", "fast"].includes(item.speed) ||
         !["top", "bottom"].includes(item.position) ||
         typeof item.background !== "boolean") return null;
-    return { textCrawl: { enabled: item.enabled, mode: item.mode,
+    const scheduled = item.scheduled;
+    if (scheduled !== undefined && (!isObject(scheduled) || !isText(scheduled.eventId, 120) ||
+        !isTimestamp(scheduled.startAt) || !isTimestamp(scheduled.endAt) ||
+        Date.parse(scheduled.endAt) <= Date.parse(scheduled.startAt))) return null;
+    return { ...extra, textCrawl: { enabled: item.enabled, mode: item.mode,
         text: item.text.trim(), direction: item.direction, speed: item.speed,
-        position: item.position, background: item.background } };
+        position: item.position, background: item.background,
+        ...(scheduled ? { scheduled: { eventId: scheduled.eventId, startAt: scheduled.startAt, endAt: scheduled.endAt } } : {}) } };
 }
 
 function validateUrl(value) {

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { scryptSync } from "node:crypto";
 import { request as httpRequest } from "node:http";
-import { createProgramOutputServer } from "../server/program-output-server.js";
+import { createProgramOutputServer } from '../test-support/ReferenceAuthorityTestServer.js';
 import MediaAssetRepository from "../server/media-library/MediaAssetRepository.js";
 import OperatorAuth from "../server/auth/OperatorAuth.js";
 import OperatorSessionStore from "../server/auth/OperatorSessionStore.js";

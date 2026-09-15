@@ -159,14 +159,15 @@ export default class StudioOperationalSourcesUI {
         this.renderSelections();
     }
 
-    handleSubmit(event) {
+    async handleSubmit(event) {
         event.preventDefault();
         const data = Object.fromEntries(new FormData(this.form));
         data.kind = this.form.elements.kind.value;
         this.applyManagedSelections(data);
-        const result = this.editingId
+        let result = this.editingId
             ? this.catalog.updateSource(this.editingId, data)
             : this.catalog.addSource(data);
+        if (result?.then) result = await result;
         if (!result.ok) return this.setFeedback(this.messageFor(result.reason), true);
         this.setFeedback(this.editingId ? "Source updated." : "Source created.");
         this.editingId = null;
@@ -276,12 +277,13 @@ export default class StudioOperationalSourcesUI {
         });
     }
 
-    handleClick(event) {
+    async handleClick(event) {
         const button = event.target.closest("button[data-source-action]");
         const source = this.sources.find((item) => item.id === button?.dataset.sourceId);
         if (!source) return;
         if (button.dataset.sourceAction === "edit") return this.openEditor(source);
-        const result = this.catalog.removeSource(source.id);
+        let result = this.catalog.removeSource(source.id);
+        if (result?.then) result = await result;
         this.setFeedback(result.ok ? "Source removed." : this.messageFor(result.reason), !result.ok);
     }
 
@@ -366,6 +368,11 @@ export default class StudioOperationalSourcesUI {
     }
 
     messageFor(reason) {
+        const authority = { ASSET_UNAVAILABLE:'ASSET NON DISPONIBILE', ASSET_TYPE_MISMATCH:'ASSET NON DISPONIBILE',
+            CATALOG_AUTHORITY_CONFLICT:'Catalogo diverso dal server. Riconciliare le sorgenti prima di salvare.',
+            CATALOG_RECONCILIATION_REQUIRED:'Modifica salvata sul server; catalogo locale da riconciliare.',
+            'REFERENCE INVENTORY INCOMPLETE':'Inventario riferimenti non disponibile. Salvataggio bloccato.' };
+        if (authority[reason]) return authority[reason];
         return ({ "invalid-name": "Enter a valid source name.", "invalid-url": "Use an HTTP(S) or project-relative URL.", "invalid-still-url": "Use an HTTP(S) or project-relative artwork URL.", "invalid-kind": "Choose LIVE, VIDEO, AUDIO, or IMAGE.", "source-still-referenced": "Source is used by a scene.", "source-in-preview": "Source is currently in Preview.", "source-in-program": "Source is currently in Program.", "source-authorized": "Source is authorized for AUTO LIVE or an active runtime.", "source-has-active-instances": "Source is active in a renderer or monitor.", "persistence-failed": "Source registry could not be saved." })[reason] || "Source operation rejected.";
     }
 }

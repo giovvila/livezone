@@ -131,7 +131,7 @@ export default class StudioUI {
         return true;
     }
 
-    handleSceneListClick(event) {
+    async handleSceneListClick(event) {
         const action = event.target.closest("[data-scene-action]");
         if (action) {
             const sceneId = action.dataset.sceneId;
@@ -146,7 +146,8 @@ export default class StudioUI {
                 this.sceneForm.form.elements.name.focus();
             }
             else if (action.dataset.sceneAction === "delete") {
-                const result = this.catalog.removeScene(sceneId);
+                let result = this.catalog.removeScene(sceneId);
+                if (result?.then) result = await result;
                 this.setSceneFeedback(result);
             }
             return;
@@ -236,12 +237,13 @@ export default class StudioUI {
         select.replaceChildren(...groups);
     }
 
-    handleSceneCreate(event) {
+    async handleSceneCreate(event) {
         event.preventDefault();
         const data = Object.fromEntries(new FormData(this.sceneForm.form));
-        const result = this.editingSceneId
+        let result = this.editingSceneId
             ? this.catalog.updateScene(this.editingSceneId, data)
             : this.catalog.createSceneForSource(data.sourceId, { name: data.name });
+        if (result?.then) result = await result;
         this.setSceneFeedback(result, this.editingSceneId ? "Scene updated." : "Scene created.");
         if (result.ok) {
             this.editingSceneId = null;
@@ -381,6 +383,9 @@ export default class StudioUI {
 
     setSceneFeedback(result, success = "Scene removed.") {
         const messages = { "scene-in-preview": "Scene is currently in Preview.",
+            ASSET_UNAVAILABLE: 'ASSET NON DISPONIBILE',
+            CATALOG_AUTHORITY_CONFLICT: 'Catalogo diverso dal server. Riconciliare prima di salvare.',
+            'REFERENCE INVENTORY INCOMPLETE': 'Inventario riferimenti non disponibile. Salvataggio bloccato.',
             "scene-in-program": "Scene is currently in Program.",
             "scene-authorized": "Scene is referenced by Scheduler or an active runtime.",
             "scheduler-reference": "Scene is referenced by Scheduler.",

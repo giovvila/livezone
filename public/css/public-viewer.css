@@ -15,6 +15,9 @@ html, body { min-width: 100%; min-height: 100%; margin: 0; overflow-x: hidden; b
 .public-program__base, .public-program__graphics, .public-program__base-layer { position: absolute; inset: 0; }
 .public-program__graphics { z-index: 20; pointer-events: none; }
 .public-program__items, .public-program__overlays { position: absolute; inset: 0; overflow: hidden; }
+.public-program__items { z-index: 1; }
+.public-program__sponsor { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+.public-program__overlays { z-index: 4; }
 .public-program__media { width: 100%; height: 100%; display: block; object-fit: contain; background: #000; }
 .public-program-audio-motion { width: 100%; height: 100%; display: block; object-fit: contain; background: #000; }
 .public-program-audio-still { width: 100%; height: 100%; display: block; object-fit: contain; background: #000; }
@@ -91,3 +94,9 @@ html, body { min-width: 100%; min-height: 100%; margin: 0; overflow-x: hidden; b
     .public-site__fullscreen { width: 100%; }
     .public-site.is-tv-mode .public-site__fullscreen { width: auto; }
 }
+
+/* Reserve the scheduled crawl band without changing manual graphic layout. */
+[data-scheduled-crawl-position="top"] .public-graphic--image.public-graphic--top-left,
+[data-scheduled-crawl-position="top"] .public-graphic--image.public-graphic--top-right { top: 22%; }
+[data-scheduled-crawl-position="bottom"] .public-graphic--bottom-left,
+[data-scheduled-crawl-position="bottom"] .public-graphic--bottom-right { bottom: 22%; }

@@ -56,13 +56,14 @@ export default class StudioAssetsUI {
         this.started = false;
     }
 
-    handleSubmit(event) {
+    async handleSubmit(event) {
         event.preventDefault();
-        const result = this.assetLibrary.addAsset({
+        let result = this.assetLibrary.addAsset({
             name: this.nameInput.value,
             kind: this.kindInput.value,
             url: this.urlInput.value
         });
+        if(result?.then)result=await result;
         if (!result.ok) {
             this.setFeedback(this.messageFor(result.reason), true);
             return;
@@ -72,14 +73,15 @@ export default class StudioAssetsUI {
         this.nameInput.focus();
     }
 
-    handleListClick(event) {
+    async handleListClick(event) {
         const button = event.target.closest("[data-remove-asset-id]");
         if (!button || !this.list.contains(button)) {
             return;
         }
-        const result = this.assetLibrary.removeAsset(
+        let result = this.assetLibrary.removeAsset(
             button.dataset.removeAssetId
         );
+        if(result?.then)result=await result;
         if (!result.ok) {
             this.setFeedback(this.messageFor(result.reason), true);
             return;
