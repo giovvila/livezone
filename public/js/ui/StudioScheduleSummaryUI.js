@@ -49,7 +49,8 @@ export default class StudioScheduleSummaryUI {
         this.render();
     }
 
-    handleToggle() {
+    async handleToggle() {
+        if(this.autoLiveBridge){await this.autoLiveBridge.mutate({enabled:!this.engine.getSnapshot().enabled});this.render();return;}
         if (this.engine.getSnapshot().enabled) this.engine.stop();
         else this.engine.start();
     }

@@ -83,7 +83,7 @@ export default class ControlEventStream {
             const source = this.eventSourceFactory(this.url);
             this.source = source;
             this.handlers = new Map();
-            for (const type of ['open', 'error', 'presence', 'program', 'schedule-state']) {
+            for (const type of ['open', 'error', 'presence', 'program', 'schedule-state', 'autolive-state']) {
                 const handler = event => {
                     if (this.source !== source || this.destroyed) return;
                     if (type === 'error') this.retained.clear();

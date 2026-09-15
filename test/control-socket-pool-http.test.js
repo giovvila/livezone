@@ -95,6 +95,7 @@ for(const name of ['VIDEO','AUDIO','VIDEO + Preview VIDEO'])test(`HTTP/1.1 budge
     assert.equal((await feed.next('presence')).state,'CURRENT_CAPABLE');
     assert.deepEqual((await feed.next('program')).snapshot,snapshot);
     assert.equal((await feed.next('schedule-state')).programPlan.execution,'SUSPENDED');
+    assert.equal((await feed.next('autolive-state')).runtime.executionAuthority,'browser-legacy');
     await h.media(h.agent,name==='AUDIO'?'audio':'video');if(name.includes('Preview'))await h.media();
     const publicResponse=await h.request('/api/program-output/events');
     assert.deepEqual((await events(publicResponse).next('program')).snapshot,snapshot);

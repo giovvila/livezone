@@ -77,7 +77,7 @@ export default class AssetReferenceInventory {
     }
 
     async collect() {
-        const references = [], unavailable = [];
+        const references = [], unavailable = [], scopedUncertainty = [], unresolvedRefs = [];
         let inventories;
         try { inventories = await this.inventories(); } catch { inventories = null; }
         if (!Array.isArray(inventories) || !inventories.length) unavailable.push('Inventario server');
@@ -91,7 +91,13 @@ export default class AssetReferenceInventory {
             }
             const scan = this.extract(inventory.data, { kind: inventory.name,
                 classification: inventory.classification || 'PERSISTED' });
-            if (scan.unavailable.length) unavailable.push(`${inventory.name}: riferimenti non risolti`);
+            if(inventory.referenceScope==='finite'){
+                unresolvedRefs.push(...(inventory.unresolvedRefs||[]).map(ref=>({...ref,authority:inventory.name})));
+                if(scan.unavailable.length||inventory.uncertain){
+                    scopedUncertainty.push(...scan.references.map(ref=>({assetId:ref.assetId,reason:`${inventory.name}: riferimenti non risolti`})));
+                    unresolvedRefs.push(...scan.unavailable.map(location=>({authority:inventory.name,location})));
+                }
+            }else if (scan.unavailable.length) unavailable.push(`${inventory.name}: riferimenti non risolti`);
             references.push(...scan.references);
         }
         if (this.preview) {
@@ -105,17 +111,18 @@ export default class AssetReferenceInventory {
         const reasons=[...new Set(unavailable)];
         const fingerprint=JSON.stringify(reasons);
         if(fingerprint!==this.completenessFingerprint){this.completenessFingerprint=fingerprint;this.diagnostics?.record(complete?'ASSET_INVENTORY_COMPLETE':'ASSET_INVENTORY_INCOMPLETE',{count:reasons.length,complete});}
-        return {complete,references,unavailable:reasons,state:complete?'COMPLETE':'INCOMPLETE'};
+        return {complete,references,scopedUncertainty,unresolvedRefs,unavailable:reasons,state:complete?'COMPLETE':'INCOMPLETE'};
     }
     async globalCompleteness(){const value=await this.collect();return {state:value.state,reasons:value.unavailable};}
     async inspect(asset) {
         const collected=await this.collect();
-        const {complete,unavailable}=collected;
+        const scopedReasons=collected.scopedUncertainty.filter(ref=>ref.assetId===asset.id).map(ref=>ref.reason);
+        const complete=collected.complete&&scopedReasons.length===0,unavailable=[...collected.unavailable,...scopedReasons];
         const references=collected.references.filter(ref=>ref.assetId===asset.id);
         const status = !complete ? 'UNKNOWN' : references.length ? 'USED' : 'UNUSED';
         this.diagnostics?.record('DELETE_ELIGIBILITY',{count:references.length,complete});
         return { assetId: asset.id, complete, eligible: status === 'UNUSED', status,
-            inventoryCompleteness:{state:collected.state,reasons:unavailable},
+            inventoryCompleteness:{state:complete?'COMPLETE':'INCOMPLETE',reasons:unavailable},
             referenceCount: references.length,
             references: references.slice(0, 100).map(({ expectedKind, ...ref }) => ({ ...ref,
                 type: ref.kind, name: ref.ownerLabel })), unavailable: [...new Set(unavailable)] };

@@ -7,6 +7,7 @@ export default class SchedulerRuntimeState {
     }
 
     load() {
+        if(typeof this.serverEnabled==='boolean')return Object.freeze({version:VERSION,enabled:this.serverEnabled});
         try {
             const value = JSON.parse(this.storage?.getItem(
                 SCHEDULER_RUNTIME_STORAGE_KEY

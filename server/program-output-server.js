@@ -20,6 +20,8 @@ import SchedulerServer from "./scheduler/SchedulerServer.js";
 import ScheduleRoutes from "./scheduler/ScheduleRoutes.js";
 import EffectiveProgramOutput from "./program-output/EffectiveProgramOutput.js";
 import ControlEventFeed from "./program-output/ControlEventFeed.js";
+import AutoLiveAuthority from './autolive/AutoLiveAuthority.js';
+import AutoLiveRoutes from './autolive/AutoLiveRoutes.js';
 import AssetReferenceInventory from './media-library/AssetReferenceInventory.js';
 import AssetMutationCoordinator from './media-library/AssetMutationCoordinator.js';
 import PreviewOwnership from './media-library/PreviewOwnership.js';
@@ -55,6 +57,8 @@ export function createProgramOutputServer({
     operatorAuth = OperatorAuth.fromEnvironment(),
     operatorAllowedOrigins = parseOrigins(process.env.LIVEZONE_OPERATOR_ALLOWED_ORIGINS),
     studioStatePath = process.env.LIVEZONE_STUDIO_STATE_PATH || DEFAULT_STUDIO_STATE_PATH,
+    autoLivePath = studioStatePath + '.autolive.json',
+    autoLiveRecoveryPath = studioStatePath + '.autolive-recovery.json',
     assetAuthorityPath = studioStatePath + '.asset-authority',
     authoritativeStateRepository = new AuthoritativeStateRepository({ path: studioStatePath }),
     studioStateCoordinator = new StudioStateCoordinator({ repository: authoritativeStateRepository }),
@@ -67,6 +71,11 @@ export function createProgramOutputServer({
     assertPrivateStudioStatePath(studioStatePath);
     assertPrivateStudioStatePath(assetAuthorityPath + '.clients.json');
     assertPrivateStudioStatePath(schedulePath);
+    assertPrivateStudioStatePath(autoLivePath);
+    assertPrivateStudioStatePath(autoLiveRecoveryPath);
+    if(new Set([studioStatePath,schedulePath,autoLivePath,autoLiveRecoveryPath].map(p=>{
+        const path=resolve(p);return process.platform==='win32'?path.toLowerCase():path;
+    })).size!==4)throw new TypeError('AutoLive state paths must be distinct.');
     if (resolve(schedulePath) === resolve(studioStatePath))
         throw new TypeError("Schedule and Studio state paths must be distinct.");
     if (typeof publisherToken !== "string" || publisherToken.length < 16) {
@@ -95,7 +104,17 @@ export function createProgramOutputServer({
         setTimer: scheduleSetTimer, clearTimer: scheduleClearTimer });
     const scheduleRoutes = new ScheduleRoutes({ owner: scheduler });
     const effectiveOutput = new EffectiveProgramOutput({ store, scheduler, clock: scheduleClock, mediaAssetRepository });
-    const controlEventFeed = new ControlEventFeed({effectiveOutput, scheduler});
+    let bootstrapConfig=null;
+    const autoLiveCatalogReady=Promise.all([studioStateReady,readFile(join(PUBLIC_ROOT,'config/config.json'),'utf8')
+        .then(raw=>{bootstrapConfig=JSON.parse(raw);})]);
+    autoLiveCatalogReady.catch(()=>{});
+    const autoLive = new AutoLiveAuthority({path:autoLivePath,recoveryPath:autoLiveRecoveryPath,
+        catalog:()=>studioStateCoordinator.getSnapshot(),catalogReady:autoLiveCatalogReady,coordinator:assetMutations,
+        resolveConfigRef:ref=>typeof ref==='string'&&/^[a-zA-Z0-9_.]+$/.test(ref)?ref.split('.').reduce((value,key)=>
+            value&&Object.hasOwn(value,key)?value[key]:null,bootstrapConfig):null});
+    const offAutoLiveCatalog=studioStateCoordinator.subscribe(()=>autoLive.refresh());
+    const autoLiveRoutes=new AutoLiveRoutes({authority:autoLive});
+    const controlEventFeed = new ControlEventFeed({effectiveOutput, scheduler, autoLive});
     mediaRoutes.controlEventFeed = controlEventFeed;
     const staticReferences = Promise.all(['studio.json', 'assets.json', 'config.json'].map(async name =>
         ({ name: 'Configurazione ' + name, complete: true, data: JSON.parse(await readFile(join(PUBLIC_ROOT, 'config', name), 'utf8')) })))
@@ -125,6 +144,7 @@ export function createProgramOutputServer({
     const assetReferences=new AssetReferenceInventory({repository:mediaAssetRepository,preview:previewOwnership,diagnostics:assetDiagnostics,
         completeness:()=>referenceClients.snapshot(),inventories:async()=>[
         ...await staticReferences,
+        ...await autoLive.ready.then(()=>autoLive.references()),
         {name:'Channel Logo confirmation pending',complete:channelLogoAuthority.snapshot().complete,data:channelLogoAuthority.snapshot().references},
         {name:'Catalogo asset legacy',complete:true,data:referenceClients.legacyReferences()},
         {name:'Evento palinsesto',complete:!!scheduler.store.getSnapshot(),data:scheduler.store.getSnapshot()},
@@ -143,6 +163,22 @@ export function createProgramOutputServer({
     scheduler.store.mutationCoordinator=assetMutations;
     scheduler.store.referenceValidator=async value=>{await mediaReady;assetReferences.validate(value);};
     studioStateCoordinator.referenceValidator=async value=>{await mediaReady;assetReferences.validate(value);};
+    autoLive.recovery.validateReferences=async state=>{
+        if(!state.record)return;
+        await Promise.all([mediaReady,autoLiveCatalogReady]);
+        const record=state.record;
+        const source=studioStateCoordinator.getSnapshot()?.sources.find(source=>source.id===record.sourceId);
+        const scene=studioStateCoordinator.getSnapshot()?.scenes.find(scene=>scene.id===record.sceneId);
+        if(record.sourceId!==null&&record.sourceKind!=='break'&&(!source||source.kind!==record.sourceKind))throw Object.assign(new Error('SOURCE_UNRESOLVED'),{code:'SOURCE_UNRESOLVED'});
+        if(record.sourceKind==='break'&&!scene)throw Object.assign(new Error('SOURCE_UNRESOLVED'),{code:'SOURCE_UNRESOLVED'});
+        const expected=record.expectedCurrentActivation;
+        const candidate=studioStateCoordinator.getSnapshot()?.sources.find(source=>source.id===expected?.sourceId);
+        const candidateScene=studioStateCoordinator.getSnapshot()?.scenes.find(scene=>scene.id===expected?.sceneId);
+        if(expected?.sourceId&&!candidate&&candidateScene?.renderer?.kind!=='slate')throw Object.assign(new Error('SOURCE_UNRESOLVED'),{code:'SOURCE_UNRESOLVED'});
+        const required=assetReferences.validate({source,scene,candidate,candidateScene});
+        if(required.some(ref=>!record.assets.some(a=>a.assetId===ref.assetId)))throw Object.assign(new Error('RECOVERY_ASSETS_REQUIRED'),{code:'RECOVERY_ASSETS_REQUIRED'});
+        assetReferences.validate({source,scene,candidate,candidateScene,assets:record.assets.map(a=>({assetId:a.assetId,kind:a.kind==='video'?'media':a.kind}))});
+    };
     void mediaReady.then(()=>effectiveOutput.reconcile(),()=>{});
     const runtimeReadiness = readiness || new RuntimeReadiness({ mediaReady,
         mediaAssetRepository, mediaIngestStatusClient });
@@ -224,6 +260,12 @@ export function createProgramOutputServer({
                 await identifyReferenceRequest(request,authorized);
                 if (await studioStateRoutes.handle(request, response, url)) return;
             }
+            if (url.pathname === '/api/studio/autolive' || url.pathname.startsWith('/api/studio/autolive/')) {
+                const authorized=['POST','PUT','PATCH','DELETE'].includes(request.method)
+                    ? operatorGuard.authorizeMutation(request,response) : operatorGuard.authorize(request,response);
+                if(!authorized)return;
+                await autoLiveRoutes.handle(request,response,url);return;
+            }
             if (url.pathname === "/api/studio/schedule" || url.pathname.startsWith("/api/studio/schedule/")) {
                 const authorized = ["POST", "PUT", "PATCH", "DELETE"].includes(request.method)
                     ? operatorGuard.authorizeMutation(request, response)
@@ -275,19 +317,21 @@ export function createProgramOutputServer({
         controlEventFeed.close();
         scheduleRoutes.close();
         effectiveOutput.close();
-        const drained = scheduler.close();
+        offAutoLiveCatalog();
+        const drained = Promise.all([scheduler.close(),autoLive.close()]);
         const callback = args[0];
         return close(error => { void drained.then(() => callback?.(error)); });
     };
     server.on("close", () => {
         scheduleRoutes.close();
         void scheduler.close();
+        offAutoLiveCatalog();void autoLive.close();
         unsubscribe();
         studioStateRoutes.close();
         clients.forEach((response) => response.end());
         clients.clear();
     });
-    return { server, store, clients, studioStateCoordinator, scheduler, effectiveOutput,
+    return { server, store, clients, studioStateCoordinator, scheduler, effectiveOutput, autoLive,
         assetReferences, assetMutations, previewOwnership,referenceClients,assetDiagnostics };
 }
 

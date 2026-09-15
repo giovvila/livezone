@@ -10,8 +10,9 @@ export default class DominantLiveUI {
         this.unsubscribe = this.controller.subscribe((snapshot) => this.render(snapshot)); return true; }
     destroy() { if (!this.started) return; this.toggle.removeEventListener("change", this.handleChange);
         this.unsubscribe?.(); this.started = false; }
-    handleChange() {
-        this.config.setArmed(this.toggle.checked);
+    async handleChange() {
+        const pending=this.config.setArmed(this.toggle.checked);
+        if(pending?.then)await pending;
         // A native checkbox changes before persistence; restore the confirmed
         // model even when no config notification was emitted by a failed write.
         this.render(this.controller.getSnapshot());

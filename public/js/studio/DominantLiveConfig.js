@@ -27,6 +27,7 @@ export default class DominantLiveConfig {
         return this.mutate({ authorizedSourceId: this.normalizeId(sourceId) }, sourceKind);
     }
     mutate(patch, sourceKind = null) {
+        if(this.authorityMutation)return this.authorityMutation(patch);
         // Storage owns both fields. Another document may have saved before its
         // storage event reaches this instance; never merge with a stale snapshot.
         const latest = this.load();
@@ -85,7 +86,7 @@ export default class DominantLiveConfig {
         if (parsed.authorizedSourceId !== null && !id) return this.safeDefault();
         return Object.freeze({ armed: parsed.armed, authorizedSourceId: id });
     } catch { return this.safeDefault(); } }
-    handleStorage(event) { if (event?.key !== STORAGE_KEY) return;
+    handleStorage(event) { if (this.authorityMutation || event?.key !== STORAGE_KEY) return;
         let parsed; try { parsed = JSON.parse(event.newValue || "null"); } catch { parsed = null; }
         if (!parsed || parsed.version !== VERSION || typeof parsed.armed !== "boolean") {
             this.update(this.safeDefault(), { persist: false }); return;

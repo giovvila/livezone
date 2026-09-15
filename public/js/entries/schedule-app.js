@@ -17,6 +17,8 @@ import ScheduleWorkspaceUI from "../ui/ScheduleWorkspaceUI.js";
 import StudioAssetsUI from "../ui/StudioAssetsUI.js";
 import StudioLiveSourcesUI from "../ui/StudioLiveSourcesUI.js";
 import DominantLiveConfig from "../studio/DominantLiveConfig.js";
+import AutoLiveAuthorityClient from '../studio/AutoLiveAuthorityClient.js';
+import AutoLiveLegacyBridge from '../studio/AutoLiveLegacyBridge.js';
 import SchedulerRuntimeState from "../scheduler/SchedulerRuntimeState.js";
 import initializeScheduleSources from "../scheduler/InitializeScheduleSources.js";
 import { requireOperatorSession } from "../auth/OperatorSessionClient.js";
@@ -73,6 +75,10 @@ void scheduleStore.start();
 globalThis.addEventListener("pagehide", () => scheduleStore.destroy(), { once: true });
 const dominantLiveConfig = new DominantLiveConfig();
 const schedulerRuntimeState = new SchedulerRuntimeState();
+const autoLiveBridge=new AutoLiveLegacyBridge({client:new AutoLiveAuthorityClient(),config:dominantLiveConfig,
+    runtimeState:schedulerRuntimeState,root:workspace});
+await autoLiveBridge.start();
+globalThis.addEventListener('pagehide',()=>autoLiveBridge.destroy(),{once:true});
 document.body.dataset.schedulerEnabled = String(schedulerRuntimeState.load().enabled);
 const scheduleUI = new ScheduleWorkspaceUI({
     root: workspace,

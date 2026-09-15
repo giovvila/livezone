@@ -57,6 +57,8 @@ import DominantLiveConfig from "../studio/DominantLiveConfig.js";
 import AutoLiveEntryController from "../studio/AutoLiveEntryController.js";
 import DominantLiveUI from "../ui/DominantLiveUI.js";
 import SourcePresenceMonitor from "../studio/SourcePresenceMonitor.js";
+import AutoLiveAuthorityClient from '../studio/AutoLiveAuthorityClient.js';
+import AutoLiveLegacyBridge from '../studio/AutoLiveLegacyBridge.js';
 import { createLiveHlsConsumerFactory } from "../studio/LiveHlsHealthConsumer.js";
 import MediaLibraryClient from "../media-library/MediaLibraryClient.js";
 import MediaLibraryManager from "../media-library/MediaLibraryManager.js";
@@ -120,6 +122,7 @@ let scheduleStore = null;
 let programRemainingTimeUI = null;
 let technicalLiveMonitorUI = null;
 let dominantLiveController = null;
+let autoLiveBridge = null;
 let autoLiveLossPresentation = null;
 let dominantLiveUI = null;
 let mediaLibraryUI = null;
@@ -162,6 +165,7 @@ const traceControlVisibility = () => traceControlProgram(document.visibilityStat
 document.addEventListener?.("visibilitychange", traceControlVisibility);
 
 function destroyControlRoom() {
+    autoLiveBridge?.destroy();
     previewOwnershipClient?.stop();
     unsubscribePreviewOwnership?.();
     controlCrawlObserver?.destroy();
@@ -342,14 +346,21 @@ runtime.start({
             transitionCoordinator: studioTransitionCoordinator,
             targetResolver: scheduleTargetResolver
         });
+        const schedulerRuntimeState=new SchedulerRuntimeState();
+        autoLiveBridge=new AutoLiveLegacyBridge({config:dominantLiveConfig,runtimeState:schedulerRuntimeState,
+            client:new AutoLiveAuthorityClient({streamFactory:()=>controlEvents.eventSource('/api/studio/schedule/events')}),
+            root:document.getElementById('dominant-live-control')});
+        await autoLiveBridge.start();
+        if(autoLiveBridge.destroyed)return;
         schedulerEngine = new SchedulerEngine({
             command: studioProgramCommand,
             catalog: studioCatalogManager,
             programTransportProvider: () => studioRenderer.getProgramTransport(),
-            runtimeState: new SchedulerRuntimeState(),
+            runtimeState: schedulerRuntimeState,
             programExecution: false
         });
         const scheduleClock = new ScheduleClock();
+        autoLiveBridge.attachEngine(schedulerEngine);
         studioScheduleUI = new StudioScheduleSummaryUI({
             root: document,
             engine: schedulerEngine,
@@ -357,6 +368,7 @@ runtime.start({
             catalog: studioCatalogManager,
             clockTicker: scheduleClock
         });
+        studioScheduleUI.autoLiveBridge=autoLiveBridge;
         studioScheduleUI.start();
         schedulerEngine.restoreEnabledState();
         scheduleWorkspaceUI = new ScheduleWorkspaceUI({

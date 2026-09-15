@@ -58,9 +58,10 @@ export default class StudioLiveSourcesUI {
         if (button.dataset.action === "authorize") {
             if (source.enabled === false) return;
             const authorized = this.dominantLiveConfig?.getSnapshot?.().authorizedSourceId;
-            this.dominantLiveConfig?.setAuthorizedSourceId(
+            const pending=this.dominantLiveConfig?.setAuthorizedSourceId(
                 authorized === source.id ? null : source.id, { sourceKind: source.kind }
             );
+            if(pending?.then)await pending;
             if (!this.dominantLiveConfig || this.dominantLiveConfig.lastWrite?.ok === false) {
                 return this.show("Autorizzazione AUTO INTERRUPT non salvata. Riprova il salvataggio.", true);
             }
@@ -86,7 +87,9 @@ export default class StudioLiveSourcesUI {
             if (result?.then) result = await result;
             if (result.ok && !result.source.enabled &&
                 this.dominantLiveConfig?.getSnapshot?.().authorizedSourceId === source.id) {
-                this.dominantLiveConfig.setAuthorizedSourceId(null);
+                const pending=this.dominantLiveConfig.setAuthorizedSourceId(null);
+                if(pending?.then)await pending;
+                if(this.dominantLiveConfig.lastWrite?.ok===false)return this.show("Sorgente disabilitata; revoca AutoLive non salvata sul server.",true);
             }
             return result.ok
                 ? this.show(`Sorgente LIVE ${result.source.enabled ? "abilitata" : "disabilitata"}.`, false)
@@ -103,7 +106,9 @@ export default class StudioLiveSourcesUI {
         if (result?.then) result = await result;
         if (!result.ok) return this.show(`Rimozione rifiutata: ${result.reason}.`, true);
         if (this.dominantLiveConfig?.getSnapshot?.().authorizedSourceId === source.id) {
-            this.dominantLiveConfig.setAuthorizedSourceId(null);
+            const pending=this.dominantLiveConfig.setAuthorizedSourceId(null);
+            if(pending?.then)await pending;
+            if(this.dominantLiveConfig.lastWrite?.ok===false)return this.show("Sorgente rimossa; revoca AutoLive non salvata sul server.",true);
         }
         this.reset();
         this.show("Sorgente LIVE rimossa.", false);
