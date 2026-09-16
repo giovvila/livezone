@@ -29,6 +29,18 @@ export default class StudioReferenceAuthority {
         const scenes = [...catalog.definitions.values()].map(({id,name,type,renderer}) => ({id,name,type,renderer:{...renderer}}));
         return { sources, scenes };
     }
+    reconcileRuntimeScenes() {
+        const state = this.catalog.studioStateManager;
+        if (!state?.getScene || !state?.registerScene) return true;
+        for (const scene of this.catalog.definitions.values()) {
+            const source = scene.renderer?.kind === 'source' ? this.catalog.sources.get(scene.renderer.sourceId) : null;
+            // Disabled LIVE definitions intentionally remain persisted but absent from the runtime scene registry.
+            if (source?.kind === 'hls' && source.enabled === false) continue;
+            if (state.getScene(scene.id)) continue;
+            if (!state.registerScene(scene)) return false;
+        }
+        return true;
+    }
     async initialize() {
         try {
             const { state } = await this.request('/api/studio/state');
@@ -36,6 +48,7 @@ export default class StudioReferenceAuthority {
             const projection = this.projection();
             const result=await this.request('/api/studio/state/catalog/reconcile',{method:'POST',body:JSON.stringify({...projection,revision:state.revision,version:1})});
             const committed=result.state;
+            if(!this.reconcileRuntimeScenes()){this.issue='CATALOG_RUNTIME_RECONCILIATION_REQUIRED';await this.client?.reportInvalid();return false;}
             this.serverSnapshot=committed;this.localSnapshot=projection;
             this.revision = committed.revision;
             this.ready = true;
