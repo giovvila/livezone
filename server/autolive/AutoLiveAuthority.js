@@ -2,6 +2,7 @@ import {randomUUID} from 'node:crypto';
 import {resolve} from 'node:path';
 import AutoLiveStore from './AutoLiveStore.js';
 import AutoLiveRecoveryStore from './AutoLiveRecoveryStore.js';
+import AutoLiveDecisionShadow from './AutoLiveDecisionShadow.js';
 import {POLICY,runtimeSnapshot,error,freeze} from './AutoLiveContract.js';
 import {resolveHealthSource,freshObservation} from './AutoLiveHealthContract.js';
 
@@ -13,7 +14,8 @@ export default class AutoLiveAuthority {
         Object.assign(this,{healthRegistry,managedConfig});
         this.keys=[path,recoveryPath].map(p=>process.platform==='win32'?resolve(p).toLowerCase():resolve(p));
         this.owned=new Set(this.keys).size===2&&this.keys.every(key=>!owners.has(key));if(this.owned)this.keys.forEach(key=>owners.add(key));
-        this.sessionId=randomUUID();this.generation=0;this.listeners=new Set();
+        this.sessionId=randomUUID();this.generation=0;this.listeners=new Set();this.browserStage=null;
+        this.decisionShadow=new AutoLiveDecisionShadow({clock});
         this.store=new AutoLiveStore({path,clock,coordinator,fileOperations});
         this.recovery=new AutoLiveRecoveryStore({path:recoveryPath,coordinator,fileOperations});
         this.store.validateReferences=async state=>{await this.catalogReady;if(state.sourceId!==null&&!this.source(state.sourceId))throw error('SOURCE_UNRESOLVED');};
@@ -51,24 +53,35 @@ export default class AutoLiveAuthority {
         return {healthMode:'shadow',resolvedSourceFingerprint:this.healthSource?.fingerprint??null,
             healthAuthority:health?.authority??null,healthState:health?.state??'UNKNOWN',healthSequence:health?.sequence??null,
             healthCheckedAt:health?.observedAt??null,healthValidUntil:health?.validUntil??null,lastHealthReason:health?.reason??'NO_ACTIVE_DEMAND',
-            healthObservation:health??null,shadowEntryHealthyMs:null,shadowLoss:null};
+            healthObservation:health??null};
+    }
+    decisionRuntime(config,health){
+        const decision=this.decisionShadow.update({enabled:Boolean(config?.enabled),armed:Boolean(config?.armed),sourceId:config?.sourceId??null,
+            sourceFingerprint:this.healthSource?.fingerprint??null,health:health.healthObservation??null,browserStage:this.browserStage});
+        return {decisionMode:'shadow',shadowDecisionState:decision.state,shadowEntryHealthyMs:decision.entryHealthyMs,
+            shadowEntryEligible:decision.entryEligible,shadowLossMs:decision.lossMs,shadowLossEligible:decision.lossEligible,
+            shadowLiveObserved:decision.liveObserved,shadowExecutionAllowed:decision.executionAllowed,shadowServerTake:decision.serverTake};
     }
     refresh(){
         if(this.closed)return;
         const config=this.store.getSnapshot();this.syncHealth(config);
         const sourceValid=Boolean(config?.sourceId&&this.source(config.sourceId));
-        const key=JSON.stringify([this.available(),config,this.recovery.status,this.recovery.getSnapshot(),sourceValid,this.healthRuntime()]);
+        const health=this.healthRuntime(),decision=this.decisionRuntime(config,health);
+        const key=JSON.stringify([this.available(),config,this.recovery.status,this.recovery.getSnapshot(),sourceValid,health,decision]);
         if(key===this.fingerprint)return;this.fingerprint=key;
         this.runtime=freeze({...runtimeSnapshot({config,sourceValid,available:this.available(),recoveryAvailable:this.recovery.status==='READY',
-            sessionId:this.sessionId,generation:++this.generation,now:new Date(this.clock()).toISOString()}),...this.healthRuntime()});
+            sessionId:this.sessionId,generation:++this.generation,now:new Date(this.clock()).toISOString()}),...health,...decision});
         for(const fn of this.listeners)try{fn(this.current());}catch{}
     }
     current(){
         const config=this.store.getSnapshot(),recovery=this.recovery.getSnapshot();
-        return freeze({version:1,config,runtime:this.runtime?{...this.runtime,...this.healthRuntime()}:this.runtime,policy:POLICY,
+        return freeze({version:1,config,runtime:this.runtime,policy:POLICY,
             migration:{pristine:this.available()&&config?.revision===0,completed:config?.migration!==null&&Boolean(config),version:config?.migration?.version??null},
             recovery:{status:this.recovery.status,revision:recovery?.revision??null,present:Boolean(recovery?.record),
                 stage:recovery?.record?.stage??null,capability:'storage-only',referenceScope:this.recovery.referenceScope().classification},serverTime:new Date(this.clock()).toISOString()});
+    }
+    observeBrowserStage(stage){
+        const next=stage==='LIVE'?'LIVE':null;if(next===this.browserStage)return false;this.browserStage=next;this.refresh();return true;
     }
     async mutate(value,revision,{migration=false}={}){
         await this.ready;if(!this.available())throw error('STORE_UNAVAILABLE');
