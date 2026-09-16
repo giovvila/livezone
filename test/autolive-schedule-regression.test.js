@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import DominantLiveConfig from '../public/js/studio/DominantLiveConfig.js';
 import StudioLiveSourcesUI from '../public/js/ui/StudioLiveSourcesUI.js';
+import StudioCatalogManager from '../public/js/studio/StudioCatalogManager.js';
 
 const source={id:'live-a',name:'LIVE A',kind:'hls',url:'https://example.test/live.m3u8',enabled:true,origin:'operator',sceneIds:['live-scene-a']};
 const storage=()=>{const values=new Map();return {getItem:k=>values.get(k)||null,setItem:(k,v)=>values.set(k,v)};};
@@ -43,4 +44,26 @@ test('A3 scheduled LIVE remains protected before any AutoLive or catalog mutatio
  const schedule={subscribe:fn=>{fn({schedule:{items:[{sceneId:'live-scene-a'}]}});return()=>{};}};
  const ui=new StudioLiveSourcesUI(null,catalog,schedule,config);ui.show=()=>false;
  await ui.handleClick(click('remove'));assert.deepEqual(calls,[]);
+});
+
+test('A3 disabled LIVE scene may be removed when intentionally absent from runtime registry',()=>{
+ const scenes=new Map(),sources=new Map();
+ const disabled={id:'live-a',name:'LIVE A',kind:'hls',url:'https://example.test/live.m3u8',enabled:false,origin:'operator'};
+ const definition={id:'live-scene-a',name:'LIVE A',type:'LIVE',renderer:{kind:'source',sourceId:'live-a'},origin:'operator'};
+ sources.set(disabled.id,disabled);
+ const catalog=new StudioCatalogManager({storage:storage(),eventTarget:null,baseUrl:'https://example.test/',uuidFactory:()=>null,
+  studioStateManager:{registerScene:s=>(scenes.set(s.id,s),s),unregisterScene:id=>{const s=scenes.get(id);if(!s)return null;scenes.delete(id);return s;},getScene:id=>scenes.get(id)||null,getPreviewSceneId:()=>null,getProgramSceneId:()=>null,replaceScene:()=>null},
+  studioSourceManager:{registerSource:s=>(sources.set(s.id,s),s),unregisterSource:id=>{const s=sources.get(id);if(!s)return null;sources.delete(id);return s;},replaceSource:s=>(sources.set(s.id,s),s),getSource:id=>sources.get(id)||null,getActiveInstances:()=>[]}});
+ catalog.initialized=true;catalog.sources.set(disabled.id,disabled);catalog.definitions.set(definition.id,definition);catalog.operatorSourceIds.add(disabled.id);catalog.operatorSceneIds.add(definition.id);
+ assert.equal(catalog.removeScene(definition.id).ok,true);assert.equal(catalog.definitions.has(definition.id),false);assert.equal(scenes.size,0);
+});
+
+test('A3 enabled LIVE scene still fails closed when unexpectedly absent from runtime registry',()=>{
+ const sources=new Map();const enabled={id:'live-a',name:'LIVE A',kind:'hls',url:'https://example.test/live.m3u8',enabled:true,origin:'operator'};
+ const definition={id:'live-scene-a',name:'LIVE A',type:'LIVE',renderer:{kind:'source',sourceId:'live-a'},origin:'operator'};sources.set(enabled.id,enabled);
+ const catalog=new StudioCatalogManager({storage:storage(),eventTarget:null,baseUrl:'https://example.test/',uuidFactory:()=>null,
+  studioStateManager:{registerScene:()=>null,unregisterScene:()=>null,getScene:()=>null,getPreviewSceneId:()=>null,getProgramSceneId:()=>null,replaceScene:()=>null},
+  studioSourceManager:{registerSource:s=>(sources.set(s.id,s),s),unregisterSource:id=>sources.get(id)||null,replaceSource:s=>(sources.set(s.id,s),s),getSource:id=>sources.get(id)||null,getActiveInstances:()=>[]}});
+ catalog.initialized=true;catalog.sources.set(enabled.id,enabled);catalog.definitions.set(definition.id,definition);catalog.operatorSourceIds.add(enabled.id);catalog.operatorSceneIds.add(definition.id);
+ assert.deepEqual(catalog.removeScene(definition.id),{ok:false,reason:'scene-unregister-rejected'});assert.equal(catalog.definitions.has(definition.id),true);
 });
