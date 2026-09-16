@@ -55,6 +55,43 @@ export default class StudioReferenceAuthority {
             return true;
         } catch(error) { this.issue = error.code==='CATALOG_AUTHORITY_CONFLICT'?'CATALOG_AUTHORITY_CONFLICT':'REFERENCE INVENTORY INCOMPLETE';await this.client?.reportInvalid().catch(()=>{});return false; }
     }
+    createDraftManager(manager, mutations) {
+        // The draft must never mutate the live runtime registry. A proxy that merely
+        // replaced mutation methods was insufficient because read methods remained
+        // bound to the live manager: staged removeScene() therefore observed the live
+        // scene and its fake unregister succeeded, but later compound draft operations
+        // could still reason from runtime state that did not reflect earlier staged
+        // mutations. Keep a tiny isolated scene/source identity model for the methods
+        // catalog mutations use while all other reads remain delegated.
+        const sceneMap = manager?.getScenes ? new Map(manager.getScenes().map(scene => [scene.id, scene])) : null;
+        const sourceMap = manager?.getSources ? new Map(manager.getSources().map(source => [source.id, source])) : null;
+        return new Proxy(manager, { get(target, key) {
+            if (key === 'getScene' && sceneMap) return id => sceneMap.get(id) || null;
+            if (key === 'getScenes' && sceneMap) return () => [...sceneMap.values()];
+            if (key === 'registerScene' && sceneMap) return scene => {
+                if (!scene || sceneMap.has(scene.id)) return null; sceneMap.set(scene.id, scene); return scene;
+            };
+            if (key === 'replaceScene' && sceneMap) return scene => {
+                if (!scene || !sceneMap.has(scene.id)) return null; sceneMap.set(scene.id, scene); return scene;
+            };
+            if (key === 'unregisterScene' && sceneMap) return id => {
+                const scene=sceneMap.get(id); if(!scene)return null; sceneMap.delete(id); return scene;
+            };
+            if (key === 'getSource' && sourceMap) return id => sourceMap.get(id) || null;
+            if (key === 'getSources' && sourceMap) return () => [...sourceMap.values()];
+            if (key === 'registerSource' && sourceMap) return source => {
+                if (!source || sourceMap.has(source.id)) return null; sourceMap.set(source.id, source); return source;
+            };
+            if (key === 'replaceSource' && sourceMap) return source => {
+                if (!source || !sourceMap.has(source.id)) return null; sourceMap.set(source.id, source); return source;
+            };
+            if (key === 'unregisterSource' && sourceMap) return id => {
+                const source=sourceMap.get(id); if(!source)return null; sourceMap.delete(id); return source;
+            };
+            if (mutations.includes(key)) return () => true;
+            const value = target[key]; return typeof value === 'function' ? value.bind(target) : value;
+        } });
+    }
     execute(method, args) {
         const input = structuredClone(args);
         const operation = async () => {
@@ -68,12 +105,10 @@ export default class StudioReferenceAuthority {
             draft.referenceAuthority = null;
             draft.listeners = new Set();
             draft.persistOverlay = draft.writeOverlay = () => true;
-            const shadow = (manager, mutations) => new Proxy(manager, { get(target, key) {
-                if (mutations.includes(key)) return () => true;
-                const value = target[key]; return typeof value === 'function' ? value.bind(target) : value;
-            } });
-            draft.studioSourceManager = shadow(original.studioSourceManager, ['registerSource','replaceSource','unregisterSource']);
-            draft.studioStateManager = shadow(original.studioStateManager, ['registerScene','replaceScene','unregisterScene']);
+            draft.studioSourceManager = this.createDraftManager(original.studioSourceManager,
+                ['registerSource','replaceSource','unregisterSource']);
+            draft.studioStateManager = this.createDraftManager(original.studioStateManager,
+                ['registerScene','replaceScene','unregisterScene']);
             const ids = [];
             draft.uuidFactory = () => { const id = original.uuidFactory(); ids.push(id); return id; };
             let staged, committed;
