@@ -1,3 +1,4 @@
+import compareHealth from './AutoLiveShadowComparison.js';
 // Only accepted server configuration is mirrored. ENTRY/TAKE/return stay legacy.
 export default class AutoLiveLegacyBridge {
     constructor({client,config,runtimeState,root=null,lifecycle=globalThis}){
@@ -15,6 +16,7 @@ export default class AutoLiveLegacyBridge {
             this.indicator=document.createElement('div');this.indicator.setAttribute('role','status');
             this.button=document.createElement('button');this.button.type='button';this.button.textContent='IMPORTA CONFIG AUTOLIVE';
             this.button.addEventListener('click',()=>void this.migrate());this.root.append(this.indicator,this.button);
+            this.healthIndicator=document.createElement('div');this.healthIndicator.setAttribute('role','status');this.root.append(this.healthIndicator);
         }
         const ok=await this.client.start();
         if(this.destroyed)return false;
@@ -22,6 +24,14 @@ export default class AutoLiveLegacyBridge {
         this.render();return ok;
     }
     attachEngine(engine){if(this.destroyed)return;this.engine=engine;this.apply(this.client.state);}
+    setShadowProvider(provider){this.shadowProvider=provider;this.compare();}
+    compare(){
+        const sequence=this.comparisonSequence=(this.comparisonSequence||0)+1;
+        let browser;try{browser=this.shadowProvider?.();}catch{return;}
+        void compareHealth(this.client.state.snapshot?.runtime?.healthObservation,browser).then(value=>{
+            if(this.destroyed||sequence!==this.comparisonSequence)return;this.shadowComparison=value;this.render();
+        });
+    }
     apply(state){
         if(this.destroyed)return;
         const snapshot=state.snapshot;
@@ -35,7 +45,7 @@ export default class AutoLiveLegacyBridge {
                 this.config.update({armed:config.armed,authorizedSourceId:config.sourceId},{persist:false});
             if(config.enabled)this.engine?.start({persist:false});
         }
-        this.render();
+        this.compare();this.render();
     }
     async mutate(patch){
         if(this.client.state.snapshot?.migration.pristine){this.feedback='IMPORTAZIONE AUTOLIVE RICHIESTA';
@@ -50,9 +60,15 @@ export default class AutoLiveLegacyBridge {
     render(){if(!this.indicator)return;const state=this.client.state;
         this.indicator.textContent=this.feedback || (state.connection!=='online'?'AUTOLIVE SERVER NON DISPONIBILE':
             state.snapshot?.migration.pristine?'CONFIG LEGACY — IMPORTAZIONE ESPLICITA':'CONFIG SERVER · ESECUZIONE CONTROL');
-        this.button.hidden=!state.snapshot?.migration.pristine;this.button.disabled=state.connection!=='online';}
+        this.button.hidden=!state.snapshot?.migration.pristine;this.button.disabled=state.connection!=='online';
+        const health=state.snapshot?.runtime?.healthObservation;
+        if(this.healthIndicator)this.healthIndicator.textContent=health
+            ?`SHADOW HEALTH · ${health.authority} · ${health.state} · LAST CHECK ${new Date(health.observedAt).toISOString()} · ${health.freshness} · ${health.reason} · CAPABILITIES presence=${health.capabilities.presenceEvidence}, playlist=${health.capabilities.playlistProgressEvidence}, segment=${health.capabilities.segmentReachabilityEvidence}, decoder=false`
+            :'SHADOW HEALTH · UNKNOWN · NO ACTIVE DEMAND';
+        if(this.healthIndicator&&this.shadowComparison){const comparison=this.shadowComparison;
+            this.healthIndicator.textContent+=` · COMPARE source=${comparison.sameSource}, endpoint=${comparison.endpointMatch}, state=${comparison.stateAgreement}, deltaMs=${comparison.timestampDeltaMs} · DECODER EQUIVALENCE NOT PROVEN`;}}
     destroy(){this.destroyed=true;this.unsubscribe?.();this.lifecycle.removeEventListener?.('focus',this.refresh);this.client.destroy();
-        this.indicator?.remove();this.button?.remove();
+        this.indicator?.remove();this.button?.remove();this.healthIndicator?.remove();
         // Keep the write barrier: a retired document must never fall back to local writes.
         this.config.authorityMutation=async()=>({ok:false,code:'AUTOLIVE_UNAVAILABLE'});}
 }

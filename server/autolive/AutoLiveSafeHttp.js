@@ -1,0 +1,76 @@
+import http from 'node:http';
+import https from 'node:https';
+import {Resolver} from 'node:dns/promises';
+import {isIP,BlockList} from 'node:net';
+import {error} from './AutoLiveContract.js';
+import {endpointIdentity} from './AutoLiveHealthContract.js';
+
+const blocked=new BlockList();
+for(const [ip,bits] of [['0.0.0.0',8],['10.0.0.0',8],['100.64.0.0',10],['127.0.0.0',8],['169.254.0.0',16],['172.16.0.0',12],
+    ['192.0.0.0',24],['192.0.2.0',24],['192.168.0.0',16],['192.88.99.0',24],['198.18.0.0',15],['198.51.100.0',24],['203.0.113.0',24],['224.0.0.0',3]])blocked.addSubnet(ip,bits,'ipv4');
+const publicV6=new BlockList();publicV6.addSubnet('2000::',3,'ipv6');
+for(const [ip,bits] of [['2001::',23],['2001:db8::',32],['2002::',16],['3fff::',20]])blocked.addSubnet(ip,bits,'ipv6');
+export function publicAddress(address){
+    const family=isIP(address);return family===4?!blocked.check(address,'ipv4'):family===6&&publicV6.check(address,'ipv6')&&!blocked.check(address,'ipv6');
+}
+export function externalUrl(value){
+    let url;try{url=new URL(endpointIdentity(value));}catch{throw error('URL_FORBIDDEN');}
+    if(url.port&&!['80','443'].includes(url.port)||/^(localhost|.*\.(localhost|local|example|test|invalid))\.?$/i.test(url.hostname))throw error('URL_FORBIDDEN');
+    return url;
+}
+export function abortable(promise,signal){
+    if(signal.aborted)return Promise.reject(error('ABORTED'));
+    return new Promise((resolve,reject)=>{const abort=()=>reject(error('ABORTED'));signal.addEventListener('abort',abort,{once:true});
+        Promise.resolve(promise).then(resolve,reject).finally(()=>signal.removeEventListener('abort',abort));});
+}
+async function resolveAddresses(host,signal){
+    const resolver=new Resolver({timeout:2000,tries:1}),cancel=()=>resolver.cancel();
+    if(signal.aborted)throw error('ABORTED');signal.addEventListener('abort',cancel,{once:true});
+    try{
+        const results=await Promise.allSettled([resolver.resolve4(host),resolver.resolve6(host)]);
+        return results.flatMap((result,index)=>result.status==='fulfilled'?result.value.map(address=>({address,family:index===0?4:6})):[]);
+    }finally{signal.removeEventListener('abort',cancel);resolver.cancel();}
+}
+// No ambient proxy/cookie/credential state. Validate DNS, then pin the exact lookup
+// used by the socket. TLS still verifies the original host. Redirects repeat policy.
+export default class AutoLiveSafeHttp {
+    constructor({resolve=resolveAddresses,allowAddress=publicAddress,parseUrl=externalUrl,timeoutMs=2500}={}){
+        Object.assign(this,{resolve,allowAddress,parseUrl,timeoutMs});
+    }
+    async read(value,{signal,segment=false}={}){
+        const controller=new AbortController(),abort=()=>controller.abort();signal?.addEventListener('abort',abort,{once:true});
+        if(signal?.aborted)controller.abort();const timer=setTimeout(abort,this.timeoutMs);
+        try{
+            let url=this.parseUrl(value);
+            for(let redirects=0;redirects<=3;redirects++){
+                const host=url.hostname.replace(/^\[|\]$/g,'');
+                const addresses=isIP(host)?[{address:host,family:isIP(host)}]:await abortable(this.resolve(host,controller.signal),controller.signal);
+                if(!addresses.length||addresses.length>32||addresses.some(a=>!this.allowAddress(a.address)))throw error('ADDRESS_FORBIDDEN');
+                const result=await this.request(url,addresses[0],controller.signal,segment);
+                if(result.location){if(redirects===3)throw error('REDIRECT_LIMIT');url=this.parseUrl(new URL(result.location,url).href);continue;}
+                return {...result,url:url.href};
+            }
+        }finally{clearTimeout(timer);signal?.removeEventListener('abort',abort);controller.abort();}
+    }
+    request(url,address,signal,segment){
+        return new Promise((resolve,reject)=>{
+            const request=(url.protocol==='https:'?https:http).request(url,{agent:false,signal,maxHeaderSize:16384,
+                lookup:(host,options,callback)=>options.all?callback(null,[address]):callback(null,address.address,address.family),
+                headers:{Accept:segment?'*/*':'application/vnd.apple.mpegurl','Accept-Encoding':'identity',...(segment?{Range:'bytes=0-0'}:{})}},response=>{
+                const status=response.statusCode;
+                if([301,302,303,307,308].includes(status)){const location=response.headers.location;response.destroy();return location?resolve({location}):reject(error('REDIRECT_INVALID'));}
+                if(status<200||status>=300){response.destroy();return reject(error('HTTP_ERROR'));}
+                if(response.headers['content-encoding']&&response.headers['content-encoding']!=='identity'){response.destroy();return reject(error('ENCODING_UNSUPPORTED'));}
+                const chunks=[];let bytes=0,done=false;
+                const finish=value=>{if(done)return;done=true;resolve(value);};
+                response.on('data',chunk=>{
+                    if(segment){finish({body:null,bytes:1});response.destroy();return;}
+                    bytes+=chunk.length;if(bytes>131072){done=true;response.destroy();reject(error('BODY_LIMIT'));return;}chunks.push(chunk);
+                });
+                response.on('end',()=>segment?finish({body:null,bytes:0}):finish({body:Buffer.concat(chunks).toString('utf8'),bytes}));
+                response.on('error',()=>{if(!done)reject(error('NETWORK_ERROR'));});
+            });
+            request.on('error',()=>reject(error(signal.aborted?'ABORTED':'NETWORK_ERROR')));request.end();
+        });
+    }
+}

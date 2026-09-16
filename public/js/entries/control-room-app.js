@@ -441,6 +441,8 @@ runtime.start({
             probeDiagnosticsProvider: () => ({ healthAuthority: "source" })
         });
         dominantLiveController.start();
+        autoLiveBridge.setShadowProvider(()=>({...dominantHealthMonitor.getSnapshot(),
+            endpoint:dominantLiveController.getAuthorizedSource()?.url}));
         traceControlProgram("boot");
         autoLiveLossPresentation = new AutoLiveEntryPresentation({
             controller: dominantLiveController, output: programOutputManager, renderer: studioRenderer,

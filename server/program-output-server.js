@@ -22,6 +22,7 @@ import EffectiveProgramOutput from "./program-output/EffectiveProgramOutput.js";
 import ControlEventFeed from "./program-output/ControlEventFeed.js";
 import AutoLiveAuthority from './autolive/AutoLiveAuthority.js';
 import AutoLiveRoutes from './autolive/AutoLiveRoutes.js';
+import AutoLiveHealthRegistry from './autolive/AutoLiveHealthRegistry.js';
 import AssetReferenceInventory from './media-library/AssetReferenceInventory.js';
 import AssetMutationCoordinator from './media-library/AssetMutationCoordinator.js';
 import PreviewOwnership from './media-library/PreviewOwnership.js';
@@ -59,6 +60,7 @@ export function createProgramOutputServer({
     studioStatePath = process.env.LIVEZONE_STUDIO_STATE_PATH || DEFAULT_STUDIO_STATE_PATH,
     autoLivePath = studioStatePath + '.autolive.json',
     autoLiveRecoveryPath = studioStatePath + '.autolive-recovery.json',
+    autoLiveHealthRegistry = new AutoLiveHealthRegistry({managedClient:mediaIngestStatusClient}),
     assetAuthorityPath = studioStatePath + '.asset-authority',
     authoritativeStateRepository = new AuthoritativeStateRepository({ path: studioStatePath }),
     studioStateCoordinator = new StudioStateCoordinator({ repository: authoritativeStateRepository }),
@@ -109,6 +111,7 @@ export function createProgramOutputServer({
         .then(raw=>{bootstrapConfig=JSON.parse(raw);})]);
     autoLiveCatalogReady.catch(()=>{});
     const autoLive = new AutoLiveAuthority({path:autoLivePath,recoveryPath:autoLiveRecoveryPath,
+        healthRegistry:autoLiveHealthRegistry,managedConfig:mediaIngestConfig,
         catalog:()=>studioStateCoordinator.getSnapshot(),catalogReady:autoLiveCatalogReady,coordinator:assetMutations,
         resolveConfigRef:ref=>typeof ref==='string'&&/^[a-zA-Z0-9_.]+$/.test(ref)?ref.split('.').reduce((value,key)=>
             value&&Object.hasOwn(value,key)?value[key]:null,bootstrapConfig):null});

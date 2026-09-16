@@ -3,12 +3,14 @@ import {resolve} from 'node:path';
 import AutoLiveStore from './AutoLiveStore.js';
 import AutoLiveRecoveryStore from './AutoLiveRecoveryStore.js';
 import {POLICY,runtimeSnapshot,error,freeze} from './AutoLiveContract.js';
+import {resolveHealthSource,freshObservation} from './AutoLiveHealthContract.js';
 
 const owners=new Set();
 export default class AutoLiveAuthority {
     constructor({path,recoveryPath,catalog,catalogReady=Promise.resolve(),resolveConfigRef=()=>null,
-        coordinator,clock=()=>Date.now(),fileOperations={}}) {
+        coordinator,clock=()=>Date.now(),fileOperations={},healthRegistry=null,managedConfig=null}) {
         Object.assign(this,{catalog,catalogReady,resolveConfigRef,clock});
+        Object.assign(this,{healthRegistry,managedConfig});
         this.keys=[path,recoveryPath].map(p=>process.platform==='win32'?resolve(p).toLowerCase():resolve(p));
         this.owned=new Set(this.keys).size===2&&this.keys.every(key=>!owners.has(key));if(this.owned)this.keys.forEach(key=>owners.add(key));
         this.sessionId=randomUUID();this.generation=0;this.listeners=new Set();
@@ -32,18 +34,38 @@ export default class AutoLiveAuthority {
         }catch{return null;}
     }
     available(){return this.owned&&!this.closed&&this.store.status==='READY';}
+    syncHealth(config){
+        const source=config?.sourceId?this.source(config.sourceId):null;
+        const descriptor=resolveHealthSource(source,this.resolveConfigRef,this.managedConfig);
+        this.healthSource=descriptor;
+        const key=this.available()&&config?.enabled&&config?.armed&&descriptor?descriptor.fingerprint:null;
+        if(key===this.healthDemandKey)return;
+        this.healthDemandKey=key;this.healthLease?.release();this.healthLease=null;this.health=null;
+        if(key&&this.healthRegistry)this.healthLease=this.healthRegistry.acquire(descriptor,value=>{
+            if(this.closed||this.healthDemandKey!==value.sourceFingerprint)return;
+            this.health=value;this.refresh();
+        });
+    }
+    healthRuntime(){
+        const health=freshObservation(this.health,this.clock());
+        return {healthMode:'shadow',resolvedSourceFingerprint:this.healthSource?.fingerprint??null,
+            healthAuthority:health?.authority??null,healthState:health?.state??'UNKNOWN',healthSequence:health?.sequence??null,
+            healthCheckedAt:health?.observedAt??null,healthValidUntil:health?.validUntil??null,lastHealthReason:health?.reason??'NO_ACTIVE_DEMAND',
+            healthObservation:health??null,shadowEntryHealthyMs:null,shadowLoss:null};
+    }
     refresh(){
         if(this.closed)return;
-        const config=this.store.getSnapshot(),sourceValid=Boolean(config?.sourceId&&this.source(config.sourceId));
-        const key=JSON.stringify([this.available(),config,this.recovery.status,this.recovery.getSnapshot(),sourceValid]);
+        const config=this.store.getSnapshot();this.syncHealth(config);
+        const sourceValid=Boolean(config?.sourceId&&this.source(config.sourceId));
+        const key=JSON.stringify([this.available(),config,this.recovery.status,this.recovery.getSnapshot(),sourceValid,this.healthRuntime()]);
         if(key===this.fingerprint)return;this.fingerprint=key;
-        this.runtime=runtimeSnapshot({config,sourceValid,available:this.available(),recoveryAvailable:this.recovery.status==='READY',
-            sessionId:this.sessionId,generation:++this.generation,now:new Date(this.clock()).toISOString()});
+        this.runtime=freeze({...runtimeSnapshot({config,sourceValid,available:this.available(),recoveryAvailable:this.recovery.status==='READY',
+            sessionId:this.sessionId,generation:++this.generation,now:new Date(this.clock()).toISOString()}),...this.healthRuntime()});
         for(const fn of this.listeners)try{fn(this.current());}catch{}
     }
     current(){
         const config=this.store.getSnapshot(),recovery=this.recovery.getSnapshot();
-        return freeze({version:1,config,runtime:this.runtime,policy:POLICY,
+        return freeze({version:1,config,runtime:this.runtime?{...this.runtime,...this.healthRuntime()}:this.runtime,policy:POLICY,
             migration:{pristine:this.available()&&config?.revision===0,completed:config?.migration!==null&&Boolean(config),version:config?.migration?.version??null},
             recovery:{status:this.recovery.status,revision:recovery?.revision??null,present:Boolean(recovery?.record),
                 stage:recovery?.record?.stage??null,capability:'storage-only',referenceScope:this.recovery.referenceScope().classification},serverTime:new Date(this.clock()).toISOString()});
@@ -76,5 +98,6 @@ export default class AutoLiveAuthority {
         return refs;
     }
     async close(){if(this.closed)return;this.closed=true;this.offStore();this.offRecovery();this.listeners.clear();
+        this.healthLease?.release();this.healthLease=null;
         await this.ready;await Promise.all([this.store.close(),this.recovery.close()]);if(this.owned)this.keys.forEach(key=>owners.delete(key));}
 }
