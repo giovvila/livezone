@@ -131,7 +131,7 @@ test("LIVE SOURCES renders the bootstrap authorization control alongside operato
         append(...children) { this.children.push(...children); } }) };
     try {
         const ui = new StudioLiveSourcesUI(null, null, null,
-            { getSnapshot: () => ({ authorizedSourceId: live.id }) });
+            { getSnapshot: () => ({ armed: true, authorizedSourceId: live.id }) });
         ui.started = true; ui.list = { replaceChildren(...rows) { this.rows = rows; } };
         ui.render([{ ...live, origin: "base", enabled: true },
             { ...live, id: "live-operator", origin: "operator", enabled: true },
