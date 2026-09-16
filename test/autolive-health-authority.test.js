@@ -60,6 +60,11 @@ test('A2 managed complete body timeout and abort are bounded',async()=>{
     assert.equal((await client.getStatus({sourceOnly:true})).state,'error');assert.equal(aborted,true);
     const controller=new AbortController();const request=client.getStatus({sourceOnly:true,signal:controller.signal});controller.abort();assert.equal((await request).state,'error');
 });
+test('A2 managed fallback body limit is measured in UTF-8 bytes',async()=>{
+    const config=new IngestConfig({timeoutMs:100});const payload={items:[],padding:'€'.repeat(50000)};
+    const client=new IngestClient({config,fetchImplementation:async()=>({ok:true,json:async()=>payload})});
+    await assert.rejects(client.readBounded('http://managed.invalid/status','json'),/body limit/i);
+});
 for(const mode of ['managed','external'])test('A2 Control CLOSED '+mode+' health, late feed, disable and restart without execution',async t=>{
     const root=await mkdtemp(join(tmpdir(),'lz-a2-authority-'));let server,owner,registry;let sequence=1;
     let config=new IngestConfig();let url=config.playbackHlsUrl;
