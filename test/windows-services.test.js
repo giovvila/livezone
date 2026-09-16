@@ -69,36 +69,15 @@ test("install validation fails closed when WinSW is absent", async () => {
 });
 
 test("WinSW metadata normalization accepts only pinned release representations", () => {
-    const accepted = [
-        "2.12.0",
-        "2.12.0.0",
-        "2.12.0+eef5bade",
-        "2.12.0.0+eef5bade"
-    ];
-    for (const version of accepted) {
-        assert.equal(normalizeWinSWVersion(version), "2.12.0", version);
-    }
+    const accepted = ["2.12.0", "2.12.0.0", "2.12.0+eef5bade", "2.12.0.0+eef5bade"];
+    for (const version of accepted) assert.equal(normalizeWinSWVersion(version), "2.12.0", version);
 });
 
 test("WinSW metadata normalization fails closed for wrong or malformed versions", () => {
-    const wrong = [
-        "2.11.9",
-        "2.13.0",
-        "3.0.0"
-    ];
-    for (const version of wrong) {
+    for (const version of ["2.11.9", "2.13.0", "3.0.0"])
         assert.notEqual(normalizeWinSWVersion(version), "2.12.0", version);
-    }
-    const malformed = [
-        "2.12.0.1",
-        "prefix-2.12.0",
-        "2.12.0-suffix",
-        "garbage",
-        ""
-    ];
-    for (const version of malformed) {
+    for (const version of ["2.12.0.1", "prefix-2.12.0", "2.12.0-suffix", "garbage", ""])
         assert.equal(normalizeWinSWVersion(version), null, version);
-    }
 });
 
 test("real WinSW binary validates read-only from executable VersionInfo", async () => {
@@ -106,16 +85,15 @@ test("real WinSW binary validates read-only from executable VersionInfo", async 
         const realWinSW = join(root, "var/runtime/winsw/WinSW-x64.exe");
         const result = runInstaller(fixture, { winSw: realWinSW }, "-ValidateOnly");
         assert.equal(result.status, 0, result.output);
-        assert.match(result.output, /Status\s*:\s*VALID/);
-        assert.match(result.output, /WinSWVersion\s*:\s*2\.12\.0/);
+        const output = stripAnsi(result.output);
+        assert.match(output, /Status\s*:\s*VALID/);
+        assert.match(output, /WinSWVersion\s*:\s*2\.12\.0/);
     });
 });
 
 test("install validation fails closed when MediaMTX runtime is absent", async () => {
     await withFixture(async (fixture) => {
-        const result = runInstaller(fixture, {
-            mediaMtx: join(fixture.root, "missing-mediamtx.exe")
-        }, "-ValidateOnly");
+        const result = runInstaller(fixture, { mediaMtx: join(fixture.root, "missing-mediamtx.exe") }, "-ValidateOnly");
         assert.notEqual(result.status, 0);
         assert.match(result.output, /MediaMTX v1\.20\.1 executable is missing/);
     });
@@ -137,10 +115,8 @@ test("generated Node and MediaMTX configs use safe absolute paths without secret
         assert.deepEqual(await readFile(fixture.winSw), sourceBefore);
         await assert.rejects(readFile(join(fixture.runtime, "WinSW-x64.xml")));
         assert.match(node, new RegExp(escapeRegex(process.execPath)));
-        assert.match(node, new RegExp(escapeRegex(join(root,
-            "server/program-output-server.js"))));
-        assert.match(media, new RegExp(escapeRegex(join(root,
-            "tools/start-mediamtx.ps1"))));
+        assert.match(node, new RegExp(escapeRegex(join(root, "server/program-output-server.js"))));
+        assert.match(media, new RegExp(escapeRegex(join(root, "tools/start-mediamtx.ps1"))));
         for (const content of [node, media, result.output]) {
             assert.equal(content.includes(fixture.programSecret), false);
             assert.equal(content.includes(fixture.publishSecret), false);
@@ -162,8 +138,7 @@ test("bundled service validation fails closed when generated config is missing",
 });
 
 test("uninstall targets only deterministic LIVEZONE services and deletes no data", async () => {
-    const script = await readFile(join(root, "tools/uninstall-livezone-services.ps1"),
-        "utf8");
+    const script = await readFile(join(root, "tools/uninstall-livezone-services.ps1"), "utf8");
     const ids = Array.from(script.matchAll(/Id\s*=\s*"([^"]+)"/g), (match) => match[1]);
     assert.deepEqual(ids, ["LivezoneNode", "LivezoneMediaMtx"]);
     assert.doesNotMatch(script, /Remove-Item|\.env|media-library|public[\\/]media/);
@@ -174,8 +149,7 @@ test("uninstall targets only deterministic LIVEZONE services and deletes no data
 });
 
 test("status distinguishes source WinSW from generated service wrappers", async () => {
-    const script = await readFile(join(root, "tools/status-livezone-services.ps1"),
-        "utf8");
+    const script = await readFile(join(root, "tools/status-livezone-services.ps1"), "utf8");
     assert.match(script, /SourceWinSWPresent/);
     assert.match(script, /WrapperPresent = Test-Path -LiteralPath \$definition\.Wrapper/);
     assert.match(script, /ConfigPresent = Test-Path -LiteralPath \$definition\.Config/);
@@ -189,42 +163,31 @@ test("explicit service start performs bounded liveness and readiness gates", asy
 });
 
 function runInstaller(fixture, overrides = {}, mode) {
-    const args = ["-NoLogo", "-NoProfile", "-NonInteractive", "-File",
-        installScript, "-RepositoryRoot", root, "-WinSWPath",
-        overrides.winSw || fixture.winSw, "-RuntimeRoot", fixture.runtime,
-        "-LogDirectory", fixture.logs, "-NodePath", process.execPath,
-        "-MediaMtxBinaryPath", overrides.mediaMtx || fixture.mediaMtx,
-        "-EnvironmentPath", fixture.environment, "-ServiceIdentity", "LocalSystem",
-        mode];
+    const args = ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", installScript,
+        "-RepositoryRoot", root, "-WinSWPath", overrides.winSw || fixture.winSw,
+        "-RuntimeRoot", fixture.runtime, "-LogDirectory", fixture.logs,
+        "-NodePath", process.execPath, "-MediaMtxBinaryPath", overrides.mediaMtx || fixture.mediaMtx,
+        "-EnvironmentPath", fixture.environment, "-ServiceIdentity", "LocalSystem", mode];
     const result = spawnSync("pwsh", args, { encoding: "utf8" });
     return { status: result.status, output: `${result.stdout}\n${result.stderr}` };
 }
 
 async function withFixture(operation) {
     const fixtureRoot = await mkdtemp(join(tmpdir(), "livezone-services-"));
-    const fixture = {
-        root: fixtureRoot,
-        runtime: join(fixtureRoot, "runtime"),
-        logs: join(fixtureRoot, "logs"),
-        winSw: join(root, "var/runtime/winsw/WinSW-x64.exe"),
-        mediaMtx: join(fixtureRoot, "mediamtx.cmd"),
-        environment: join(fixtureRoot, ".env"),
-        programSecret: "fixture-program-secret-1234",
-        publishSecret: "fixture-publish-user",
-        passwordSecret: "fixture-publish-password"
-    };
+    const fixture = { root: fixtureRoot, runtime: join(fixtureRoot, "runtime"), logs: join(fixtureRoot, "logs"),
+        winSw: join(root, "var/runtime/winsw/WinSW-x64.exe"), mediaMtx: join(fixtureRoot, "mediamtx.cmd"),
+        environment: join(fixtureRoot, ".env"), programSecret: "fixture-program-secret-1234",
+        publishSecret: "fixture-publish-user", passwordSecret: "fixture-publish-password" };
     await writeFile(fixture.mediaMtx, "@echo MediaMTX v1.20.1\r\n");
-    await writeFile(fixture.environment,
-        `LIVEZONE_PROGRAM_OUTPUT_TOKEN=${fixture.programSecret}\n` +
+    await writeFile(fixture.environment, `LIVEZONE_PROGRAM_OUTPUT_TOKEN=${fixture.programSecret}\n` +
         `LIVEZONE_RTMP_PUBLISH_USER=${fixture.publishSecret}\n` +
         `LIVEZONE_RTMP_PUBLISH_PASSWORD=${fixture.passwordSecret}\n`);
     try { return await operation(fixture); }
     finally { await rm(fixtureRoot, { recursive: true, force: true }); }
 }
 
-function escapeRegex(value) {
-    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
+function escapeRegex(value) { return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+function stripAnsi(value) { return String(value).replace(/\x1B\[[0-?]*[ -\/]*[@-~]/g, ""); }
 
 function normalizeWinSWVersion(version) {
     const script = String.raw`
@@ -236,14 +199,8 @@ function normalizeWinSWVersion(version) {
         $normalized = ConvertTo-WinSWReleaseVersion $env:LIVEZONE_TEST_VERSION
         if ($null -eq $normalized) { 'NULL' } else { $normalized }
     `;
-    const result = spawnSync("pwsh", ["-NoLogo", "-NoProfile", "-NonInteractive",
-        "-Command", script], {
-        encoding: "utf8",
-        env: {
-            ...process.env,
-            LIVEZONE_INSTALL_SCRIPT: installScript,
-            LIVEZONE_TEST_VERSION: version
-        }
+    const result = spawnSync("pwsh", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script], {
+        encoding: "utf8", env: { ...process.env, LIVEZONE_INSTALL_SCRIPT: installScript, LIVEZONE_TEST_VERSION: version }
     });
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
     const output = result.stdout.trim();
@@ -253,9 +210,7 @@ function normalizeWinSWVersion(version) {
 function assertBundledServiceFiles(wrapper, config, serviceId) {
     const script = String.raw`
         function Assert-File([string]$Path, [string]$Label) {
-            if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-                throw "$Label is missing."
-            }
+            if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "$Label is missing." }
         }
         $source = Get-Content -Raw -LiteralPath $env:LIVEZONE_INSTALL_SCRIPT
         $start = $source.IndexOf('function Assert-BundledServiceFiles')
@@ -264,16 +219,9 @@ function assertBundledServiceFiles(wrapper, config, serviceId) {
         . ([scriptblock]::Create($source.Substring($start, $end - $start)))
         Assert-BundledServiceFiles $env:LIVEZONE_TEST_WRAPPER $env:LIVEZONE_TEST_CONFIG $env:LIVEZONE_TEST_SERVICE
     `;
-    const result = spawnSync("pwsh", ["-NoLogo", "-NoProfile", "-NonInteractive",
-        "-Command", script], {
-        encoding: "utf8",
-        env: {
-            ...process.env,
-            LIVEZONE_INSTALL_SCRIPT: installScript,
-            LIVEZONE_TEST_WRAPPER: wrapper,
-            LIVEZONE_TEST_CONFIG: config,
-            LIVEZONE_TEST_SERVICE: serviceId
-        }
+    const result = spawnSync("pwsh", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script], {
+        encoding: "utf8", env: { ...process.env, LIVEZONE_INSTALL_SCRIPT: installScript,
+            LIVEZONE_TEST_WRAPPER: wrapper, LIVEZONE_TEST_CONFIG: config, LIVEZONE_TEST_SERVICE: serviceId }
     });
     return { status: result.status, output: `${result.stdout}\n${result.stderr}` };
 }
