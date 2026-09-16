@@ -31,8 +31,10 @@ async function resolveAddresses(host,signal){
         return results.flatMap((result,index)=>result.status==='fulfilled'?result.value.map(address=>({address,family:index===0?4:6})):[]);
     }finally{signal.removeEventListener('abort',cancel);resolver.cancel();}
 }
-// No ambient proxy/cookie/credential state. Validate DNS, then pin the exact lookup
-// used by the socket. TLS still verifies the original host. Redirects repeat policy.
+// No ambient proxy/cookie/credential state. Validate every DNS answer first, then
+// pin each socket attempt to an already-validated address. Network failure may try
+// the next validated answer without another DNS lookup; policy/HTTP failures do not.
+// TLS still verifies the original host. Redirects repeat the complete policy.
 export default class AutoLiveSafeHttp {
     constructor({resolve=resolveAddresses,allowAddress=publicAddress,parseUrl=externalUrl,timeoutMs=2500}={}){
         Object.assign(this,{resolve,allowAddress,parseUrl,timeoutMs});
@@ -46,7 +48,16 @@ export default class AutoLiveSafeHttp {
                 const host=url.hostname.replace(/^\[|\]$/g,'');
                 const addresses=isIP(host)?[{address:host,family:isIP(host)}]:await abortable(this.resolve(host,controller.signal),controller.signal);
                 if(!addresses.length||addresses.length>32||addresses.some(a=>!this.allowAddress(a.address)))throw error('ADDRESS_FORBIDDEN');
-                const result=await this.request(url,addresses[0],controller.signal,segment);
+                let result,lastNetworkError;
+                for(const address of addresses){
+                    try{result=await this.request(url,address,controller.signal,segment);lastNetworkError=null;break;}
+                    catch(e){
+                        if(controller.signal.aborted)throw error('ABORTED');
+                        if(e?.code!=='NETWORK_ERROR')throw e;
+                        lastNetworkError=e;
+                    }
+                }
+                if(!result)throw lastNetworkError||error('NETWORK_ERROR');
                 if(result.location){if(redirects===3)throw error('REDIRECT_LIMIT');url=this.parseUrl(new URL(result.location,url).href);continue;}
                 return {...result,url:url.href};
             }
