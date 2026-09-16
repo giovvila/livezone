@@ -50,6 +50,16 @@ export default class StudioLiveSourcesUI {
         this.show(wasEditing ? "Sorgente LIVE aggiornata." : "Sorgente LIVE aggiunta.", false);
     }
 
+    async setAutoInterrupt(sourceId, sourceKind = "hls") {
+        const config = this.dominantLiveConfig;
+        if (!config) return { ok: false };
+        const pending = config.setAutoInterruptSource
+            ? config.setAutoInterruptSource(sourceId, { sourceKind })
+            : config.setAuthorizedSourceId(sourceId, { sourceKind });
+        const result = pending?.then ? await pending : pending;
+        return result?.ok === false || config.lastWrite?.ok === false ? { ok: false } : { ok: true };
+    }
+
     async handleClick(event) {
         const button = event.target.closest("button[data-action]");
         if (!button) return;
@@ -57,16 +67,11 @@ export default class StudioLiveSourcesUI {
         if (!source || source.kind !== "hls") return;
         if (button.dataset.action === "authorize") {
             if (source.enabled === false) return;
-            const authorized = this.dominantLiveConfig?.getSnapshot?.().authorizedSourceId;
-            const pending=this.dominantLiveConfig?.setAuthorizedSourceId(
-                authorized === source.id ? null : source.id, { sourceKind: source.kind }
-            );
-            if(pending?.then)await pending;
-            if (!this.dominantLiveConfig || this.dominantLiveConfig.lastWrite?.ok === false) {
-                return this.show("Autorizzazione AUTO INTERRUPT non salvata. Riprova il salvataggio.", true);
-            }
-            return this.show(authorized === source.id
-                ? "AUTO INTERRUPT disattivato."
+            const snapshot = this.dominantLiveConfig?.getSnapshot?.();
+            const isAuthorized = snapshot?.armed === true && snapshot.authorizedSourceId === source.id;
+            const result = await this.setAutoInterrupt(isAuthorized ? null : source.id, source.kind);
+            if (!result.ok) return this.show("Autorizzazione AUTO INTERRUPT non salvata. Riprova il salvataggio.", true);
+            return this.show(isAuthorized ? "AUTO INTERRUPT disattivato."
                 : `${source.name} è l'unica sorgente AUTO INTERRUPT.`, false);
         }
         if (source.origin !== "operator") return;
@@ -87,9 +92,8 @@ export default class StudioLiveSourcesUI {
             if (result?.then) result = await result;
             if (result.ok && !result.source.enabled &&
                 this.dominantLiveConfig?.getSnapshot?.().authorizedSourceId === source.id) {
-                const pending=this.dominantLiveConfig.setAuthorizedSourceId(null);
-                if(pending?.then)await pending;
-                if(this.dominantLiveConfig.lastWrite?.ok===false)return this.show("Sorgente disabilitata; revoca AutoLive non salvata sul server.",true);
+                const revoked = await this.setAutoInterrupt(null, source.kind);
+                if(!revoked.ok)return this.show("Sorgente disabilitata; revoca AutoLive non salvata sul server.",true);
             }
             return result.ok
                 ? this.show(`Sorgente LIVE ${result.source.enabled ? "abilitata" : "disabilitata"}.`, false)
@@ -102,13 +106,19 @@ export default class StudioLiveSourcesUI {
         });
         unsubscribe?.();
         if (referenced) return this.show("Rimozione bloccata: scena referenziata dal palinsesto.", true);
-        let result = this.catalog.removeSource(source.id);
+        const snapshot = this.dominantLiveConfig?.getSnapshot?.();
+        const wasAuthorized = snapshot?.authorizedSourceId === source.id;
+        if (wasAuthorized) {
+            const revoked = await this.setAutoInterrupt(null, source.kind);
+            if (!revoked.ok) return this.show("Rimozione bloccata: revoca AUTO INTERRUPT non salvata.", true);
+        }
+        let result = this.catalog.removeLiveSource
+            ? this.catalog.removeLiveSource(source.id)
+            : this.catalog.removeSource(source.id);
         if (result?.then) result = await result;
-        if (!result.ok) return this.show(`Rimozione rifiutata: ${result.reason}.`, true);
-        if (this.dominantLiveConfig?.getSnapshot?.().authorizedSourceId === source.id) {
-            const pending=this.dominantLiveConfig.setAuthorizedSourceId(null);
-            if(pending?.then)await pending;
-            if(this.dominantLiveConfig.lastWrite?.ok===false)return this.show("Sorgente rimossa; revoca AutoLive non salvata sul server.",true);
+        if (!result.ok) {
+            if (wasAuthorized) await this.setAutoInterrupt(source.id, source.kind);
+            return this.show(`Rimozione rifiutata: ${result.reason}.`, true);
         }
         this.reset();
         this.show("Sorgente LIVE rimossa.", false);
@@ -128,8 +138,8 @@ export default class StudioLiveSourcesUI {
                 const toggle = document.createElement("button");
                 const authorize = document.createElement("button");
                 const remove = document.createElement("button");
-                const isAuthorized = this.dominantLiveConfig?.getSnapshot?.()
-                    .authorizedSourceId === source.id;
+                const autoLive = this.dominantLiveConfig?.getSnapshot?.();
+                const isAuthorized = autoLive?.armed === true && autoLive.authorizedSourceId === source.id;
                 row.className = "live-source-card";
                 row.dataset.state = source.enabled ? "enabled" : "disabled";
                 name.textContent = source.name;
