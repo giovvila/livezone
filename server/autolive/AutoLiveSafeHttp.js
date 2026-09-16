@@ -1,6 +1,6 @@
 import http from 'node:http';
 import https from 'node:https';
-import {Resolver} from 'node:dns/promises';
+import {lookup as systemLookup} from 'node:dns/promises';
 import {isIP,BlockList} from 'node:net';
 import {error} from './AutoLiveContract.js';
 import {endpointIdentity} from './AutoLiveHealthContract.js';
@@ -24,12 +24,19 @@ export function abortable(promise,signal){
         Promise.resolve(promise).then(resolve,reject).finally(()=>signal.removeEventListener('abort',abort));});
 }
 async function resolveAddresses(host,signal){
-    const resolver=new Resolver({timeout:2000,tries:1}),cancel=()=>resolver.cancel();
-    if(signal.aborted)throw error('ABORTED');signal.addEventListener('abort',cancel,{once:true});
+    if(signal.aborted)throw error('ABORTED');
     try{
-        const results=await Promise.allSettled([resolver.resolve4(host),resolver.resolve6(host)]);
-        return results.flatMap((result,index)=>result.status==='fulfilled'?result.value.map(address=>({address,family:index===0?4:6})):[]);
-    }finally{signal.removeEventListener('abort',cancel);resolver.cancel();}
+        // Use the operating-system resolver path (getaddrinfo) so Windows DNS policy,
+        // adapters and configured resolvers match normal application resolution.
+        // The returned addresses are still validated before any socket is opened and
+        // the socket lookup below remains pinned to the validated address, preserving
+        // the SSRF DNS-rebinding fence.
+        const results=await abortable(systemLookup(host,{all:true,verbatim:true}),signal);
+        return results.map(({address,family})=>({address,family}));
+    }catch(e){
+        if(signal.aborted||e?.code==='ABORTED')throw error('ABORTED');
+        throw error('DNS_ERROR');
+    }
 }
 // No ambient proxy/cookie/credential state. Validate every DNS answer first, then
 // pin each socket attempt to an already-validated address. Network failure may try
@@ -47,7 +54,8 @@ export default class AutoLiveSafeHttp {
             for(let redirects=0;redirects<=3;redirects++){
                 const host=url.hostname.replace(/^\[|\]$/g,'');
                 const addresses=isIP(host)?[{address:host,family:isIP(host)}]:await abortable(this.resolve(host,controller.signal),controller.signal);
-                if(!addresses.length||addresses.length>32||addresses.some(a=>!this.allowAddress(a.address)))throw error('ADDRESS_FORBIDDEN');
+                if(!addresses.length)throw error('DNS_ERROR');
+                if(addresses.length>32||addresses.some(a=>!this.allowAddress(a.address)))throw error('ADDRESS_FORBIDDEN');
                 let result,lastNetworkError;
                 for(const address of addresses){
                     try{result=await this.request(url,address,controller.signal,segment);lastNetworkError=null;break;}
