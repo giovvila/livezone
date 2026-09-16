@@ -112,13 +112,23 @@ export default class StudioLiveSourcesUI {
             const revoked = await this.setAutoInterrupt(null, source.kind);
             if (!revoked.ok) return this.show("Rimozione bloccata: revoca AUTO INTERRUPT non salvata.", true);
         }
-        let result = this.catalog.removeLiveSource
-            ? this.catalog.removeLiveSource(source.id)
-            : this.catalog.removeSource(source.id);
-        if (result?.then) result = await result;
-        if (!result.ok) {
+        let result;
+        if (this.catalog.removeLiveSource) {
+            result = this.catalog.removeLiveSource(source.id);
+            if (result?.then) result = await result;
+        } else {
+            if (sceneId) {
+                result = this.catalog.removeScene(sceneId);
+                if (result?.then) result = await result;
+            }
+            if (!sceneId || result?.ok) {
+                result = this.catalog.removeSource(source.id);
+                if (result?.then) result = await result;
+            }
+        }
+        if (!result?.ok) {
             if (wasAuthorized) await this.setAutoInterrupt(source.id, source.kind);
-            return this.show(`Rimozione rifiutata: ${result.reason}.`, true);
+            return this.show(`Rimozione rifiutata: ${result?.reason || "unknown"}.`, true);
         }
         this.reset();
         this.show("Sorgente LIVE rimossa.", false);
