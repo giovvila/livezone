@@ -716,7 +716,13 @@ export default class StudioCatalogManager {
             ? blockedReason : "scene-authorized");
         const previousOverlay = this.serializeOverlay();
         const previousOverride = this.sceneOverrides.get(id);
-        if (!this.studioStateManager.unregisterScene(id)) return this.failure("scene-unregister-rejected");
+        const sourceId = scene.renderer?.kind === "source" ? scene.renderer.sourceId : null;
+        const source = sourceId ? this.sources.get(sourceId) : null;
+        const runtimeScene = this.studioStateManager.getScene?.(id) || null;
+        const intentionallyAbsentDisabledLive = source?.kind === "hls" && source.enabled === false && !runtimeScene;
+        if (!intentionallyAbsentDisabledLive && !this.studioStateManager.unregisterScene(id)) {
+            return this.failure("scene-unregister-rejected");
+        }
         this.definitions.delete(id);
         this.operatorSceneIds.delete(id);
         if (this.baseSceneIds.has(id)) {
@@ -725,7 +731,7 @@ export default class StudioCatalogManager {
         }
         if (!this.persistOverlay()) {
             this.definitions.set(id, scene);
-            this.studioStateManager.registerScene(scene);
+            if (!intentionallyAbsentDisabledLive) this.studioStateManager.registerScene(scene);
             if (scene.origin === "operator") this.operatorSceneIds.add(id);
             this.deletedBootstrapSceneIds.delete(id);
             if (previousOverride) this.sceneOverrides.set(id, previousOverride);
