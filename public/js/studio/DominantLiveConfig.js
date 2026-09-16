@@ -26,6 +26,10 @@ export default class DominantLiveConfig {
     setAuthorizedSourceId(sourceId, { sourceKind = null } = {}) {
         return this.mutate({ authorizedSourceId: this.normalizeId(sourceId) }, sourceKind);
     }
+    setAutoInterruptSource(sourceId, { sourceKind = null } = {}) {
+        const id = this.normalizeId(sourceId);
+        return this.mutate({ armed: id !== null, authorizedSourceId: id }, sourceKind);
+    }
     mutate(patch, sourceKind = null) {
         if(this.authorityMutation)return this.authorityMutation(patch);
         // Storage owns both fields. Another document may have saved before its
