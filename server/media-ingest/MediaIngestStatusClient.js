@@ -51,7 +51,12 @@ export default class MediaIngestStatusClient {
         try{return await Promise.race([cancelled,(async()=>{
             const response=await this.fetchImplementation(url,{headers:{Accept:kind==='json'?'application/json':'application/vnd.apple.mpegurl'},cache:'no-store',signal:controller.signal});
             if(!response?.ok)throw new Error('Media ingest unavailable');
-            if(!response.body?.getReader){const value=await (kind==='json'?response.json():response.text());if(JSON.stringify(value).length>131072)throw new Error('Media ingest body limit');return value;}
+            if(!response.body?.getReader){
+                const value=await (kind==='json'?response.json():response.text());
+                const serialized=kind==='json'?JSON.stringify(value):String(value);
+                if(Buffer.byteLength(serialized,'utf8')>131072)throw new Error('Media ingest body limit');
+                return value;
+            }
             reader=response.body.getReader();const chunks=[];let size=0;
             for(;;){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>131072)throw new Error('Media ingest body limit');chunks.push(value);}
             const text=new TextDecoder().decode(Buffer.concat(chunks));return kind==='json'?JSON.parse(text):text;
