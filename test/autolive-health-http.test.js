@@ -14,8 +14,16 @@ async function fixture(t,handler){
 // Explicit fixture-only trust injection. Production construction has no local exception.
 const fixtureHttp=(options={})=>new SafeHttp({parseUrl:v=>new URL(v),allowAddress:ip=>ip==='127.0.0.1',...options});
 for(const address of ['0.0.0.0','10.1.2.3','100.64.1.1','127.0.0.1','169.254.169.254','172.16.1.1','192.168.1.1','192.0.2.1','198.18.0.1','224.0.0.1','255.255.255.255','::1','::','fe80::1','fc00::1','::ffff:127.0.0.1','2001:db8::1','2002:7f00:1::','2001::1'])test('A2 SSRF address blocked '+address,()=>assert.equal(publicAddress(address),false));
-for(const address of ['8.8.8.8','93.184.216.34','2606:4700:4700::1111'])test('A2 public address accepted '+address,()=>assert.equal(publicAddress(address),true));
+for(const address of ['8.8.8.8','93.184.216.34','185.105.4.51','2606:4700:4700::1111'])test('A2 public address accepted '+address,()=>assert.equal(publicAddress(address),true));
 for(const url of ['file:///etc/passwd','ftp://example.com/x','data:text/plain,x','javascript:alert(1)','http://u:p@example.com/x','http://localhost/x','http://sub.localhost/x','http://example.com:9997/x','http://example.com/'+ 'a'.repeat(2050)])test('A2 unsafe URL rejected '+url.slice(0,60),()=>assert.throws(()=>externalUrl(url)));
+test('A3 DNS resolver failure is DNS_ERROR, not ADDRESS_FORBIDDEN',async()=>{
+    const http=new SafeHttp({resolve:async()=>{const e=new Error('resolver refused');e.code='ECONNREFUSED';throw e;}});
+    await assert.rejects(http.read('https://public.example.com/live.m3u8'),{code:'ECONNREFUSED'});
+});
+test('A3 empty DNS answer is DNS_ERROR, not ADDRESS_FORBIDDEN',async()=>{
+    const http=new SafeHttp({resolve:async()=>[]});
+    await assert.rejects(http.read('https://public.example.com/live.m3u8'),{code:'DNS_ERROR'});
+});
 test('A2 DNS private or mixed answers never open a connection',async()=>{
     for(const addresses of [[{address:'127.0.0.1',family:4}],[{address:'8.8.8.8',family:4},{address:'10.0.0.1',family:4}]]){
         const http=new SafeHttp({resolve:async()=>addresses});await assert.rejects(http.read('https://host.example.com/live'),{code:'ADDRESS_FORBIDDEN'});
