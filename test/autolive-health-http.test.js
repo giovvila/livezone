@@ -26,6 +26,20 @@ test('A2 actual socket uses validated pinned DNS answer, not second lookup',asyn
     const http=fixtureHttp({resolve:async()=>{calls++;return [{address:'127.0.0.1',family:4}];}});
     const url=h.url.replace('127.0.0.1','public.example.com');assert.match((await http.read(url)).body,/#EXTM3U/);assert.equal(calls,1);
 });
+test('A2 validated multi-address answers retry network failure without DNS re-resolution',async()=>{
+    let resolves=0;const attempts=[];
+    const addresses=[{address:'2606:4700:4700::1111',family:6},{address:'8.8.8.8',family:4}];
+    const http=new SafeHttp({resolve:async()=>{resolves++;return addresses;}});
+    http.request=async(url,address)=>{attempts.push(address.address);if(attempts.length===1){const e=new Error('network');e.code='NETWORK_ERROR';throw e;}return {body:'#EXTM3U',bytes:7};};
+    assert.equal((await http.read('https://public.example.com/live.m3u8')).body,'#EXTM3U');
+    assert.equal(resolves,1);assert.deepEqual(attempts,addresses.map(value=>value.address));
+});
+test('A2 multi-address fallback never retries policy or HTTP failures',async()=>{
+    const addresses=[{address:'8.8.8.8',family:4},{address:'93.184.216.34',family:4}];let attempts=0;
+    const http=new SafeHttp({resolve:async()=>addresses});
+    http.request=async()=>{attempts++;const e=new Error('http');e.code='HTTP_ERROR';throw e;};
+    await assert.rejects(http.read('https://public.example.com/live.m3u8'),{code:'HTTP_ERROR'});assert.equal(attempts,1);
+});
 test('A2 redirects are bounded and revalidate destination',async t=>{
     const h=await fixture(t,(req,res)=>{if(req.url==='/ok'){res.end(media());return;}res.writeHead(302,{Location:req.url==='/index.m3u8'?'/ok':req.url==='/forbidden'?'http://10.0.0.1/x':'/loop'});res.end();});
     const http=fixtureHttp();assert.match((await http.read(h.url)).body,/#EXTM3U/);
