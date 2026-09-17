@@ -93,6 +93,33 @@ test('A3 backwards discontinuity sequence remains a reset even with forward medi
     await observer.sample(source);sequence++;discontinuity--;
     const next=await observer.sample(source);assert.equal(next.state,'UNCERTAIN');assert.equal(next.reason,'SEQUENCE_RESET');
 });
+test('A3 rotating effective media playlist URL with forward progression remains ONLINE',async()=>{
+    let sample=0;
+    const source={endpoint:'https://origin.example.com/master.m3u8'};
+    const http={async read(url,{segment=false}={}){
+        if(segment)return {bytes:1,url};
+        if(url===source.endpoint){sample++;return {url:source.endpoint,body:'#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=100\nmedia.m3u8?token='+sample};}
+        const sequence=100+sample;
+        return {url:'https://cdn.example.com/media.m3u8?token='+sample,body:media(sequence)};
+    }};
+    const observer=new HlsObserver({http});
+    assert.equal((await observer.sample(source)).state,'UNCERTAIN');
+    const next=await observer.sample(source);
+    assert.equal(next.state,'ONLINE');assert.equal(next.reason,'PLAYLIST_ADVANCING');assert.equal(next.playlistProgressing,true);
+    assert.equal(next.diagnostics.playlistChanged,true);assert.equal(next.diagnostics.resetCause,null);
+});
+test('A3 rotating media playlist URL without forward progression stays UNCERTAIN',async()=>{
+    let sample=0;
+    const source={endpoint:'https://origin.example.com/master.m3u8'};
+    const http={async read(url,{segment=false}={}){
+        if(segment)return {bytes:1,url};
+        if(url===source.endpoint){sample++;return {url:source.endpoint,body:'#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=100\nmedia.m3u8?token='+sample};}
+        return {url:'https://cdn.example.com/media.m3u8?token='+sample,body:media(100)};
+    }};
+    const observer=new HlsObserver({http});await observer.sample(source);
+    const next=await observer.sample(source);
+    assert.equal(next.state,'UNCERTAIN');assert.equal(next.reason,'PLAYLIST_IDENTITY_CHANGED');assert.equal(next.playlistProgressing,false);
+});
 test('A2 external errors and network recovery never infer healthy playback from HTTP 200',async t=>{
     let mode='manifest404',sequence=1;
     const h=await fixture(t,(req,res)=>{if(mode==='manifest404'||mode==='segment404'&&req.url.includes('.ts')){res.writeHead(404);res.end();return;}
