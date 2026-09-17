@@ -96,6 +96,23 @@ test('A1 private shared SSE retained state, mutation and reconnect never publish
     let writes=0;for(const res of h.owner.clients){const write=res.write.bind(res);res.write=(...args)=>{writes++;return write(...args);};}
     await h.request('PATCH',{armed:true},1);assert.equal(writes,0);
 });
+test('A4 browser stage observation is private, bounded and shadow-only',async t=>{
+    const h=await fixture(t);
+    assert.equal((await h.request('POST',{stage:'LIVE'},undefined,'/browser-stage')).status,200);
+    let state=(await h.request()).body;
+    assert.equal(state.runtime.shadowLiveObserved,true);
+    assert.equal(state.runtime.shadowExecutionAllowed,false);
+    assert.equal(state.runtime.shadowServerTake,false);
+    assert.equal(h.owner.store.getCurrent(),null);
+    assert.equal(h.owner.scheduler.current().programPlan.execution,'SUSPENDED');
+    assert.equal((await h.request('POST',{stage:'BAD'},undefined,'/browser-stage')).status,422);
+    assert.equal((await h.request('POST',{stage:'INACTIVE'},undefined,'/browser-stage')).status,200);
+    state=(await h.request()).body;
+    assert.equal(state.runtime.shadowLiveObserved,false);
+    assert.equal(state.runtime.shadowExecutionAllowed,false);
+    assert.equal(state.runtime.shadowServerTake,false);
+});
+
 test('A1 recovery requires canonical assets and projects held references until clear',async t=>{
     const h=await fixture(t);const record={version:1,sessionId:'session',stage:'CAPTURED',capturedActivation:{publisherSessionId:'pub',committedAt:at,sceneId:'scene-a',sourceId:'video-a'},
         programRevision:1,sceneId:'scene-a',sourceId:'video-a',sourceKind:'media',sourceVersion:'catalog-1',cueAtInterruption:20,playbackState:'paused',
