@@ -25,7 +25,10 @@ export function abortable(promise,signal){
 }
 function codedError(code,details=null){
     const e=error(code);
-    if(details&&typeof details==='object')e.details=Object.freeze({...details});
+    if(details&&typeof details==='object'){
+        if(Number.isInteger(details.status))e.httpStatus=details.status;
+        if(typeof details.stage==='string'&&details.stage)e.httpStage=details.stage;
+    }
     return e;
 }
 async function resolveAddresses(host,signal){
