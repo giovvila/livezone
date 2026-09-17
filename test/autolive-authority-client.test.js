@@ -99,3 +99,34 @@ for(const corrupt of [false,true])test('review pristine legacy '+(corrupt?'corru
     const bridge=new AutoLiveLegacyBridge({client,config,runtimeState,lifecycle:new EventTarget()});await bridge.start();
     assert.deepEqual(bridge.legacy,{version:1,enabled:false,armed:false,sourceId:null});assert.equal(mutations,0);bridge.destroy();config.destroy();
 });
+
+
+test('A4 client posts browser stage without mutating config revision',async()=>{
+    const calls=[];const client=new AutoLiveAuthorityClient({request:async(url,options)=>{
+        calls.push({url,options});
+        if(!options)return response(state(3));
+        if(url.endsWith('/browser-stage'))return response({ok:true,runtime:{}});
+        return response(state(3));
+    }});
+    await client.start();
+    assert.deepEqual(await client.observeBrowserStage('LIVE'),{ok:true});
+    assert.equal(calls.at(-1).url,'/api/studio/autolive/browser-stage');
+    assert.equal(JSON.parse(calls.at(-1).options.body).stage,'LIVE');
+    assert.equal(client.state.snapshot.config.revision,3);
+    client.destroy();
+});
+
+test('A4 bridge reports LIVE and INACTIVE edges only',async()=>{
+    const local=storage(),config=new DominantLiveConfig({storage:local,eventTarget:new EventTarget()}),runtimeState=new SchedulerRuntimeState({storage:local});
+    const stages=[];const client=new AutoLiveAuthorityClient({request:async()=>response(state())});
+    client.observeBrowserStage=async stage=>{stages.push(stage);return {ok:true};};
+    const bridge=new AutoLiveLegacyBridge({client,config,runtimeState,lifecycle:new EventTarget()});await bridge.start();
+    const listeners=new Set();let snapshot={session:null};const controller={subscribe(fn){listeners.add(fn);fn(snapshot);return()=>listeners.delete(fn);}};
+    bridge.setBrowserStageProvider(()=>({controller,snapshot}));
+    snapshot={session:{id:'s1'}};for(const fn of listeners)fn(snapshot);
+    for(const fn of listeners)fn(snapshot);
+    snapshot={session:null};for(const fn of listeners)fn(snapshot);
+    await Promise.resolve();
+    assert.deepEqual(stages,['INACTIVE','LIVE','INACTIVE']);
+    bridge.destroy();config.destroy();
+});
