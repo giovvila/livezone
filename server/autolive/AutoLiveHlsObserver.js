@@ -29,6 +29,7 @@ export function parsePlaylist(text,base){
     if(sequence>Number.MAX_SAFE_INTEGER-(segments.length-1))throw error('PLAYLIST_INVALID');
     return {segments,target,sequence,endlist,byteRange,vod};
 }
+const short=value=>typeof value==='string'?value.slice(0,12):value;
 export default class AutoLiveHlsObserver {
     constructor({http=new AutoLiveSafeHttp(),clock=()=>Date.now()}={}){Object.assign(this,{http,clock});}
     async sample(source,signal){
@@ -41,19 +42,18 @@ export default class AutoLiveHlsObserver {
         const segment=await this.http.read(last.uri,{signal,segment:true});if(!segment.bytes)throw error('SEGMENT_EMPTY');
         const current={playlist:hashIdentity(url),end:playlist.sequence+(playlist.segments.length-1),discontinuity:last.discontinuity,date:last.date,uri:hashIdentity(last.uri)};
         const previous=this.previous;
-        // HLS discontinuity sequence is allowed to move forward as a discontinuity
-        // passes through (or ages out of) a live sliding window. Treating every
-        // discontinuity change as a reset kept valid Wowza live playlists permanently
-        // UNCERTAIN. A backwards discontinuity identity is still fail-closed, as are
-        // playlist identity changes and backwards media progression.
-        const reset=previous&&(previous.playlist!==current.playlist||current.end<previous.end||current.discontinuity<previous.discontinuity);
+        const resetCause=!previous?null:previous.playlist!==current.playlist?'PLAYLIST_IDENTITY_CHANGED':current.end<previous.end?'MEDIA_SEQUENCE_BACKWARDS':current.discontinuity<previous.discontinuity?'DISCONTINUITY_BACKWARDS':null;
+        const reset=Boolean(resetCause);
         const advances=!!previous&&!reset&&current.end>previous.end&&current.uri!==previous.uri&&
             !(current.date!==null&&previous.date!==null&&current.date<=previous.date);
         this.previous=current;
         if(!previous||reset||advances)this.lastAdvance=now;
         const stale=now-this.lastAdvance>Math.max(15000,playlist.target*3000);
         const reason=playlist.byteRange?'BYTE_RANGE_UNSUPPORTED':playlist.endlist?'ENDLIST_NONLIVE':playlist.vod?'VOD_NONLIVE':reset?'SEQUENCE_RESET':stale?'PLAYLIST_STALLED':advances?'PLAYLIST_ADVANCING':'AWAITING_PROGRESSION';
+        const diagnostics={resetCause,
+            previous:previous?{playlist:short(previous.playlist),end:previous.end,discontinuity:previous.discontinuity,date:previous.date,uri:short(previous.uri)}:null,
+            current:{playlist:short(current.playlist),end:current.end,discontinuity:current.discontinuity,date:current.date,uri:short(current.uri)}};
         return {state:reason==='PLAYLIST_ADVANCING'?'ONLINE':'UNCERTAIN',reason,publisherPresent:null,playbackAvailable:true,
-            playlistProgressing:advances&&!playlist.endlist&&!playlist.vod&&!playlist.byteRange,segmentReachable:true,readiness:'transport-only'};
+            playlistProgressing:advances&&!playlist.endlist&&!playlist.vod&&!playlist.byteRange,segmentReachable:true,readiness:'transport-only',diagnostics};
     }
 }
