@@ -98,6 +98,9 @@ test('A1 private shared SSE retained state, mutation and reconnect never publish
 });
 test('A4 browser stage observation is private, bounded and shadow-only',async t=>{
     const h=await fixture(t);
+    await h.request('PATCH',{enabled:true},0);
+    await h.request('PATCH',{armed:true},1);
+    await h.request('PATCH',{sourceId:'live-a'},2);
     assert.equal((await h.request('POST',{stage:'LIVE'},undefined,'/browser-stage')).status,200);
     let state=(await h.request()).body;
     assert.equal(state.runtime.shadowLiveObserved,true);
