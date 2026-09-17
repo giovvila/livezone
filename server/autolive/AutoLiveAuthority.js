@@ -82,7 +82,9 @@ export default class AutoLiveAuthority {
                 stage:recovery?.record?.stage??null,capability:'storage-only',referenceScope:this.recovery.referenceScope().classification},serverTime:new Date(this.clock()).toISOString()});
     }
     observeBrowserStage(stage){
-        const next=stage==='LIVE'?'LIVE':null;if(next===this.browserStage)return false;this.browserStage=next;this.refresh();return true;
+        const next=stage==='LIVE'?'LIVE':null;if(next===this.browserStage)return false;this.browserStage=next;
+        if(next===null)this.decisionShadow.liveObserved=false;
+        this.refresh();return true;
     }
     async mutate(value,revision,{migration=false}={}){
         await this.ready;if(!this.available())throw error('STORE_UNAVAILABLE');
