@@ -29,7 +29,7 @@ export default class AutoLiveHealthRegistry {
         if(this.closed)throw error('HEALTH_CLOSED');const key=source.sourceId+':'+source.fingerprint;let entry=this.entries.get(key);
         if(!entry){
             if(this.entries.size>=4)throw error('HEALTH_CAPACITY');
-            entry={key,source,generation:++this.generation,listeners:new Set(),sequence:0,producer:this.factory(source)};
+            entry={key,source,generation:++this.generation,listeners:new Set(),sequence:0,producer:this.factory(source),diagnostics:null};
             this.entries.set(key,entry);this.publish(entry,{state:'CHECKING',reason:'STARTING',readiness:'observing'});
         }
         entry.listeners.add(listener);listener(this.current(entry));if(!entry.started){entry.started=true;void this.poll(entry);}
@@ -37,9 +37,14 @@ export default class AutoLiveHealthRegistry {
         return {getSnapshot:()=>this.current(entry),release:()=>{if(released)return;released=true;entry.listeners.delete(listener);if(!entry.listeners.size)this.dispose(entry);}};
     }
     current(entry){return freshObservation(entry.value,this.clock());}
+    diagnostics(sourceFingerprint){
+        for(const entry of this.entries.values())if(entry.source.fingerprint===sourceFingerprint)return entry.diagnostics;
+        return null;
+    }
     notify(entry){for(const listener of entry.listeners)try{listener(this.current(entry));}catch{}}
     publish(entry,measurement){
         if(this.entries.get(entry.key)!==entry)return false;
+        entry.diagnostics=measurement.diagnostics??null;
         const now=this.clock();
         const value=observation({version:1,sourceId:entry.source.sourceId,sourceFingerprint:entry.source.fingerprint,endpointFingerprint:entry.source.endpointFingerprint,
             authority:entry.source.authority,sessionId:this.sessionId,generation:entry.generation,sequence:++entry.sequence,
