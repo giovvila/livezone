@@ -77,6 +77,22 @@ test('A2 external master, repeated live advance, stall, reset and endlist',async
     assert.equal((await observer.sample(source)).reason,'SEQUENCE_RESET');end=true;
     assert.equal((await observer.sample(source)).reason,'ENDLIST_NONLIVE');assert.equal(highReads,0);assert.equal(segmentReads,6);
 });
+test('A3 forward discontinuity sequence with forward media progression remains ONLINE',async t=>{
+    let sequence=100,discontinuity=7;
+    const h=await fixture(t,(req,res)=>res.end(req.url.includes('.ts')?'x':media(sequence,{discontinuity})));
+    const observer=new HlsObserver({http:fixtureHttp()});const source=resolveHealthSource({id:'wowza',kind:'hls',url:h.url});
+    assert.equal((await observer.sample(source)).state,'UNCERTAIN');
+    sequence++;discontinuity++;
+    const next=await observer.sample(source);
+    assert.equal(next.state,'ONLINE');assert.equal(next.reason,'PLAYLIST_ADVANCING');assert.equal(next.playlistProgressing,true);
+});
+test('A3 backwards discontinuity sequence remains a reset even with forward media sequence',async t=>{
+    let sequence=100,discontinuity=7;
+    const h=await fixture(t,(req,res)=>res.end(req.url.includes('.ts')?'x':media(sequence,{discontinuity})));
+    const observer=new HlsObserver({http:fixtureHttp()});const source=resolveHealthSource({id:'wowza',kind:'hls',url:h.url});
+    await observer.sample(source);sequence++;discontinuity--;
+    const next=await observer.sample(source);assert.equal(next.state,'UNCERTAIN');assert.equal(next.reason,'SEQUENCE_RESET');
+});
 test('A2 external errors and network recovery never infer healthy playback from HTTP 200',async t=>{
     let mode='manifest404',sequence=1;
     const h=await fixture(t,(req,res)=>{if(mode==='manifest404'||mode==='segment404'&&req.url.includes('.ts')){res.writeHead(404);res.end();return;}
