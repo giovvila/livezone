@@ -50,10 +50,11 @@ export default class AutoLiveAuthority {
     }
     healthRuntime(){
         const health=freshObservation(this.health,this.clock());
+        const diagnostics=this.healthSource?.fingerprint&&this.healthRegistry?.diagnostics?.(this.healthSource.fingerprint)||null;
         return {healthMode:'shadow',resolvedSourceFingerprint:this.healthSource?.fingerprint??null,
             healthAuthority:health?.authority??null,healthState:health?.state??'UNKNOWN',healthSequence:health?.sequence??null,
             healthCheckedAt:health?.observedAt??null,healthValidUntil:health?.validUntil??null,lastHealthReason:health?.reason??'NO_ACTIVE_DEMAND',
-            healthObservation:health??null};
+            healthObservation:health??null,healthDiagnostics:diagnostics};
     }
     decisionRuntime(config,health){
         const decision=this.decisionShadow.update({enabled:Boolean(config?.enabled),armed:Boolean(config?.armed),sourceId:config?.sourceId??null,
