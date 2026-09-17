@@ -23,6 +23,11 @@ export function abortable(promise,signal){
     return new Promise((resolve,reject)=>{const abort=()=>reject(error('ABORTED'));signal.addEventListener('abort',abort,{once:true});
         Promise.resolve(promise).then(resolve,reject).finally(()=>signal.removeEventListener('abort',abort));});
 }
+function codedError(code,details=null){
+    const e=error(code);
+    if(details&&typeof details==='object')e.details=Object.freeze({...details});
+    return e;
+}
 async function resolveAddresses(host,signal){
     if(signal.aborted)throw error('ABORTED');
     try{
@@ -46,7 +51,7 @@ export default class AutoLiveSafeHttp {
     constructor({resolve=resolveAddresses,allowAddress=publicAddress,parseUrl=externalUrl,timeoutMs=2500}={}){
         Object.assign(this,{resolve,allowAddress,parseUrl,timeoutMs});
     }
-    async read(value,{signal,segment=false}={}){
+    async read(value,{signal,segment=false,stage=null}={}){
         const controller=new AbortController(),abort=()=>controller.abort();signal?.addEventListener('abort',abort,{once:true});
         if(signal?.aborted)controller.abort();const timer=setTimeout(abort,this.timeoutMs);
         try{
@@ -58,7 +63,7 @@ export default class AutoLiveSafeHttp {
                 if(addresses.length>32||addresses.some(a=>!this.allowAddress(a.address)))throw error('ADDRESS_FORBIDDEN');
                 let result,lastNetworkError;
                 for(const address of addresses){
-                    try{result=await this.request(url,address,controller.signal,segment);lastNetworkError=null;break;}
+                    try{result=await this.request(url,address,controller.signal,segment,stage);lastNetworkError=null;break;}
                     catch(e){
                         if(controller.signal.aborted)throw error('ABORTED');
                         if(e?.code!=='NETWORK_ERROR')throw e;
@@ -71,14 +76,14 @@ export default class AutoLiveSafeHttp {
             }
         }finally{clearTimeout(timer);signal?.removeEventListener('abort',abort);controller.abort();}
     }
-    request(url,address,signal,segment){
+    request(url,address,signal,segment,stage=null){
         return new Promise((resolve,reject)=>{
             const request=(url.protocol==='https:'?https:http).request(url,{agent:false,signal,maxHeaderSize:16384,
                 lookup:(host,options,callback)=>options.all?callback(null,[address]):callback(null,address.address,address.family),
                 headers:{Accept:segment?'*/*':'application/vnd.apple.mpegurl','Accept-Encoding':'identity',...(segment?{Range:'bytes=0-0'}:{})}},response=>{
                 const status=response.statusCode;
                 if([301,302,303,307,308].includes(status)){const location=response.headers.location;response.destroy();return location?resolve({location}):reject(error('REDIRECT_INVALID'));}
-                if(status<200||status>=300){response.destroy();return reject(error('HTTP_ERROR'));}
+                if(status<200||status>=300){response.destroy();return reject(codedError('HTTP_ERROR',{status,stage:stage||null}));}
                 if(response.headers['content-encoding']&&response.headers['content-encoding']!=='identity'){response.destroy();return reject(error('ENCODING_UNSUPPORTED'));}
                 const chunks=[];let bytes=0,done=false;
                 const finish=value=>{if(done)return;done=true;resolve(value);};
