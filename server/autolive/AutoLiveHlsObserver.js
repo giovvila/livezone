@@ -30,39 +30,45 @@ export function parsePlaylist(text,base){
     return {segments,target,sequence,endlist,byteRange,vod};
 }
 const short=value=>typeof value==='string'?value.slice(0,12):value;
+const safeFailure=e=>e?.code==='HTTP_ERROR'?{httpStatus:Number.isInteger(e.details?.status)?e.details.status:null,httpStage:e.details?.stage||null}:null;
 export default class AutoLiveHlsObserver {
     constructor({http=new AutoLiveSafeHttp(),clock=()=>Date.now()}={}){Object.assign(this,{http,clock});}
     async sample(source,signal){
-        let url=source.endpoint,playlist;
-        for(let depth=0;depth<3;depth++){
-            const response=await this.http.read(url,{signal});url=response.url;playlist=parsePlaylist(response.body,url);
-            if(!playlist.variants)break;if(depth===2)throw error('VARIANT_DEPTH');url=playlist.variants[0].uri;
+        try{
+            let url=source.endpoint,playlist;
+            for(let depth=0;depth<3;depth++){
+                const stage=depth===0?'manifest':'variant';
+                const response=await this.http.read(url,{signal,stage});url=response.url;playlist=parsePlaylist(response.body,url);
+                if(!playlist.variants)break;if(depth===2)throw error('VARIANT_DEPTH');url=playlist.variants[0].uri;
+            }
+            const last=playlist.segments.at(-1),now=this.clock();
+            const segment=await this.http.read(last.uri,{signal,segment:true,stage:'segment'});if(!segment.bytes)throw error('SEGMENT_EMPTY');
+            const current={playlist:hashIdentity(url),end:playlist.sequence+(playlist.segments.length-1),discontinuity:last.discontinuity,date:last.date,uri:hashIdentity(last.uri)};
+            const previous=this.previous;
+            const backwardsMedia=Boolean(previous&&current.end<previous.end);
+            const backwardsDiscontinuity=Boolean(previous&&current.discontinuity<previous.discontinuity);
+            const dateRegressed=Boolean(previous&&current.date!==null&&previous.date!==null&&current.date<=previous.date);
+            const forwardProgress=Boolean(previous&&current.end>previous.end&&current.uri!==previous.uri&&!dateRegressed);
+            // Some Wowza deployments rotate or redirect the effective media-playlist URL
+            // while the live window itself continues monotonically. URL identity alone is
+            // therefore not a reset signal. We only fail closed on backwards media or
+            // discontinuity progression. A rotated playlist URL with no proven forward
+            // progression remains UNCERTAIN rather than becoming ONLINE.
+            const resetCause=!previous?null:backwardsMedia?'MEDIA_SEQUENCE_BACKWARDS':backwardsDiscontinuity?'DISCONTINUITY_BACKWARDS':null;
+            const reset=Boolean(resetCause);
+            const advances=!reset&&forwardProgress;
+            const playlistChanged=Boolean(previous&&previous.playlist!==current.playlist);
+            this.previous=current;
+            if(!previous||reset||advances)this.lastAdvance=now;
+            const stale=now-this.lastAdvance>Math.max(15000,playlist.target*3000);
+            const reason=playlist.byteRange?'BYTE_RANGE_UNSUPPORTED':playlist.endlist?'ENDLIST_NONLIVE':playlist.vod?'VOD_NONLIVE':reset?'SEQUENCE_RESET':stale?'PLAYLIST_STALLED':advances?'PLAYLIST_ADVANCING':playlistChanged?'PLAYLIST_IDENTITY_CHANGED':'AWAITING_PROGRESSION';
+            const diagnostics={resetCause,playlistChanged,
+                previous:previous?{playlist:short(previous.playlist),end:previous.end,discontinuity:previous.discontinuity,date:previous.date,uri:short(previous.uri)}:null,
+                current:{playlist:short(current.playlist),end:current.end,discontinuity:current.discontinuity,date:current.date,uri:short(current.uri)}};
+            return {state:reason==='PLAYLIST_ADVANCING'?'ONLINE':'UNCERTAIN',reason,publisherPresent:null,playbackAvailable:true,
+                playlistProgressing:advances&&!playlist.endlist&&!playlist.vod&&!playlist.byteRange,segmentReachable:true,readiness:'transport-only',diagnostics};
+        }catch(e){
+            const diagnostics=safeFailure(e);if(diagnostics)e.diagnostics=diagnostics;throw e;
         }
-        const last=playlist.segments.at(-1),now=this.clock();
-        const segment=await this.http.read(last.uri,{signal,segment:true});if(!segment.bytes)throw error('SEGMENT_EMPTY');
-        const current={playlist:hashIdentity(url),end:playlist.sequence+(playlist.segments.length-1),discontinuity:last.discontinuity,date:last.date,uri:hashIdentity(last.uri)};
-        const previous=this.previous;
-        const backwardsMedia=Boolean(previous&&current.end<previous.end);
-        const backwardsDiscontinuity=Boolean(previous&&current.discontinuity<previous.discontinuity);
-        const dateRegressed=Boolean(previous&&current.date!==null&&previous.date!==null&&current.date<=previous.date);
-        const forwardProgress=Boolean(previous&&current.end>previous.end&&current.uri!==previous.uri&&!dateRegressed);
-        // Some Wowza deployments rotate or redirect the effective media-playlist URL
-        // while the live window itself continues monotonically. URL identity alone is
-        // therefore not a reset signal. We only fail closed on backwards media or
-        // discontinuity progression. A rotated playlist URL with no proven forward
-        // progression remains UNCERTAIN rather than becoming ONLINE.
-        const resetCause=!previous?null:backwardsMedia?'MEDIA_SEQUENCE_BACKWARDS':backwardsDiscontinuity?'DISCONTINUITY_BACKWARDS':null;
-        const reset=Boolean(resetCause);
-        const advances=!reset&&forwardProgress;
-        const playlistChanged=Boolean(previous&&previous.playlist!==current.playlist);
-        this.previous=current;
-        if(!previous||reset||advances)this.lastAdvance=now;
-        const stale=now-this.lastAdvance>Math.max(15000,playlist.target*3000);
-        const reason=playlist.byteRange?'BYTE_RANGE_UNSUPPORTED':playlist.endlist?'ENDLIST_NONLIVE':playlist.vod?'VOD_NONLIVE':reset?'SEQUENCE_RESET':stale?'PLAYLIST_STALLED':advances?'PLAYLIST_ADVANCING':playlistChanged?'PLAYLIST_IDENTITY_CHANGED':'AWAITING_PROGRESSION';
-        const diagnostics={resetCause,playlistChanged,
-            previous:previous?{playlist:short(previous.playlist),end:previous.end,discontinuity:previous.discontinuity,date:previous.date,uri:short(previous.uri)}:null,
-            current:{playlist:short(current.playlist),end:current.end,discontinuity:current.discontinuity,date:current.date,uri:short(current.uri)}};
-        return {state:reason==='PLAYLIST_ADVANCING'?'ONLINE':'UNCERTAIN',reason,publisherPresent:null,playbackAvailable:true,
-            playlistProgressing:advances&&!playlist.endlist&&!playlist.vod&&!playlist.byteRange,segmentReachable:true,readiness:'transport-only',diagnostics};
     }
 }
