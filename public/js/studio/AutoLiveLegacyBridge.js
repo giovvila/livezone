@@ -25,6 +25,23 @@ export default class AutoLiveLegacyBridge {
     }
     attachEngine(engine){if(this.destroyed)return;this.engine=engine;this.apply(this.client.state);}
     setShadowProvider(provider){this.shadowProvider=provider;this.compare();}
+    setBrowserStageProvider(provider){
+        if(this.destroyed)return;
+        this.browserStageProvider=provider;
+        this.unsubscribeBrowserStage?.();this.unsubscribeBrowserStage=null;
+        const source=provider?.();
+        const controller=source?.controller;
+        if(controller?.subscribe)this.unsubscribeBrowserStage=controller.subscribe(snapshot=>this.reportBrowserStage(snapshot));
+        else this.reportBrowserStage(source?.snapshot);
+    }
+    reportBrowserStage(snapshot){
+        if(this.destroyed)return;
+        const live=Boolean(snapshot?.session);
+        const stage=live?'LIVE':'INACTIVE';
+        if(stage===this.lastBrowserStage)return;
+        this.lastBrowserStage=stage;
+        void this.client.observeBrowserStage?.(stage);
+    }
     compare(){
         const sequence=this.comparisonSequence=(this.comparisonSequence||0)+1;
         let browser;try{browser=this.shadowProvider?.();}catch{return;}
@@ -67,7 +84,7 @@ export default class AutoLiveLegacyBridge {
             :'SHADOW HEALTH · UNKNOWN · NO ACTIVE DEMAND';
         if(this.healthIndicator&&this.shadowComparison){const comparison=this.shadowComparison;
             this.healthIndicator.textContent+=` · COMPARE source=${comparison.sameSource}, endpoint=${comparison.endpointMatch}, state=${comparison.stateAgreement}, deltaMs=${comparison.timestampDeltaMs} · DECODER EQUIVALENCE NOT PROVEN`;}}
-    destroy(){this.destroyed=true;this.unsubscribe?.();this.lifecycle.removeEventListener?.('focus',this.refresh);this.client.destroy();
+    destroy(){this.destroyed=true;this.unsubscribe?.();this.unsubscribeBrowserStage?.();this.lifecycle.removeEventListener?.('focus',this.refresh);this.client.destroy();
         this.indicator?.remove();this.button?.remove();this.healthIndicator?.remove();
         // Keep the write barrier: a retired document must never fall back to local writes.
         this.config.authorityMutation=async()=>({ok:false,code:'AUTOLIVE_UNAVAILABLE'});}
