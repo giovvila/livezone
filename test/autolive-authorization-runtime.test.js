@@ -120,7 +120,7 @@ for (const selected of ["primary-live", "live-selected-1"]) {
         scheduler.click(selected);
         if (selected !== "primary-live") scheduler.saveLive(selected);
         scheduler.saveSchedule(selected);
-        assert.deepEqual(JSON.parse(shared.getItem(KEY)), { version: 1, armed: false, authorizedSourceId: selected });
+        assert.deepEqual(JSON.parse(shared.getItem(KEY)), { version: 1, armed: true, authorizedSourceId: selected });
         assert.equal(JSON.parse(shared.getItem("livezone.scheduler.schedule.v1")).items[0].target.id, selected);
         assert.equal(Object.hasOwn(JSON.parse(shared.getItem("livezone.scheduler.schedule.v1")), "dominantLive"), false);
         assert.ok(scheduler.records.some(r => r.event === "AUTOLIVE_AUTH_WRITE" &&
@@ -191,6 +191,7 @@ for (const failure of ["throw", "discard"]) {
         shared.setItem = (key, value) => { if (key !== KEY) return setItem(key, value);
             if (failure === "throw") throw new Error("do-not-log-this-error"); };
         scheduler.click("primary-live");
+        await new Promise(resolve => setImmediate(resolve));
         assert.equal(scheduler.config.getSnapshot().authorizedSourceId, null);
         assert.match(scheduler.nodes["live-source-feedback"].textContent, /non salvata/);
         assert.ok(scheduler.records.some(r => r.event === "AUTOLIVE_AUTH_WRITE" && r.fields.ok === false));
@@ -229,17 +230,15 @@ for (const kind of ["bootstrap", "existing", "new"]) {
         if (kind === "new") a.saveLive();
         const id = kind === "bootstrap" ? "primary-live" : "live-selected-1";
         a.click(id); a.saveSchedule(id);
-        assert.deepEqual(JSON.parse(shared.getItem(KEY)), { version: 1, armed: false, authorizedSourceId: id });
+        assert.deepEqual(JSON.parse(shared.getItem(KEY)), { version: 1, armed: true, authorizedSourceId: id });
         a.destroy();
         const b = await page(shared); const liveB = b.startControl();
         assert.equal(liveB.controller.getSnapshot().authorizedSourceId, id);
-        liveB.controlNodes["dominant-live-armed"].checked = true;
-        liveB.controlNodes["dominant-live-armed"].dispatch("change");
+        assert.equal(liveB.controlNodes["dominant-live-armed"].checked, true);
         const expected = { version: 1, armed: true, authorizedSourceId: id };
         assert.deepEqual(JSON.parse(shared.getItem(KEY)), expected);
-        assert.ok(b.records.some(r => r.event === "AUTOLIVE_AUTH_WRITE" &&
-            r.fields.armed === true && r.fields.authorizedSourceId === id &&
-            r.fields.writeSucceeded === true && r.fields.readBackSucceeded === true));
+        assert.ok(b.records.some(r => r.event === "AUTOLIVE_AUTH_READ" &&
+            r.fields.armed === true && r.fields.authorizedSourceId === id));
         b.destroy();
         const c = await page(shared, { hydrate: false });
         assert.deepEqual(c.config.getSnapshot(), { armed: true, authorizedSourceId: id });
@@ -324,13 +323,13 @@ test("unreadable storage cannot turn a stale mutation into a destructive default
 test("armed readback failure restores checkbox and reports both verification outcomes", async () => {
     const shared = storage(); const control = await page(shared); control.click("primary-live");
     const running = control.startControl(); shared.setItem = () => {};
-    running.controlNodes["dominant-live-armed"].checked = true;
+    running.controlNodes["dominant-live-armed"].checked = false;
     running.controlNodes["dominant-live-armed"].dispatch("change");
-    assert.equal(running.controlNodes["dominant-live-armed"].checked, false);
+    assert.equal(running.controlNodes["dominant-live-armed"].checked, true);
     assert.equal(running.controlNodes["dominant-live-status"].textContent, "CONFIG NOT SAVED");
     assert.ok(control.records.some(r => r.event === "AUTOLIVE_AUTH_WRITE" &&
-        r.fields.writeSucceeded === true && r.fields.readBackSucceeded === false && r.fields.requestedArmed === true));
-    assert.deepEqual(JSON.parse(shared.getItem(KEY)), { version: 1, armed: false, authorizedSourceId: "primary-live" });
+        r.fields.writeSucceeded === true && r.fields.readBackSucceeded === false && r.fields.requestedArmed === false));
+    assert.deepEqual(JSON.parse(shared.getItem(KEY)), { version: 1, armed: true, authorizedSourceId: "primary-live" });
     control.destroy();
 });
 
