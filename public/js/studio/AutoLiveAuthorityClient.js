@@ -64,6 +64,17 @@ export default class AutoLiveAuthorityClient {
         }catch{if(this.started&&epoch===this.epoch)this.fail('AUTOLIVE_UNAVAILABLE');return {ok:false,code:'AUTOLIVE_UNAVAILABLE'};}
     }
     migrate(value){return this.mutate(value,{migration:true});}
+    async observeBrowserStage(stage){
+        if(!this.started||this.state.connection!=='online')return {ok:false,code:'AUTOLIVE_UNAVAILABLE'};
+        const normalized=stage==='LIVE'?'LIVE':'INACTIVE';
+        try{
+            const response=await this.request(ROOT+'/browser-stage',{method:'POST',
+                headers:{'Content-Type':'application/json'},body:JSON.stringify({stage:normalized})});
+            const body=await response.json().catch(()=>({}));
+            if(!response.ok)return {ok:false,code:body.error?.code||'REQUEST_FAILED'};
+            return {ok:true};
+        }catch{return {ok:false,code:'AUTOLIVE_UNAVAILABLE'};}
+    }
     destroy(){this.started=false;++this.epoch;this.stream?.removeEventListener('autolive-state',this.message);
         this.stream?.removeEventListener('error',this.disconnected);this.stream?.removeEventListener('open',this.opened);
         this.stream?.close();this.listeners.clear();}
