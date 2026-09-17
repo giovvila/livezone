@@ -443,6 +443,8 @@ runtime.start({
         dominantLiveController.start();
         autoLiveBridge.setShadowProvider(()=>({...dominantHealthMonitor.getSnapshot(),
             endpoint:dominantLiveController.getAuthorizedSource()?.url}));
+        autoLiveBridge.setBrowserStageProvider(()=>({controller:dominantLiveController,
+            snapshot:dominantLiveController.getSnapshot()}));
         traceControlProgram("boot");
         autoLiveLossPresentation = new AutoLiveEntryPresentation({
             controller: dominantLiveController, output: programOutputManager, renderer: studioRenderer,
