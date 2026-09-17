@@ -61,6 +61,11 @@ test('A2 HTTP body, timeout and abort are bounded',async t=>{
     await assert.rejects(http.read(h.url),{code:'ABORTED'});
     const abort=new AbortController();const reading=http.read(h.url,{signal:abort.signal});abort.abort();await assert.rejects(reading,{code:'ABORTED'});
 });
+test('A4 HTTP errors carry bounded status/stage only',async t=>{
+    const h=await fixture(t,(req,res)=>{res.writeHead(403);res.end();});
+    const http=fixtureHttp();
+    await assert.rejects(http.read(h.url,{stage:'manifest'}),e=>e?.code==='HTTP_ERROR'&&e.httpStatus===403&&e.httpStage==='manifest'&&!('url' in e));
+});
 test('A2 external master, repeated live advance, stall, reset and endlist',async t=>{
     let sequence=1,end=false,discontinuity=0,clock=1000,segmentReads=0,highReads=0;
     const h=await fixture(t,(req,res)=>{
@@ -76,6 +81,21 @@ test('A2 external master, repeated live advance, stall, reset and endlist',async
     assert.equal((await observer.sample(source)).reason,'PLAYLIST_STALLED');sequence=0;discontinuity++;
     assert.equal((await observer.sample(source)).reason,'SEQUENCE_RESET');end=true;
     assert.equal((await observer.sample(source)).reason,'ENDLIST_NONLIVE');assert.equal(highReads,0);assert.equal(segmentReads,6);
+});
+test('A4 HLS observer annotates manifest, variant and segment HTTP failures without URLs',async()=>{
+    const source={endpoint:'https://origin.example.com/master.m3u8'};
+    for(const wanted of ['manifest','variant','segment']){
+        let calls=0;
+        const http={async read(url,{segment=false,stage}={}){
+            calls++;
+            if(wanted==='manifest'&&calls===1||wanted==='variant'&&calls===2||wanted==='segment'&&segment){const e=new Error('http');e.code='HTTP_ERROR';e.httpStatus=404;e.httpStage=stage;throw e;}
+            if(calls===1)return {url:source.endpoint,body:'#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=100\nmedia.m3u8'};
+            if(!segment)return {url:'https://cdn.example.com/media.m3u8',body:media(100)};
+            return {bytes:1,url};
+        }};
+        const observer=new HlsObserver({http});
+        await assert.rejects(observer.sample(source),e=>e?.code==='HTTP_ERROR'&&e.httpStatus===404&&e.httpStage===wanted&&!('url' in e));
+    }
 });
 test('A3 forward discontinuity sequence with forward media progression remains ONLINE',async t=>{
     let sequence=100,discontinuity=7;
