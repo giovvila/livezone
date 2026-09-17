@@ -16,6 +16,13 @@ export class ManagedIngestHealthProducer {
             readiness:present?'publisher-present':'unavailable'};
     }
 }
+function safeDiagnostics(value){
+    if(!value||typeof value!=='object')return null;
+    const diagnostics={};
+    if(Number.isInteger(value.httpStatus)&&value.httpStatus>=100&&value.httpStatus<=599)diagnostics.httpStatus=value.httpStatus;
+    if(['manifest','variant','segment'].includes(value.httpStage))diagnostics.httpStage=value.httpStage;
+    return Object.keys(diagnostics).length?Object.freeze(diagnostics):null;
+}
 // Server-owned demand, never one instance per API/SSE client. One sample in flight
 // per entry; abort and generation fencing precede every release/source replacement.
 export default class AutoLiveHealthRegistry {
@@ -69,8 +76,8 @@ export default class AutoLiveHealthRegistry {
         const controller=entry.controller=new AbortController();const timeout=this.setTimer(()=>controller.abort(),this.timeoutMs);
         try{this.publish(entry,await abortable(Promise.resolve().then(()=>entry.producer.sample(entry.source,controller.signal)),controller.signal));}
         catch(e){const allowed=['ADDRESS_FORBIDDEN','URL_FORBIDDEN','REDIRECT_LIMIT','REDIRECT_INVALID','BODY_LIMIT','ENCODING_UNSUPPORTED',
-            'HTTP_ERROR','NETWORK_ERROR','ABORTED','PLAYLIST_INVALID','SEGMENT_EMPTY','VARIANT_DEPTH','MAPPING_MISMATCH'];
-            this.publish(entry,{state:'ERROR',reason:allowed.includes(e.code)?e.code:'HEALTH_PROBE_ERROR'});}
+            'HTTP_ERROR','NETWORK_ERROR','DNS_ERROR','ABORTED','PLAYLIST_INVALID','SEGMENT_EMPTY','VARIANT_DEPTH','MAPPING_MISMATCH'];
+            this.publish(entry,{state:'ERROR',reason:allowed.includes(e.code)?e.code:'HEALTH_PROBE_ERROR',diagnostics:safeDiagnostics(e.diagnostics)});}
         finally{this.clearTimer(timeout);controller.abort();entry.running=false;
             if(this.entries.get(entry.key)===entry){entry.timer=this.setTimer(()=>void this.poll(entry),this.intervalMs);entry.timer?.unref?.();}}
     }
