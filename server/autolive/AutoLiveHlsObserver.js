@@ -41,7 +41,12 @@ export default class AutoLiveHlsObserver {
         const segment=await this.http.read(last.uri,{signal,segment:true});if(!segment.bytes)throw error('SEGMENT_EMPTY');
         const current={playlist:hashIdentity(url),end:playlist.sequence+(playlist.segments.length-1),discontinuity:last.discontinuity,date:last.date,uri:hashIdentity(last.uri)};
         const previous=this.previous;
-        const reset=previous&&(previous.playlist!==current.playlist||current.end<previous.end||current.discontinuity!==previous.discontinuity);
+        // HLS discontinuity sequence is allowed to move forward as a discontinuity
+        // passes through (or ages out of) a live sliding window. Treating every
+        // discontinuity change as a reset kept valid Wowza live playlists permanently
+        // UNCERTAIN. A backwards discontinuity identity is still fail-closed, as are
+        // playlist identity changes and backwards media progression.
+        const reset=previous&&(previous.playlist!==current.playlist||current.end<previous.end||current.discontinuity<previous.discontinuity);
         const advances=!!previous&&!reset&&current.end>previous.end&&current.uri!==previous.uri&&
             !(current.date!==null&&previous.date!==null&&current.date<=previous.date);
         this.previous=current;
