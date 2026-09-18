@@ -87,7 +87,8 @@ export default class AutoLiveLegacyBridge {
             const at=Number.isFinite(runtime.shadowLastTransitionAt)?new Date(runtime.shadowLastTransitionAt).toISOString():'n/a';
             const diag=runtime.healthDiagnostics;
             const http=diag?.httpStatus?` · HTTP ${diag.httpStatus}${diag.httpStage?`/${diag.httpStage}`:''}`:'';
-            this.healthIndicator.textContent+=` · DECISION ${runtime.shadowDecisionState} · TRANSITION ${runtime.shadowLastTransitionFrom??'NONE'}→${runtime.shadowLastTransitionTo??runtime.shadowDecisionState} @ ${at} · entry=${runtime.shadowEntryHealthyMs}ms eligible=${runtime.shadowEntryEligible} · loss=${runtime.shadowLossMs}ms eligible=${runtime.shadowLossEligible}${http} · READY entry=${runtime.shadowReadyForEntry} loss=${runtime.shadowReadyForLoss} reason=${runtime.shadowReadinessReason} · execution=false`;
+            const entryPhase=runtime.shadowLiveObserved?'historical':'active';
+            this.healthIndicator.textContent+=` · DECISION ${runtime.shadowDecisionState} · TRANSITION ${runtime.shadowLastTransitionFrom??'NONE'}→${runtime.shadowLastTransitionTo??runtime.shadowDecisionState} @ ${at} · entry=${runtime.shadowEntryHealthyMs}ms (${entryPhase}) eligible=${runtime.shadowEntryEligible} · loss=${runtime.shadowLossMs}ms eligible=${runtime.shadowLossEligible}${http} · READY entry=${runtime.shadowReadyForEntry} loss=${runtime.shadowReadyForLoss} reason=${runtime.shadowReadinessReason} · execution=false`;
         }
         if(this.healthIndicator&&this.shadowComparison){const comparison=this.shadowComparison;
             this.healthIndicator.textContent+=` · COMPARE source=${comparison.sameSource}, endpoint=${comparison.endpointMatch}, state=${comparison.stateAgreement}, deltaMs=${comparison.timestampDeltaMs} · DECODER EQUIVALENCE NOT PROVEN`;}}
