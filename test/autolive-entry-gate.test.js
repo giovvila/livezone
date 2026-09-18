@@ -746,3 +746,23 @@ test('A5 retained LIVE adoption fails closed on mismatched Program identity', as
         assert.equal(h.scheduler.begins,0);
     });
 });
+
+
+test('A5 retained LIVE adoption retries when Program transport hydrates', async () => {
+    await harness(async h => {
+        h.state.setProgramScene('LIVE', {source:'program-output',reason:'retained-bootstrap'});
+        h.renderer.program.sceneId = 'LIVE';
+        h.controller.session = null;
+        h.controller.pendingSession = null;
+        h.controller.closingSession = null;
+        h.controller.schedulerSnapshot = h.scheduler.getSnapshot();
+        assert.equal(h.controller.adoptRetainedLive(),false);
+        h.renderer.programTransportSnapshot = Object.freeze({sourceId:'live',consumer:'program'});
+        h.renderer.programTransportListeners?.forEach?.(fn => fn(h.renderer.programTransportSnapshot));
+        await flush();
+        assert.equal(h.controller.session?.phase,'LIVE');
+        assert.equal(h.controller.session?.retained,true);
+        assert.equal(h.controller.acquisitionState,'ON_AIR');
+        assert.equal(h.scheduler.begins,0);
+    });
+});
