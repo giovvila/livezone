@@ -25,8 +25,8 @@ export default class DominantLiveUI {
         const adoption=snapshot.diagnostics?.retainedAdoption;
         this.status.textContent = snapshot.phase === "PREPARING"
             ? `AUTOLIVE · PREPARING · STABLE ${Math.floor(snapshot.diagnostics.entryElapsedMs / 1000)} / ${snapshot.diagnostics.entryRequiredMs / 1000} s`
-            : adoption?.state==='BLOCKED' && snapshot.status==='ARMED — WAITING'
-                ? `ARMED — WAITING · RETAINED ${adoption.reason}`
+            : adoption?.state==='BLOCKED' && snapshot.phase==='CLOSED'
+                ? `${snapshot.status} · RETAINED ${adoption.reason}`
                 : snapshot.status; this.source.textContent = snapshot.authorizedSourceName || "NO AUTHORIZED SOURCE";
         this.root.dataset.dominantState = snapshot.status.toLowerCase().replaceAll(" ", "-"); }
 }
