@@ -704,6 +704,7 @@ test('operator ownership stays protected across subsequent OFFLINE and ONLINE ob
 test('A5 retained LIVE adoption restores AutoLive ownership without TAKE or Program mutation', async () => {
     await harness(async h => {
         h.state.setProgramScene('LIVE', {source:'program-output',reason:'retained-bootstrap'});
+        h.renderer.program.sceneId = 'LIVE';
         h.renderer.program.renderer = {sourceId:'live'};
         h.controller.session = null;
         h.controller.schedulerSnapshot = h.scheduler.getSnapshot();
