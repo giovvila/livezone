@@ -61,7 +61,9 @@ export default class AutoLiveAuthority {
             sourceFingerprint:this.healthSource?.fingerprint??null,health:health.healthObservation??null,browserStage:this.browserStage});
         return {decisionMode:'shadow',shadowDecisionState:decision.state,shadowEntryHealthyMs:decision.entryHealthyMs,
             shadowEntryEligible:decision.entryEligible,shadowLossMs:decision.lossMs,shadowLossEligible:decision.lossEligible,
-            shadowLiveObserved:decision.liveObserved,shadowExecutionAllowed:decision.executionAllowed,shadowServerTake:decision.serverTake};
+            shadowLiveObserved:decision.liveObserved,shadowLastTransitionAt:decision.lastTransitionAt,
+            shadowLastTransitionFrom:decision.lastTransitionFrom,shadowLastTransitionTo:decision.lastTransitionTo,
+            shadowExecutionAllowed:decision.executionAllowed,shadowServerTake:decision.serverTake};
     }
     refresh(){
         if(this.closed)return;
