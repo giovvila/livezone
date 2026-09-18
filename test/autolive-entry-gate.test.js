@@ -712,6 +712,18 @@ test('A5 retained LIVE adoption restores AutoLive ownership without TAKE or Prog
         h.controller.closingSession = null;
         h.controller.schedulerSnapshot = h.scheduler.getSnapshot();
         const before = history(h.published);
+        const setting = h.controller.config.getSnapshot();
+        const source = h.controller.getAuthorizedSource();
+        const target = h.controller.resolveTarget(source);
+        const scheduler = h.controller.schedulerSnapshot || h.scheduler.getSnapshot();
+        const transport = h.renderer.getProgramTransport?.();
+        assert.equal(setting.armed,true);
+        assert.equal(scheduler.enabled,true);
+        assert.equal(scheduler.interruptionContext,null);
+        assert.equal(source?.id,'live');
+        assert.equal(target?.sceneId,'LIVE');
+        assert.equal(h.state.getProgramSceneId(),'LIVE');
+        assert.equal(transport?.sourceId,'live');
         const adopted = h.controller.adoptRetainedLive();
         assert.equal(adopted,true);
         assert.equal(h.controller.session?.phase,'LIVE');
