@@ -138,11 +138,13 @@ test('A4 Control diagnostics renders shadow transition state without execution c
         shadowEntryEligible:true,shadowLossMs:5000,shadowLossEligible:false,shadowLastTransitionAt:1000,
         shadowLastTransitionFrom:'LIVE_OBSERVED',shadowLastTransitionTo:'LOSS_PENDING'};
     model.runtime.healthObservation={authority:'external-hls-http',state:'OFFLINE',observedAt:1000,freshness:'FRESH',reason:'HTTP_ERROR',capabilities:{presenceEvidence:false,playlistProgressEvidence:true,segmentReachabilityEvidence:true,decoderProgressEvidence:false}};
+    model.runtime.healthDiagnostics={httpStatus:403,httpStage:'manifest'};
     const client=new AutoLiveAuthorityClient({request:async()=>response(model)});
     const root={append(){}};const bridge=new AutoLiveLegacyBridge({client,config,runtimeState,lifecycle:new EventTarget(),root:null});
     const removable=()=>({remove(){}});
     bridge.indicator=removable();bridge.button=removable();bridge.healthIndicator=removable();await bridge.start();bridge.render();
     assert.match(bridge.healthIndicator.textContent,/DECISION LOSS_PENDING/);assert.match(bridge.healthIndicator.textContent,/LIVE_OBSERVED→LOSS_PENDING/);
-    assert.match(bridge.healthIndicator.textContent,/execution=false/);assert.doesNotMatch(bridge.healthIndicator.textContent,/https?:|secret/i);
+    assert.match(bridge.healthIndicator.textContent,/HTTP 403\/manifest/);assert.match(bridge.healthIndicator.textContent,/execution=false/);
+    assert.doesNotMatch(bridge.healthIndicator.textContent,/https?:|secret/i);
     bridge.destroy();config.destroy();
 });
