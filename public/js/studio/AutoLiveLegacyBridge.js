@@ -78,10 +78,15 @@ export default class AutoLiveLegacyBridge {
         this.indicator.textContent=this.feedback || (state.connection!=='online'?'AUTOLIVE SERVER NON DISPONIBILE':
             state.snapshot?.migration.pristine?'CONFIG LEGACY — IMPORTAZIONE ESPLICITA':'CONFIG SERVER · ESECUZIONE CONTROL');
         this.button.hidden=!state.snapshot?.migration.pristine;this.button.disabled=state.connection!=='online';
-        const health=state.snapshot?.runtime?.healthObservation;
+        const runtime=state.snapshot?.runtime;
+        const health=runtime?.healthObservation;
         if(this.healthIndicator)this.healthIndicator.textContent=health
             ?`SHADOW HEALTH · ${health.authority} · ${health.state} · LAST CHECK ${new Date(health.observedAt).toISOString()} · ${health.freshness} · ${health.reason} · CAPABILITIES presence=${health.capabilities.presenceEvidence}, playlist=${health.capabilities.playlistProgressEvidence}, segment=${health.capabilities.segmentReachabilityEvidence}, decoder=false`
             :'SHADOW HEALTH · UNKNOWN · NO ACTIVE DEMAND';
+        if(this.healthIndicator&&runtime?.decisionMode==='shadow'){
+            const at=Number.isFinite(runtime.shadowLastTransitionAt)?new Date(runtime.shadowLastTransitionAt).toISOString():'n/a';
+            this.healthIndicator.textContent+=` · DECISION ${runtime.shadowDecisionState} · TRANSITION ${runtime.shadowLastTransitionFrom??'NONE'}→${runtime.shadowLastTransitionTo??runtime.shadowDecisionState} @ ${at} · entry=${runtime.shadowEntryHealthyMs}ms eligible=${runtime.shadowEntryEligible} · loss=${runtime.shadowLossMs}ms eligible=${runtime.shadowLossEligible} · execution=false`;
+        }
         if(this.healthIndicator&&this.shadowComparison){const comparison=this.shadowComparison;
             this.healthIndicator.textContent+=` · COMPARE source=${comparison.sameSource}, endpoint=${comparison.endpointMatch}, state=${comparison.stateAgreement}, deltaMs=${comparison.timestampDeltaMs} · DECODER EQUIVALENCE NOT PROVEN`;}}
     destroy(){this.destroyed=true;this.unsubscribe?.();this.unsubscribeBrowserStage?.();this.lifecycle.removeEventListener?.('focus',this.refresh);this.client.destroy();
