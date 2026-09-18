@@ -29,10 +29,16 @@ export default class AutoLiveDecisionShadow {
     lossMs(now){return this.lossAccumulated+(this.lossSince===null?0:Math.max(0,now-this.lossSince));}
     snapshot(now,state){
         if(state!==this.lastState){this.lastTransitionAt=now;this.lastTransitionFrom=this.lastState??null;this.lastTransitionTo=state;this.lastState=state;}
+        const readyForEntry=state==='ENTRY_ELIGIBLE'&&this.entryEligible===true&&!this.liveObserved;
+        const readyForLoss=state==='LOSS_ELIGIBLE'&&this.lossEligible===true&&this.liveObserved;
+        const readinessReason=readyForEntry?'ENTRY_HEALTH_MATURED':readyForLoss?'LOSS_CONFIRMED':
+            state==='DISARMED'?'CONSENT_OR_SOURCE_MISSING':state==='WAITING_HEALTH'?'HEALTH_NOT_READY':
+            state==='ENTRY_PENDING'?'ENTRY_HEALTH_ACCUMULATING':state==='LIVE_OBSERVED'?'LIVE_HEALTHY':
+            state==='LIVE_UNCERTAIN'?'LIVE_HEALTH_UNCERTAIN':state==='LOSS_PENDING'?'LOSS_GRACE_ACCUMULATING':'NOT_READY';
         return Object.freeze({version:1,state,sourceFingerprint:this.identity?.split(':').slice(1).join(':')||null,
         entryHealthyMs:this.entryMs(now),entryEligible:this.entryEligible,lossMs:this.lossMs(now),lossEligible:this.lossEligible,
         liveObserved:this.liveObserved,lastTransitionAt:this.lastTransitionAt,lastTransitionFrom:this.lastTransitionFrom,lastTransitionTo:this.lastTransitionTo,
-        executionAllowed:false,serverTake:false});}
+        readyForEntry,readyForLoss,readinessReason,executionAllowed:false,serverTake:false});}
 }
 
 export {ENTRY_MS,LOSS_MS};
