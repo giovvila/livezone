@@ -63,6 +63,8 @@ export default class AutoLiveAuthority {
             shadowEntryEligible:decision.entryEligible,shadowLossMs:decision.lossMs,shadowLossEligible:decision.lossEligible,
             shadowLiveObserved:decision.liveObserved,shadowLastTransitionAt:decision.lastTransitionAt,
             shadowLastTransitionFrom:decision.lastTransitionFrom,shadowLastTransitionTo:decision.lastTransitionTo,
+            shadowReadyForEntry:decision.readyForEntry,shadowReadyForLoss:decision.readyForLoss,
+            shadowReadinessReason:decision.readinessReason,
             shadowExecutionAllowed:decision.executionAllowed,shadowServerTake:decision.serverTake};
     }
     refresh(){
