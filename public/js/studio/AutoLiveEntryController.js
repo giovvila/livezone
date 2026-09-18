@@ -28,7 +28,25 @@ export default class AutoLiveEntryController extends DominantLiveController {
                 ownershipState: "ACTIVE", remainingMs: this.activeHealth?.remainingLossMs() });
             return allowed;
         });
-        return super.start();
+        const started=super.start();
+        if(started)this.adoptRetainedLive();
+        return started;
+    }
+    adoptRetainedLive(){
+        if(!this.started||this.session||this.pendingSession||this.closingSession)return false;
+        const setting=this.config.getSnapshot();
+        const source=this.getAuthorizedSource(),target=this.resolveTarget(source);
+        if(!setting.armed||!this.schedulerSnapshot?.enabled||this.schedulerSnapshot.interruptionContext||
+            !source||!target?.sceneId||this.command.stateManager.getProgramSceneId()!==target.sceneId)return false;
+        const transport=this.renderer.getProgramTransport?.();
+        if(transport?.sourceId!==source.id)return false;
+        const sessionId=this.uuidFactory?.()||`retained-${this.clock()}`;
+        this.session=Object.freeze({sessionId,sourceId:source.id,sceneId:target.sceneId,phase:'LIVE',origin:'dominant-live-retained',
+            startedAt:this.clock(),schedulerInterruptionContext:null,returnTarget:null,retained:true});
+        this.acquisitionState='ON_AIR';
+        this.traceHandoff('retained-live-adopted',{reason:'bootstrap-retained-live'});
+        this.emit();
+        return true;
     }
     reconcileConfiguration() {
         const armed = this.config.getSnapshot().armed === true;
