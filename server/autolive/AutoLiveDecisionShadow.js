@@ -3,7 +3,7 @@ const LOSS_MS=15000;
 
 export default class AutoLiveDecisionShadow {
     constructor({clock=()=>Date.now()}={}){this.clock=clock;this.reset();}
-    reset(){this.identity=null;this.onlineSince=null;this.onlineAccumulated=0;this.lossSince=null;this.lossAccumulated=0;this.entryEligible=false;this.liveObserved=false;this.lossEligible=false;}
+    reset(){this.identity=null;this.onlineSince=null;this.onlineAccumulated=0;this.lossSince=null;this.lossAccumulated=0;this.entryEligible=false;this.liveObserved=false;this.lossEligible=false;this.lastTransitionAt=null;this.lastTransitionFrom=null;this.lastTransitionTo=null;}
     update({enabled=false,armed=false,sourceId=null,sourceFingerprint=null,health=null,browserStage=null}={}){
         const now=this.clock();
         const identity=enabled&&armed&&sourceId&&sourceFingerprint?`${sourceId}:${sourceFingerprint}`:null;
@@ -27,9 +27,12 @@ export default class AutoLiveDecisionShadow {
     }
     entryMs(now){return this.onlineAccumulated+(this.onlineSince===null?0:Math.max(0,now-this.onlineSince));}
     lossMs(now){return this.lossAccumulated+(this.lossSince===null?0:Math.max(0,now-this.lossSince));}
-    snapshot(now,state){return Object.freeze({version:1,state,sourceFingerprint:this.identity?.split(':').slice(1).join(':')||null,
+    snapshot(now,state){
+        if(state!==this.lastState){this.lastTransitionAt=now;this.lastTransitionFrom=this.lastState??null;this.lastTransitionTo=state;this.lastState=state;}
+        return Object.freeze({version:1,state,sourceFingerprint:this.identity?.split(':').slice(1).join(':')||null,
         entryHealthyMs:this.entryMs(now),entryEligible:this.entryEligible,lossMs:this.lossMs(now),lossEligible:this.lossEligible,
-        liveObserved:this.liveObserved,executionAllowed:false,serverTake:false});}
+        liveObserved:this.liveObserved,lastTransitionAt:this.lastTransitionAt,lastTransitionFrom:this.lastTransitionFrom,lastTransitionTo:this.lastTransitionTo,
+        executionAllowed:false,serverTake:false});}
 }
 
 export {ENTRY_MS,LOSS_MS};
