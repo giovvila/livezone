@@ -787,3 +787,22 @@ test('A5 retained LIVE adoption retries when config/bootstrap reconciliation com
         assert.equal(h.scheduler.begins,0);
     });
 });
+
+
+test('A5 retained LIVE adoption accepts rendered source before transport snapshot', async () => {
+    await harness(async h => {
+        h.state.setProgramScene('LIVE', {source:'program-output',reason:'retained-bootstrap'});
+        h.renderer.program.sceneId = 'LIVE';
+        h.renderer.program.renderer = {sourceId:'live'};
+        h.renderer.programTransportSnapshot = null;
+        h.controller.session = null;
+        h.controller.pendingSession = null;
+        h.controller.closingSession = null;
+        h.controller.schedulerSnapshot = h.scheduler.getSnapshot();
+        h.controller.retainedAdoptionPending = true;
+        assert.equal(h.controller.tryAdoptRetainedLive(),true);
+        assert.equal(h.controller.session?.phase,'LIVE');
+        assert.equal(h.controller.session?.retained,true);
+        assert.equal(h.scheduler.begins,0);
+    });
+});
