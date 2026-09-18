@@ -325,8 +325,8 @@ export default class AutoLiveEntryController extends DominantLiveController {
             playerState: surface?.getHealth?.().state, instanceId: surface?.instanceId,
             currentTime: surface?.video?.currentTime, revision: this.getProgramRevision(),
             playing: Boolean(surface?.video && !surface.video.paused && !surface.video.ended),
-            playbackProgressing: Boolean(this.session?.phase === "LIVE" &&
-                this.activePlayback?.instanceId === surface?.instanceId &&
+            playbackProgressing: Boolean(this.session?.phase === "LIVE" && this.activePlayback &&
+                this.activePlayback.instanceId === surface?.instanceId &&
                 this.clock() - this.activePlayback.lastProgressAt < this.lossGraceMs && !this.programPlaybackLost),
             lastHealthyAt: this.activePlayback?.lastProgressAt,
             ...fields });
