@@ -756,7 +756,11 @@ test('A5 retained LIVE adoption retries when Program transport hydrates', async 
         h.controller.pendingSession = null;
         h.controller.closingSession = null;
         h.controller.schedulerSnapshot = h.scheduler.getSnapshot();
-        assert.equal(h.controller.adoptRetainedLive(),false);
+        assert.equal(h.controller.adoptRetainedLive(),true);
+        assert.equal(h.controller.session?.phase,'LIVE');
+        h.controller.session = null;
+        h.controller.retainedAdoptionPending = true;
+        h.renderer.program.renderer = {sourceId:'other'};
         h.renderer.programTransportSnapshot = Object.freeze({sourceId:'live',consumer:'program'});
         h.renderer.programTransportListeners?.forEach?.(fn => fn(h.renderer.programTransportSnapshot));
         await flush();
