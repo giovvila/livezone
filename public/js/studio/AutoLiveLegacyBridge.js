@@ -85,7 +85,9 @@ export default class AutoLiveLegacyBridge {
             :'SHADOW HEALTH · UNKNOWN · NO ACTIVE DEMAND';
         if(this.healthIndicator&&runtime?.decisionMode==='shadow'){
             const at=Number.isFinite(runtime.shadowLastTransitionAt)?new Date(runtime.shadowLastTransitionAt).toISOString():'n/a';
-            this.healthIndicator.textContent+=` · DECISION ${runtime.shadowDecisionState} · TRANSITION ${runtime.shadowLastTransitionFrom??'NONE'}→${runtime.shadowLastTransitionTo??runtime.shadowDecisionState} @ ${at} · entry=${runtime.shadowEntryHealthyMs}ms eligible=${runtime.shadowEntryEligible} · loss=${runtime.shadowLossMs}ms eligible=${runtime.shadowLossEligible} · execution=false`;
+            const diag=runtime.healthDiagnostics;
+            const http=diag?.httpStatus?` · HTTP ${diag.httpStatus}${diag.httpStage?`/${diag.httpStage}`:''}`:'';
+            this.healthIndicator.textContent+=` · DECISION ${runtime.shadowDecisionState} · TRANSITION ${runtime.shadowLastTransitionFrom??'NONE'}→${runtime.shadowLastTransitionTo??runtime.shadowDecisionState} @ ${at} · entry=${runtime.shadowEntryHealthyMs}ms eligible=${runtime.shadowEntryEligible} · loss=${runtime.shadowLossMs}ms eligible=${runtime.shadowLossEligible}${http} · execution=false`;
         }
         if(this.healthIndicator&&this.shadowComparison){const comparison=this.shadowComparison;
             this.healthIndicator.textContent+=` · COMPARE source=${comparison.sameSource}, endpoint=${comparison.endpointMatch}, state=${comparison.stateAgreement}, deltaMs=${comparison.timestampDeltaMs} · DECODER EQUIVALENCE NOT PROVEN`;}}
