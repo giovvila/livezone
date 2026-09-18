@@ -36,7 +36,8 @@ export default class AutoLiveEntryController extends DominantLiveController {
         if(!this.started||this.session||this.pendingSession||this.closingSession)return false;
         const setting=this.config.getSnapshot();
         const source=this.getAuthorizedSource(),target=this.resolveTarget(source);
-        if(!setting.armed||!this.schedulerSnapshot?.enabled||this.schedulerSnapshot.interruptionContext||
+        const scheduler=this.schedulerSnapshot||this.scheduler?.getSnapshot?.()||null;
+        if(!setting.armed||!scheduler?.enabled||scheduler.interruptionContext||
             !source||!target?.sceneId||this.command.stateManager.getProgramSceneId()!==target.sceneId)return false;
         const transport=this.renderer.getProgramTransport?.();
         if(transport?.sourceId!==source.id)return false;
