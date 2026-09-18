@@ -17,6 +17,7 @@ export default class AutoLiveEntryController extends DominantLiveController {
         this.entryElapsedMs = 0;
         this.entryHealthListeners = new Set();
         this.retainedAdoptionPending = false;
+        this.retainedAdoptionDiagnostics = Object.freeze({state:'IDLE',reason:null});
     }
     start() {
         if (this.started) return true;
@@ -44,18 +45,33 @@ export default class AutoLiveEntryController extends DominantLiveController {
         return adopted;
     }
     adoptRetainedLive(){
-        if(!this.started||this.session||this.pendingSession||this.closingSession)return false;
+        const blocked = (reason, extra={}) => {
+            this.retainedAdoptionDiagnostics=Object.freeze({state:'BLOCKED',reason,...extra});
+            trace.record('autolive-handoff','retained-live-adoption-blocked',{reason,...extra});
+            this.emit();
+            return false;
+        };
+        if(!this.started)return blocked('NOT_STARTED');
+        if(this.session)return blocked('SESSION_ALREADY_ACTIVE');
+        if(this.pendingSession)return blocked('PENDING_SESSION');
+        if(this.closingSession)return blocked('CLOSING_SESSION');
         const setting=this.config.getSnapshot();
         const source=this.getAuthorizedSource(),target=this.resolveTarget(source);
         const scheduler=this.schedulerSnapshot||this.scheduler?.getSnapshot?.()||null;
-        if(!setting.armed||!scheduler?.enabled||scheduler.interruptionContext||
-            !source||!target?.sceneId||this.command.stateManager.getProgramSceneId()!==target.sceneId)return false;
+        if(!setting.armed)return blocked('ARMED_FALSE');
+        if(!scheduler?.enabled)return blocked('SCHEDULER_DISABLED');
+        if(scheduler.interruptionContext)return blocked('SCHEDULER_INTERRUPTED');
+        if(!source)return blocked('AUTHORIZED_SOURCE_UNRESOLVED');
+        if(!target?.sceneId)return blocked('TARGET_UNRESOLVED',{sourceId:source.id});
+        const programSceneId=this.command.stateManager.getProgramSceneId();
+        if(programSceneId!==target.sceneId)return blocked('PROGRAM_SCENE_MISMATCH',{sourceId:source.id,sceneId:programSceneId,targetSceneId:target.sceneId});
         const transport=this.renderer.getProgramTransport?.();
-        if(transport?.sourceId!==source.id)return false;
+        if(transport?.sourceId!==source.id)return blocked('PROGRAM_SOURCE_MISMATCH',{sourceId:source.id,programSourceId:transport?.sourceId??null});
         const sessionId=this.uuidFactory?.()||`retained-${this.clock()}`;
         this.session=Object.freeze({sessionId,sourceId:source.id,sceneId:target.sceneId,phase:'LIVE',origin:'dominant-live-retained',
             startedAt:this.clock(),schedulerInterruptionContext:null,returnTarget:null,retained:true});
         this.acquisitionState='ON_AIR';
+        this.retainedAdoptionDiagnostics=Object.freeze({state:'ADOPTED',reason:'BOOTSTRAP_RETAINED_LIVE'});
         this.traceHandoff('retained-live-adopted',{reason:'bootstrap-retained-live'});
         this.emit();
         return true;
@@ -77,6 +93,7 @@ export default class AutoLiveEntryController extends DominantLiveController {
             this.reacquisitionSuppressed && this.config.getSnapshot().armed ? "ARMED — BLOCKED" : snapshot.status,
             phase: preparing ? "PREPARING" : this.session ? snapshot.status === "LOSS GRACE" ? "LOSS_GRACE" : "LIVE" : "CLOSED",
             diagnostics: Object.freeze({ ...snapshot.diagnostics,
+                retainedAdoption: this.retainedAdoptionDiagnostics,
                 entryElapsedMs: this.entryElapsedMs || 0,
                 entryRequiredMs: this.entryStabilityMs,
                 entryAbandonmentDeadline: this.entryAbandonmentDeadline ?? null }) });
