@@ -29,7 +29,10 @@ export default class AutoLiveEntryController extends DominantLiveController {
             return allowed;
         });
         const started=super.start();
-        if(started)this.adoptRetainedLive();
+        if(started){
+            this.retainedTransportUnsubscribe=this.renderer?.subscribeProgramTransport?.(()=>this.adoptRetainedLive());
+            this.adoptRetainedLive();
+        }
         return started;
     }
     adoptRetainedLive(){
@@ -362,6 +365,7 @@ export default class AutoLiveEntryController extends DominantLiveController {
         super.handleProgramChanged(record);
     }
     destroy() {
+        this.retainedTransportUnsubscribe?.(); this.retainedTransportUnsubscribe=null;
         this.removeProgramGuard?.(); this.removeProgramGuard = null;
         this.activeHealth?.destroy(); this.activeHealth = null;
         this.cancelReacquisition();
