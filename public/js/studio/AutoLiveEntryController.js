@@ -16,6 +16,7 @@ export default class AutoLiveEntryController extends DominantLiveController {
         this.entryAttempt = 0;
         this.entryElapsedMs = 0;
         this.entryHealthListeners = new Set();
+        this.retainedAdoptionPending = false;
     }
     start() {
         if (this.started) return true;
@@ -30,10 +31,17 @@ export default class AutoLiveEntryController extends DominantLiveController {
         });
         const started=super.start();
         if(started){
-            this.retainedTransportUnsubscribe=this.renderer?.subscribeProgramTransport?.(()=>this.adoptRetainedLive());
-            this.adoptRetainedLive();
+            this.retainedTransportUnsubscribe=this.renderer?.subscribeProgramTransport?.(()=>this.tryAdoptRetainedLive());
+            this.retainedAdoptionPending = true;
+            this.tryAdoptRetainedLive();
         }
         return started;
+    }
+    tryAdoptRetainedLive(){
+        if(!this.retainedAdoptionPending)return false;
+        const adopted=this.adoptRetainedLive();
+        if(adopted)this.retainedAdoptionPending=false;
+        return adopted;
     }
     adoptRetainedLive(){
         if(!this.started||this.session||this.pendingSession||this.closingSession)return false;
@@ -53,6 +61,7 @@ export default class AutoLiveEntryController extends DominantLiveController {
         return true;
     }
     reconcileConfiguration() {
+        if(this.retainedAdoptionPending)this.tryAdoptRetainedLive();
         const armed = this.config.getSnapshot().armed === true;
         if (!armed) { this.cancelReacquisition(); this.reacquisitionSuppressed = false; }
         // Explicit re-arming authorizes a new entry even if the same external
@@ -365,6 +374,7 @@ export default class AutoLiveEntryController extends DominantLiveController {
         super.handleProgramChanged(record);
     }
     destroy() {
+        this.retainedAdoptionPending=false;
         this.retainedTransportUnsubscribe?.(); this.retainedTransportUnsubscribe=null;
         this.removeProgramGuard?.(); this.removeProgramGuard = null;
         this.activeHealth?.destroy(); this.activeHealth = null;
