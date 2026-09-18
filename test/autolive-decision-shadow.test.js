@@ -68,3 +68,31 @@ test('A4 shadow exposes bounded transition diagnostics without execution authori
  assert.equal(out.executionAllowed,false);assert.equal(out.serverTake,false);
  const json=JSON.stringify(out);assert.doesNotMatch(json,/https?:|secret|url/i);
 });
+
+
+test('A5 readiness contract is fail-closed and never grants execution',()=>{
+ let now=0;const engine=new AutoLiveDecisionShadow({clock:()=>now});
+ let out=engine.update();
+ assert.equal(out.readyForEntry,false);assert.equal(out.readyForLoss,false);assert.equal(out.readinessReason,'CONSENT_OR_SOURCE_MISSING');
+ assert.equal(out.executionAllowed,false);assert.equal(out.serverTake,false);
+ out=engine.update({...base,health:health('ONLINE',now)});
+ assert.equal(out.readyForEntry,false);assert.equal(out.readinessReason,'ENTRY_HEALTH_ACCUMULATING');
+ now=ENTRY_MS;out=engine.update({...base,health:health('ONLINE',now)});
+ assert.equal(out.readyForEntry,true);assert.equal(out.readyForLoss,false);assert.equal(out.readinessReason,'ENTRY_HEALTH_MATURED');
+ assert.equal(out.executionAllowed,false);assert.equal(out.serverTake,false);
+ now++;out=engine.update({...base,health:health('ONLINE',now),browserStage:'LIVE'});
+ assert.equal(out.readyForEntry,false);assert.equal(out.readyForLoss,false);assert.equal(out.readinessReason,'LIVE_HEALTHY');
+ now++;out=engine.update({...base,health:health('OFFLINE',now),browserStage:'LIVE'});
+ assert.equal(out.readyForLoss,false);assert.equal(out.readinessReason,'LOSS_GRACE_ACCUMULATING');
+ now+=LOSS_MS+1;out=engine.update({...base,health:health('OFFLINE',now),browserStage:'LIVE'});
+ assert.equal(out.readyForEntry,false);assert.equal(out.readyForLoss,true);assert.equal(out.readinessReason,'LOSS_CONFIRMED');
+ assert.equal(out.executionAllowed,false);assert.equal(out.serverTake,false);
+});
+
+test('A5 uncertainty can never become execution readiness',()=>{
+ let now=1000;const engine=new AutoLiveDecisionShadow({clock:()=>now});
+ engine.update({...base,health:health('ONLINE',now),browserStage:'LIVE'});
+ now+=60000;const out=engine.update({...base,health:{state:'ERROR',freshness:'FRESH',validUntil:now+10000},browserStage:'LIVE'});
+ assert.equal(out.state,'LIVE_UNCERTAIN');assert.equal(out.readyForEntry,false);assert.equal(out.readyForLoss,false);
+ assert.equal(out.readinessReason,'LIVE_HEALTH_UNCERTAIN');assert.equal(out.executionAllowed,false);assert.equal(out.serverTake,false);
+});
