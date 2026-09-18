@@ -55,3 +55,16 @@ test('uncertainty while live never becomes definite loss and recovery clears los
  engine.update({...base,health:health('OFFLINE',now),browserStage:'LIVE'});now+=5000;
  const recovered=engine.update({...base,health:health('ONLINE',now),browserStage:'LIVE'});assert.equal(recovered.state,'LIVE_OBSERVED');assert.equal(recovered.lossMs,0);assert.equal(recovered.lossEligible,false);
 });
+
+
+test('A4 shadow exposes bounded transition diagnostics without execution authority',()=>{
+ let now=0;const engine=new AutoLiveDecisionShadow({clock:()=>now});
+ let out=engine.update({...base,health:health('ONLINE',now)});
+ assert.equal(out.state,'ENTRY_PENDING');assert.equal(out.lastTransitionAt,0);assert.equal(out.lastTransitionFrom,null);assert.equal(out.lastTransitionTo,'ENTRY_PENDING');
+ now=ENTRY_MS;out=engine.update({...base,health:health('ONLINE',now)});
+ assert.equal(out.state,'ENTRY_ELIGIBLE');assert.equal(out.lastTransitionAt,ENTRY_MS);assert.equal(out.lastTransitionFrom,'ENTRY_PENDING');assert.equal(out.lastTransitionTo,'ENTRY_ELIGIBLE');
+ now++;out=engine.update({...base,health:health('ONLINE',now),browserStage:'LIVE'});
+ assert.equal(out.state,'LIVE_OBSERVED');assert.equal(out.lastTransitionFrom,'ENTRY_ELIGIBLE');assert.equal(out.lastTransitionTo,'LIVE_OBSERVED');
+ assert.equal(out.executionAllowed,false);assert.equal(out.serverTake,false);
+ const json=JSON.stringify(out);assert.doesNotMatch(json,/https?:|secret|url/i);
+});
