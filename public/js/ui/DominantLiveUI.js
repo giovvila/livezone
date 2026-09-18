@@ -22,8 +22,11 @@ export default class DominantLiveUI {
     }
     render(snapshot) { this.toggle.checked = snapshot.armed;
         this.toggle.setAttribute("aria-checked", String(snapshot.armed));
+        const adoption=snapshot.diagnostics?.retainedAdoption;
         this.status.textContent = snapshot.phase === "PREPARING"
             ? `AUTOLIVE · PREPARING · STABLE ${Math.floor(snapshot.diagnostics.entryElapsedMs / 1000)} / ${snapshot.diagnostics.entryRequiredMs / 1000} s`
-            : snapshot.status; this.source.textContent = snapshot.authorizedSourceName || "NO AUTHORIZED SOURCE";
+            : adoption?.state==='BLOCKED' && snapshot.status==='ARMED — WAITING'
+                ? `ARMED — WAITING · RETAINED ${adoption.reason}`
+                : snapshot.status; this.source.textContent = snapshot.authorizedSourceName || "NO AUTHORIZED SOURCE";
         this.root.dataset.dominantState = snapshot.status.toLowerCase().replaceAll(" ", "-"); }
 }
