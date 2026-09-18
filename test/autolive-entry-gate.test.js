@@ -706,6 +706,7 @@ test('A5 retained LIVE adoption restores AutoLive ownership without TAKE or Prog
         h.state.setProgramScene('LIVE', {source:'program-output',reason:'retained-bootstrap'});
         h.renderer.program.sceneId = 'LIVE';
         h.renderer.program.renderer = {sourceId:'live'};
+        h.controller.started = true;
         h.controller.session = null;
         h.controller.schedulerSnapshot = h.scheduler.getSnapshot();
         const before = history(h.published);
