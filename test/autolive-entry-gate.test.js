@@ -699,3 +699,32 @@ test('operator ownership stays protected across subsequent OFFLINE and ONLINE ob
         assert.equal(h.controller.session.phase, 'PREPARING');
     });
 });
+
+
+test('A5 retained LIVE adoption restores AutoLive ownership without TAKE or Program mutation', async () => {
+    await harness(async h => {
+        h.state.setProgramScene('LIVE', {source:'program-output',reason:'retained-bootstrap'});
+        h.renderer.program.renderer = {sourceId:'live'};
+        h.controller.session = null;
+        const before = history(h.published);
+        const adopted = h.controller.adoptRetainedLive();
+        assert.equal(adopted,true);
+        assert.equal(h.controller.session?.phase,'LIVE');
+        assert.equal(h.controller.session?.sourceId,'live');
+        assert.equal(h.controller.session?.retained,true);
+        assert.equal(h.controller.acquisitionState,'ON_AIR');
+        assert.deepEqual(history(h.published), before);
+        assert.equal(h.scheduler.begins,0);
+    });
+});
+
+test('A5 retained LIVE adoption fails closed on mismatched Program identity', async () => {
+    await harness(async h => {
+        h.state.setProgramScene('LIVE', {source:'program-output',reason:'retained-bootstrap'});
+        h.renderer.program.renderer = {sourceId:'other'};
+        h.controller.session = null;
+        assert.equal(h.controller.adoptRetainedLive(),false);
+        assert.equal(h.controller.session,null);
+        assert.equal(h.scheduler.begins,0);
+    });
+});
