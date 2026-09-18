@@ -140,7 +140,8 @@ test('A4 Control diagnostics renders shadow transition state without execution c
     model.runtime.healthObservation={authority:'external-hls-http',state:'OFFLINE',observedAt:1000,freshness:'FRESH',reason:'HTTP_ERROR',capabilities:{presenceEvidence:false,playlistProgressEvidence:true,segmentReachabilityEvidence:true,decoderProgressEvidence:false}};
     const client=new AutoLiveAuthorityClient({request:async()=>response(model)});
     const root={append(){}};const bridge=new AutoLiveLegacyBridge({client,config,runtimeState,lifecycle:new EventTarget(),root:null});
-    bridge.indicator={};bridge.button={};bridge.healthIndicator={};await bridge.start();bridge.render();
+    const removable=()=>({remove(){}});
+    bridge.indicator=removable();bridge.button=removable();bridge.healthIndicator=removable();await bridge.start();bridge.render();
     assert.match(bridge.healthIndicator.textContent,/DECISION LOSS_PENDING/);assert.match(bridge.healthIndicator.textContent,/LIVE_OBSERVED→LOSS_PENDING/);
     assert.match(bridge.healthIndicator.textContent,/execution=false/);assert.doesNotMatch(bridge.healthIndicator.textContent,/https?:|secret/i);
     bridge.destroy();config.destroy();
