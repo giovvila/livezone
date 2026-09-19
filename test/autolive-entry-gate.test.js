@@ -364,7 +364,7 @@ test("Control displays the operational 12/30 counter while the published slate s
         const ui = new DominantLiveUI({ root: { dataset: {} } });
         ui.toggle = new Element("input"); ui.status = new Element("span"); ui.source = new Element("span");
         ui.render(h.controller.getSnapshot());
-        assert.match(ui.status.textContent, /STABLE 12 \/ 30 s/);
+        assert.match(ui.status.textContent, /PREPARAZIONE 12\/30/);
         assert.equal(h.published.at(-1).source.title, "COLLEGAMENTO LIVE IN PREPARAZIONE");
         assert.deepEqual(Object.keys(h.published.at(-1).source).sort(), ["id", "kind", "title", "message", "logoUrl"].sort());
     });

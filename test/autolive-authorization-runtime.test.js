@@ -129,7 +129,7 @@ for (const selected of ["primary-live", "live-selected-1"]) {
             const control = await page(shared); const running = control.startControl();
             assert.equal(running.controller.getSnapshot().authorizedSourceId, selected);
             assert.equal(running.monitor.source.id, selected);
-            assert.notEqual(running.controlNodes["dominant-live-source"].textContent, "NO AUTHORIZED SOURCE");
+            assert.notEqual(running.controlNodes["dominant-live-source"].textContent, "");
             assert.ok(control.records.some(r => r.event === "AUTOLIVE_AUTH_READ" &&
                 r.fields.storedSourceId === selected && r.fields.normalizedSourceId === selected &&
                 r.fields.catalogMatch && r.fields.finalAuthorizedSourceId === selected));
@@ -180,7 +180,7 @@ test("AUTO INTERRUPT OFF persists explicit revocation through normal UI", async 
     scheduler.click("primary-live"); scheduler.click("primary-live"); scheduler.saveSchedule("primary-live");
     assert.equal(JSON.parse(shared.getItem(KEY)).authorizedSourceId, null);
     const running = (await page(shared)).startControl();
-    assert.equal(running.controlNodes["dominant-live-source"].textContent, "NO AUTHORIZED SOURCE");
+    assert.equal(running.controlNodes["dominant-live-source"].textContent, "");
     running.controller.destroy();
 });
 
@@ -248,7 +248,7 @@ for (const kind of ["bootstrap", "existing", "new"]) {
         assert.equal(liveC.controller.getSnapshot().armed, true);
         assert.equal(liveC.controller.getSnapshot().authorizedSourceId, id);
         assert.equal(liveC.controlNodes["dominant-live-armed"].checked, true);
-        assert.notEqual(liveC.controlNodes["dominant-live-source"].textContent, "NO AUTHORIZED SOURCE");
+        assert.notEqual(liveC.controlNodes["dominant-live-source"].textContent, "");
         for (const phase of ["CONFIG_LOAD", "CATALOG_RESOLUTION"]) {
             assert.ok(c.records.some(r => r.event === "AUTOLIVE_AUTH_READ" && r.fields.phase === phase &&
                 r.fields.armed === true && r.fields.authorizedSourceId === id));
@@ -281,7 +281,7 @@ test("failed armed write restores the visible checkbox to the confirmed state", 
     running.controlNodes["dominant-live-armed"].checked = true;
     running.controlNodes["dominant-live-armed"].dispatch("change");
     assert.equal(running.controlNodes["dominant-live-armed"].checked, false);
-    assert.equal(running.controlNodes["dominant-live-status"].textContent, "CONFIG NOT SAVED");
+    assert.equal(running.controlNodes["dominant-live-status"].textContent, "CONFIGURAZIONE NON SALVATA");
     assert.equal(shared.getItem(KEY), null); control.destroy();
 });
 
@@ -326,7 +326,7 @@ test("armed readback failure restores checkbox and reports both verification out
     running.controlNodes["dominant-live-armed"].checked = false;
     running.controlNodes["dominant-live-armed"].dispatch("change");
     assert.equal(running.controlNodes["dominant-live-armed"].checked, true);
-    assert.equal(running.controlNodes["dominant-live-status"].textContent, "CONFIG NOT SAVED");
+    assert.equal(running.controlNodes["dominant-live-status"].textContent, "CONFIGURAZIONE NON SALVATA");
     assert.ok(control.records.some(r => r.event === "AUTOLIVE_AUTH_WRITE" &&
         r.fields.writeSucceeded === true && r.fields.readBackSucceeded === false && r.fields.requestedArmed === false));
     assert.deepEqual(JSON.parse(shared.getItem(KEY)), { version: 1, armed: true, authorizedSourceId: "primary-live" });

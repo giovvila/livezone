@@ -58,7 +58,7 @@ export default class StudioScheduleSummaryUI {
     render() {
         if (!this.started) return;
         const snapshot = this.engine.getSnapshot();
-        this.status.textContent = this.store.serverAuthoritative ? "PROGRAM SUSPENDED · AUTOLIVE " + (snapshot.enabled ? "ON" : "OFF") : snapshot.enabled ? "ON" : "OFF";
+        this.status.textContent = this.store.serverAuthoritative ? "PROGRAMMAZIONE SOSPESA · AUTOLIVE " + (snapshot.enabled ? "ON" : "OFF") : snapshot.enabled ? "ON" : "OFF";
         this.toggle.textContent = this.store.serverAuthoritative ? (snapshot.enabled ? "AUTOLIVE ALLOWED" : "AUTOLIVE BLOCKED") : snapshot.enabled ? "SCHEDULER ON" : "SCHEDULER OFF";
         this.toggle.setAttribute("aria-pressed", String(snapshot.enabled));
         this.current.textContent = describe(snapshot.activeItem, this.catalog,

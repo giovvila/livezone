@@ -156,11 +156,11 @@ export default class ScheduleWorkspaceUI {
     }
 
     handleSchedule({ schedule, issues, connection, reason, feedback, migration, revision }) {
-        if (!schedule) return;
-        this.schedule = schedule;
+        if (!schedule && !(this.store?.serverAuthoritative && this.root.id === 'control-schedule-view')) return;
+        this.schedule = schedule || this.schedule;
         if (this.store?.serverAuthoritative) {
             this.serverBanner ||= document.createElement("p");
-            this.serverBanner.setAttribute("role", "status");
+            if (this.root.id !== 'control-schedule-view') this.serverBanner.setAttribute("role", "status");
             const deadline = this.store.runtime?.nextDeadline;
             const connectionDetail = { API_NOT_FOUND: "SCHEDULER API NOT FOUND — CHECK SERVER VERSION / RESTART",
                 AUTH_REQUIRED: "OPERATOR LOGIN REQUIRED", SERVER_UNAVAILABLE: "SCHEDULER SERVER / STORE UNAVAILABLE",
@@ -168,13 +168,47 @@ export default class ScheduleWorkspaceUI {
                 INVALID_API_RESPONSE: "INVALID SCHEDULER RESPONSE", SSE_UNAVAILABLE: "LIVE CONNECTION UNAVAILABLE",
                 SSE_DISCONNECTED: "LIVE CONNECTION LOST — RECONNECTING" }[reason] || "";
             this.serverBanner.textContent = `SERVER ${connection?.toUpperCase()} · REV ${revision ?? "—"} · NEXT ${deadline == null ? "—" : new Date(deadline).toISOString()} · PROGRAM EXECUTION SUSPENDED · ${connectionDetail || feedback || migration || ""}`;
-            this.root.prepend(this.serverBanner);
+            const compact = this.root.id === 'control-schedule-view';
+            if (compact && !this.serverDetails) {
+                this.serverDetails=document.createElement('details');this.serverDetails.className='operator-diagnostics';
+                const summary=document.createElement('summary');summary.textContent='DIAGNOSTICA SERVER E OVERLAY';
+                this.serverDetails.append(summary,this.serverBanner);
+                this.serverNormal=document.createElement('div');this.serverNormal.className='operator-server-status';
+                this.serverConnection=document.createElement('strong');this.serverConnection.setAttribute('role','status');
+                const execution=document.createElement('span');execution.textContent='PROGRAMMAZIONE PROGRAM: SOSPESA';
+                this.serverNotice=document.createElement('span');this.serverNotice.setAttribute('role','status');
+                this.overlayNormal=document.createElement('div');this.overlayNormal.className='operator-overlays';
+                this.serverNormal.append(this.serverConnection,execution,this.serverNotice,this.overlayNormal);
+                this.serverComponent=document.createElement('div');this.serverComponent.className='operator-server-component';
+                this.serverComponent.append(this.serverNormal,this.serverDetails);
+                this.root.prepend(this.serverComponent);
+                this.serverBanner.removeAttribute('role');
+            } else if (!compact) this.root.prepend(this.serverBanner);
             this.serverEvents ||= document.createElement("div");
             const events = this.store.runtime?.events || [];
             this.serverEvents.replaceChildren(...events.map(event => { const row = document.createElement("p"); row.textContent = `${event.type} · ${event.id} · ${event.status} ${event.type.startsWith('overlay.') ? "(overlay)" : "(not broadcast)"}`; return row; }));
             this.serverBanner.after(this.serverEvents);
+            if (compact) {
+                this.serverBanner.textContent += ' · connection=' + connection + ' · reason=' + (reason || '—') + ' · feedback=' + (feedback || '—') + ' · migration=' + (migration || '—') + ' · Configurazione palinsesto: server';
+                const labels={online:'ONLINE',loading:'CONNESSIONE IN CORSO',degraded:'RICONNESSIONE',unavailable:'NON DISPONIBILE'};
+                this.serverConnection.dataset.connection=connection;
+                this.serverConnection.textContent='SERVER ● ' + (labels[connection] || 'NON DISPONIBILE');
+                this.serverNotice.textContent=reason==='AUTH_REQUIRED' ? 'ACCESSO OPERATORE RICHIESTO' : feedback ? 'ATTENZIONE · VERIFICA DETTAGLI' : '';
+                const definitions=this.store.client?.state?.schedule?.events || [];
+                const operational=connection==='online' ? events.filter(event=>event.type.startsWith('overlay.') && ['ACTIVE','UPCOMING'].includes(event.status)) : [];
+                this.overlayNormal.replaceChildren(...operational.map(event=>{
+                    const definition=definitions.find(item=>item.id===event.id);
+                    const type=event.type==='overlay.sponsor'?'SPONSOR':'CRAWL';
+                    const name=definition?.name || (type==='SPONSOR'?'Sponsor':'Crawl');
+                    const row=document.createElement('span');
+                    const time=definition?.startAt ? new Date(definition.startAt).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit',timeZone:this.schedule?.timezone}) : '';
+                    row.textContent=event.status==='ACTIVE' ? type + ' · ' + name + ' · ATTIVO' : 'PROSSIMO OVERLAY ' + time + ' · ' + name;
+                    return row;
+                }));
+            }
             this.form?.querySelectorAll("button, input, select").forEach(node => { node.disabled = !this.store.writable; });
         }
+        if (!schedule) return;
         if (!this.selectedDate) this.selectedDate = todayInTimezone(schedule.timezone, this.clock());
         this.dateInput.value = this.selectedDate;
         if (this.selectedDateLabel) this.selectedDateLabel.textContent = `· ${this.selectedDate}`;

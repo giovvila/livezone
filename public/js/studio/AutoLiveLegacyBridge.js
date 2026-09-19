@@ -13,10 +13,12 @@ export default class AutoLiveLegacyBridge {
         this.unsubscribe=this.client.subscribe(this.apply);
         this.lifecycle.addEventListener?.('focus',this.refresh);
         if(this.root){
-            this.indicator=document.createElement('div');this.indicator.setAttribute('role','status');
+            this.indicator=document.createElement('div');
+            this.diagnosticsRoot=this.root.querySelector?.('#autolive-server-diagnostics') || this.root;
+            this.notice=document.createElement('div');this.notice.setAttribute('role','status');this.root.append(this.notice);
             this.button=document.createElement('button');this.button.type='button';this.button.textContent='IMPORTA CONFIG AUTOLIVE';
-            this.button.addEventListener('click',()=>void this.migrate());this.root.append(this.indicator,this.button);
-            this.healthIndicator=document.createElement('div');this.healthIndicator.setAttribute('role','status');this.root.append(this.healthIndicator);
+            this.button.addEventListener('click',()=>void this.migrate());this.diagnosticsRoot.append(this.indicator);this.root.append(this.button);
+            this.healthIndicator=document.createElement('div');this.diagnosticsRoot.append(this.healthIndicator);
         }
         const ok=await this.client.start();
         if(this.destroyed)return false;
@@ -76,7 +78,10 @@ export default class AutoLiveLegacyBridge {
     }
     render(){if(!this.indicator)return;const state=this.client.state;
         this.indicator.textContent=this.feedback || (state.connection!=='online'?'AUTOLIVE SERVER NON DISPONIBILE':
-            state.snapshot?.migration.pristine?'CONFIG LEGACY — IMPORTAZIONE ESPLICITA':'CONFIG SERVER · ESECUZIONE CONTROL');
+            state.snapshot?.migration.pristine?'CONFIG LEGACY — IMPORTAZIONE ESPLICITA':'Configurazione: server · Esecuzione AutoLive: Control · Decisioni server: osservazione (shadow)');
+        if(this.notice) this.notice.textContent=this.feedback ? 'ATTENZIONE · CONFIGURAZIONE NON SALVATA' :
+            state.connection!=='online' ? 'ATTENZIONE · SERVER NON DISPONIBILE' :
+            state.snapshot?.migration.pristine ? 'IMPORTAZIONE CONFIGURAZIONE RICHIESTA' : '';
         this.button.hidden=!state.snapshot?.migration.pristine;this.button.disabled=state.connection!=='online';
         const runtime=state.snapshot?.runtime;
         const health=runtime?.healthObservation;
@@ -93,7 +98,7 @@ export default class AutoLiveLegacyBridge {
         if(this.healthIndicator&&this.shadowComparison){const comparison=this.shadowComparison;
             this.healthIndicator.textContent+=` · COMPARE source=${comparison.sameSource}, endpoint=${comparison.endpointMatch}, state=${comparison.stateAgreement}, deltaMs=${comparison.timestampDeltaMs} · DECODER EQUIVALENCE NOT PROVEN`;}}
     destroy(){this.destroyed=true;this.unsubscribe?.();this.unsubscribeBrowserStage?.();this.lifecycle.removeEventListener?.('focus',this.refresh);this.client.destroy();
-        this.indicator?.remove();this.button?.remove();this.healthIndicator?.remove();
+        this.notice?.remove();this.indicator?.remove();this.button?.remove();this.healthIndicator?.remove();
         // Keep the write barrier: a retired document must never fall back to local writes.
         this.config.authorityMutation=async()=>({ok:false,code:'AUTOLIVE_UNAVAILABLE'});}
 }

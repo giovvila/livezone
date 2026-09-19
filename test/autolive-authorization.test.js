@@ -66,13 +66,13 @@ test("schedule navigation and controller reconstruction preserve authorization",
     assert.equal(second.monitor.source.id, live.id); second.destroy();
 });
 
-test("missing source renders safe DISARMED / NO AUTHORIZED SOURCE while retaining saved identity", () => {
+test("missing source renders actionable selection warning while retaining saved identity", () => {
     const h = setup({ storage: storageFor("live-missing") });
     const ui = new DominantLiveUI();
     ui.toggle = { setAttribute() {} }; ui.status = {}; ui.source = {}; ui.root = { dataset: {} };
     ui.render(h.controller.getSnapshot());
-    assert.equal(ui.status.textContent, "DISARMED");
-    assert.equal(ui.source.textContent, "NO AUTHORIZED SOURCE");
+    assert.equal(ui.status.textContent, "SELEZIONA SORGENTE");
+    assert.equal(ui.source.textContent, "");
     assert.equal(h.config.getSnapshot().authorizedSourceId, "live-missing"); h.destroy();
 });
 

@@ -2809,3 +2809,37 @@
         max-height: 420px;
     }
 }
+
+/* Operator status: diagnostics remain available without dominating the desk. */
+.dominant-live-control { display:flex; flex-wrap:wrap; min-width:0; max-width:100%; gap:5px 8px; padding:7px 10px; border:1px solid var(--lz-border); border-radius:6px; background:#111923; }
+.dominant-live-control > strong { font-size:12px; text-align:start; line-height:1.4; }
+.dominant-live-control > label { font-size:12px; letter-spacing:.08em; color:#e4edf7; }
+#dominant-live-consent { padding:2px 7px; border:1px solid currentColor; border-radius:4px; font-size:11px; }
+.dominant-live-control > #dominant-live-source { min-width:0; max-width:20ch; padding:3px 7px; border-radius:4px; background:#202c3a; color:#c3cfdd; font-size:12px; }
+#dominant-live-source:empty, #dominant-live-status:empty { display:none; }
+#dominant-live-status { font-weight:800; color:#aec5df; }
+#dominant-live-status[data-tone="live"] { color:#78d7a4; }
+#dominant-live-status[data-tone="attention"] { color:#f3c96a; }
+#dominant-live-status[data-tone="error"] { color:#ff929a; }
+#dominant-live-consent::before { content:'●'; margin-inline-end:6px; font-size:12px; }
+[data-dominant-state="off"] #dominant-live-consent { color:var(--lz-text-soft); }
+[data-dominant-state="armed"] #dominant-live-consent { color:#78d7a4; }
+[data-dominant-state="warning"] #dominant-live-consent { color:#f3c96a; }
+#dominant-live-progress { width:90px; height:6px; accent-color:#f3c96a; }
+#dominant-live-progress[hidden] { display:none; }
+.dominant-live-control > .operator-diagnostics { flex-basis:100%; border:0; padding:0; }
+.dominant-live-control > .operator-diagnostics summary { padding:2px 0; font-size:10px; letter-spacing:.03em; color:#99aabd; }
+.dominant-live-control > div[role="status"]:empty { display:none; }
+.operator-diagnostics { min-width:0; padding:6px 8px; border:1px solid var(--lz-border, #303642); border-radius:5px; color:var(--lz-text-soft, #a5adbb); font-size:11px; }
+.operator-diagnostics summary { cursor:pointer; padding:4px 0; font-size:10px; font-weight:600; }
+.operator-diagnostics summary:focus-visible { outline:2px solid #7db4f5; outline-offset:3px; }
+.operator-diagnostics pre, .operator-diagnostics p, .operator-diagnostics div { white-space:pre-wrap; overflow-wrap:anywhere; max-width:100%; }
+.operator-diagnostics pre { font-size:10px; }
+
+.media-library-reference-notice { display:inline-flex; align-items:center; margin:4px 0; padding:4px 8px; border:1px solid #354153; border-radius:4px; background:#17212d; font-size:11px; font-weight:700; letter-spacing:.03em; color:#f3c96a; }
+.media-library-reference-notice[data-reference-state="complete"] { color:#78d7a4; }
+.media-library-reference-details { margin-block:2px 8px; }
+@media (max-width:600px) {
+    .dominant-live-control { width:100%; box-sizing:border-box; }
+    .dominant-live-control > #dominant-live-source { max-width:40vw; }
+}

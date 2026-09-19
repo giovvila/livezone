@@ -8,7 +8,12 @@ export default class MediaLibraryUI {
         this.collapsed = this.loadCollapsed();
         const ownerDocument = this.root.ownerDocument || globalThis.document;
         if (ownerDocument) {
-            this.authorityStatus=ownerDocument.createElement('p');this.authorityStatus.className='media-library-authority-status';this.authorityStatus.setAttribute('role','status');this.status.after(this.authorityStatus);
+            this.authorityStatus=ownerDocument.createElement('p');this.authorityStatus.className='media-library-authority-status';this.authorityDetails=ownerDocument.createElement('details');this.authorityDetails.className='operator-diagnostics media-library-reference-details';
+            const summary=ownerDocument.createElement('summary');summary.textContent='DETTAGLI TECNICI MEDIA LIBRARY';
+            this.authorityReasons=ownerDocument.createElement('pre');
+            this.authorityDetails.append(summary,this.authorityStatus,this.authorityReasons);
+            this.authorityNotice=ownerDocument.createElement('p');this.authorityNotice.className='media-library-reference-notice';this.authorityNotice.setAttribute('role','status');
+            this.status.after(this.authorityNotice,this.authorityDetails);
             this.usageFilter = ownerDocument.createElement('select'); this.usageFilter.setAttribute('aria-label', 'Media usage');
             for (const value of ['ALL','USED','UNUSED','UNKNOWN']) { const option=ownerDocument.createElement('option'); option.value=value; option.textContent=value; this.usageFilter.append(option); }
             this.filter.after(this.usageFilter); this.usageFilter.addEventListener('change', this.handleFilter);
@@ -44,6 +49,11 @@ export default class MediaLibraryUI {
     render(snapshot) {
         if(this.authorityStatus){
             const inventory=snapshot.inventory;
+            if(this.authorityNotice){
+                this.authorityNotice.textContent=inventory?.state==='COMPLETE'?'RIFERIMENTI ● VERIFICATI':'RIFERIMENTI ● DA VERIFICARE';
+                this.authorityNotice.dataset.referenceState=inventory?.state==='COMPLETE'?'complete':'incomplete';
+            }
+            if(this.authorityReasons)this.authorityReasons.textContent=JSON.stringify(inventory || {},null,2);
             const reasons=inventory?.reasons||[];
             const messages=[...new Set(reasons.map(referenceReasonMessage))];
             this.authorityStatus.textContent=inventory?.state==='COMPLETE'?'REFERENCE CHECK COMPLETE':'REFERENCE CHECK INCOMPLETE'+(messages.length?' — '+messages.join(' '):'');
@@ -96,7 +106,7 @@ export default class MediaLibraryUI {
             catch(error){status.textContent='IMPOSSIBILE ELIMINARE — '+(error.code||'Errore');describe(error.details);cancel.disabled=false;}
         });
     }
-    destroy() { this.authorityTarget?.removeEventListener?.(REFERENCE_AUTHORITY_CHANGED,this.refresh);this.authorityStatus?.remove(); this.usageFilter?.removeEventListener('change',this.handleFilter);this.usageFilter?.remove();this.deleteDialog?.remove();this.deleteDialog=null;this.channel?.close();globalThis.removeEventListener?.('focus',this.focus);this.refreshButton?.removeEventListener('click',this.refresh);this.unsubscribe?.(); this.unsubscribe = null; this.input?.removeEventListener("change", this.handleFile); this.filter?.removeEventListener("change", this.handleFilter); this.toggle?.removeEventListener("click", this.handleToggle); this.started = false; }
+    destroy() { this.authorityTarget?.removeEventListener?.(REFERENCE_AUTHORITY_CHANGED,this.refresh);this.authorityDetails?.remove();this.authorityNotice?.remove();this.authorityStatus?.remove(); this.usageFilter?.removeEventListener('change',this.handleFilter);this.usageFilter?.remove();this.deleteDialog?.remove();this.deleteDialog=null;this.channel?.close();globalThis.removeEventListener?.('focus',this.focus);this.refreshButton?.removeEventListener('click',this.refresh);this.unsubscribe?.(); this.unsubscribe = null; this.input?.removeEventListener("change", this.handleFile); this.filter?.removeEventListener("change", this.handleFilter); this.toggle?.removeEventListener("click", this.handleToggle); this.started = false; }
 }
 
 export function referenceReasonMessage(reason){

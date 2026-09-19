@@ -95,10 +95,17 @@
             <aside id="studio-panel" class="studio-panel" aria-labelledby="studio-title">
                 <div class="studio-panel__header">
                     <h2 id="studio-title">CONTROL DESK</h2>
-                    <div id="dominant-live-control" class="dominant-live-control" aria-live="polite">
-                        <label><input id="dominant-live-armed" type="checkbox" role="switch"> AUTO LIVE</label>
-                        <strong id="dominant-live-status">DISARMED</strong>
-                        <span id="dominant-live-source">NO AUTHORIZED SOURCE</span>
+                    <div id="dominant-live-control" class="dominant-live-control">
+                        <label><input id="dominant-live-armed" type="checkbox" role="switch"> AUTOLIVE</label>
+                        <strong id="dominant-live-consent">OFF</strong>
+                        <span id="dominant-live-source"></span>
+                        <strong id="dominant-live-status" role="status"></strong>
+                        <progress id="dominant-live-progress" max="30" value="0" aria-label="Preparazione AutoLive" hidden></progress>
+                        <details class="operator-diagnostics" id="autolive-details">
+                            <summary>DETTAGLI TECNICI AUTOLIVE</summary>
+                            <pre id="autolive-controller-diagnostics"></pre>
+                            <div id="autolive-server-diagnostics"></div>
+                        </details>
                     </div>
                     <div class="studio-panel__header-actions">
                         <button id="control-desk-edit" type="button" aria-pressed="false">EDIT LAYOUT</button>
