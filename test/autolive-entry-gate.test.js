@@ -810,3 +810,26 @@ test('A5 retained LIVE adoption accepts rendered source before transport snapsho
         assert.equal(h.scheduler.begins,0);
     });
 });
+
+
+test('A5 retained pending blocks a fresh 30s entry while Program already owns authorized LIVE', async () => {
+    await harness(async h => {
+        h.state.setProgramScene('LIVE', {source:'program-output',reason:'retained-bootstrap'});
+        h.renderer.program.sceneId = 'LIVE';
+        h.renderer.program.renderer = {sourceId:'other'};
+        h.renderer.programTransportSnapshot = null;
+        h.controller.session = null;
+        h.controller.pendingSession = null;
+        h.controller.closingSession = null;
+        h.controller.schedulerSnapshot = h.scheduler.getSnapshot();
+        h.controller.retainedAdoptionPending = true;
+        h.controller.health = Object.freeze({sourceId:'live',sourceHealth:true,state:'ONLINE',generation:1});
+        const begins = h.scheduler.begins;
+        h.controller.evaluate();
+        assert.equal(h.controller.session,null);
+        assert.equal(h.controller.pendingSession,null);
+        assert.equal(h.controller.retainedAdoptionPending,true);
+        assert.equal(h.scheduler.begins,begins);
+        assert.notEqual(h.controller.getSnapshot().phase,'PREPARING');
+    });
+});
