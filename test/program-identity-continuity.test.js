@@ -103,3 +103,12 @@ test('A5 Control passes retained bootstrap resolution into AutoLive before contr
  const start=entry.indexOf('dominantLiveController.start()',ctor);
  assert.ok(read>=0&&read<resolved&&resolved<ctor&&ctor<resolvedArg&&resolvedArg<retainedArg&&retainedArg<start);
 });
+
+
+test('A5 Control retries retained Program read once before declaring it absent',async()=>{
+ const entry=await readFile(new URL('../public/js/entries/control-room-app.js',import.meta.url),'utf8');
+ const first=entry.indexOf('let retainedProgram = await programOutputTransport.readRetained()');
+ const retry=entry.indexOf('await programOutputTransport.readRetained({ timeoutMs: 4000 })');
+ const restore=entry.indexOf('const retainedProgramIdentityResolved = restoreRetainedProgramIdentity(retainedProgram');
+ assert.ok(first>=0&&first<retry&&retry<restore);
+});
