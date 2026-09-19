@@ -83,10 +83,28 @@ export default class AutoLiveEntryController extends DominantLiveController {
         const sessionId=this.uuidFactory?.()||`retained-${this.clock()}`;
         this.session=Object.freeze({sessionId,sourceId:source.id,sceneId:target.sceneId,phase:'LIVE',origin:'dominant-live-retained',
             startedAt:this.clock(),schedulerInterruptionContext:null,returnTarget:null,retained:true});
+        this.establishActiveHealth();
         this.acquisitionState='ON_AIR';
         this.retainedAdoptionDiagnostics=Object.freeze({state:'ADOPTED',reason:'BOOTSTRAP_RETAINED_LIVE'});
         this.traceHandoff('retained-live-adopted',{reason:'bootstrap-retained-live'});
         this.emit();
+        return true;
+    }
+    establishActiveHealth(observation = this.health, start = true) {
+        if (this.activeHealth?.current()) return true;
+        if (this.session?.phase !== "LIVE" || !observation?.sourceHealth ||
+            observation.authority !== "external-hls" || observation.sourceId !== this.session.sourceId ||
+            Number.isFinite(observation.generation) && Number.isFinite(this.health.generation) &&
+                observation.generation < this.health.generation) return false;
+        // Retained adoption may precede source classification. Retire any legacy
+        // CHECKING deadline before the external observation can close the session.
+        this.clearTimers();
+        this.programPlaybackLost = false;
+        this.externalObservation = observation;
+        this.activeHealth?.destroy();
+        this.activeHealth = new AutoLiveActiveHealth(this);
+        this.acquisitionState = "ON_AIR";
+        if (start) this.activeHealth.start();
         return true;
     }
     reconcileConfiguration() {
@@ -168,6 +186,7 @@ export default class AutoLiveEntryController extends DominantLiveController {
     handleHealth(snapshot) {
         this.traceHandoff("health-observation", { state: snapshot.state, reason: snapshot.reason,
             sourceState: snapshot.state, monitorGeneration: snapshot.generation, sourceId: snapshot.sourceId });
+        if (this.session?.retained) this.establishActiveHealth(snapshot);
         if (this.activeHealth?.current()) {
             if (snapshot.sourceHealth && snapshot.sourceId === this.session.sourceId &&
                 (!Number.isFinite(this.externalObservation?.generation) || snapshot.generation > this.externalObservation.generation))
@@ -253,10 +272,7 @@ export default class AutoLiveEntryController extends DominantLiveController {
                     this.traceHandoff("commit-begin");
                     this.clearEntryWork(false);
                     this.session = Object.freeze({ ...session, phase: "LIVE" });
-                    if (this.health.authority === "external-hls") {
-                        this.externalObservation = this.health;
-                        this.activeHealth = new AutoLiveActiveHealth(this);
-                    }
+                    this.establishActiveHealth(this.health, false);
                     this.activeConsumerGeneration = attempt;
                     this.activePlayback = { instanceId: this.renderer.program.prepared?.renderer?.instanceId,
                         lastProgressAt: this.clock() };
@@ -328,6 +344,7 @@ export default class AutoLiveEntryController extends DominantLiveController {
     acceptActiveHealth(owner, state, reason) {
         if (owner !== this.activeHealth || !owner.current()) return;
         this.traceHandoff("active-health", { state, reason });
+        if (state === "ONLINE") this.acquisitionState = "ON_AIR";
         super.handleHealth(Object.freeze({ sourceId: owner.session.sourceId,
             sourceHealth: true, authority: "active-program", state,
             uncertain: state === "CHECKING", generation: (this.health.generation || 0) + 1, reason }));
