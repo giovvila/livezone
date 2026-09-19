@@ -227,7 +227,7 @@ runtime.start({
         const programOutputTransport = await createProgramOutputTransport({ role: "publisher",
             eventSourceFactory: controlEvents.eventSource });
         const retainedProgram = await programOutputTransport.readRetained();
-        restoreRetainedProgramIdentity(retainedProgram, {
+        const retainedProgramIdentityResolved = restoreRetainedProgramIdentity(retainedProgram, {
             stateManager: StudioStateManager, catalog: studioCatalogManager,
             sourceManager: StudioSourceManager
         });
@@ -431,6 +431,8 @@ runtime.start({
         });
         dominantLiveController = new AutoLiveEntryController({
             renderer: studioRenderer,
+            retainedProgramIdentityResolved,
+            retainedProgram,
             getProgramRevision: () => programOutputManager?.revision,
             config: dominantLiveConfig,
             catalog: studioCatalogManager,
