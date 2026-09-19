@@ -226,7 +226,11 @@ runtime.start({
 
         const programOutputTransport = await createProgramOutputTransport({ role: "publisher",
             eventSourceFactory: controlEvents.eventSource });
-        const retainedProgram = await programOutputTransport.readRetained();
+        let retainedProgram = await programOutputTransport.readRetained();
+        if (!retainedProgram) {
+            const retry = await programOutputTransport.readRetained({ timeoutMs: 4000 });
+            if (retry) retainedProgram = retry;
+        }
         const retainedProgramIdentityResolved = restoreRetainedProgramIdentity(retainedProgram, {
             stateManager: StudioStateManager, catalog: studioCatalogManager,
             sourceManager: StudioSourceManager
