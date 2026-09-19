@@ -67,8 +67,17 @@ export default class AutoLiveEntryController extends DominantLiveController {
         if(programSceneId!==target.sceneId)return blocked('PROGRAM_SCENE_MISMATCH',{sourceId:source.id,sceneId:programSceneId,targetSceneId:target.sceneId});
         const transport=this.renderer.getProgramTransport?.();
         const renderedSourceId=this.renderer?.program?.renderer?.sourceId??null;
-        const effectiveProgramSourceId=transport?.sourceId??renderedSourceId;
-        if(effectiveProgramSourceId!==source.id)return blocked('PROGRAM_SOURCE_MISMATCH',{sourceId:source.id,programSourceId:effectiveProgramSourceId});
+        const rendererSceneId=this.renderer?.program?.sceneId??null;
+        const transportSourceId=transport?.sourceId??null;
+        const effectiveProgramSourceId=transportSourceId??renderedSourceId;
+        if(effectiveProgramSourceId!==source.id)return blocked('PROGRAM_SOURCE_MISMATCH',{
+            sourceId:source.id,
+            programSourceId:effectiveProgramSourceId,
+            transportSourceId,
+            renderedSourceId,
+            rendererSceneId,
+            retainedPending:this.retainedAdoptionPending===true
+        });
         const sessionId=this.uuidFactory?.()||`retained-${this.clock()}`;
         this.session=Object.freeze({sessionId,sourceId:source.id,sceneId:target.sceneId,phase:'LIVE',origin:'dominant-live-retained',
             startedAt:this.clock(),schedulerInterruptionContext:null,returnTarget:null,retained:true});
