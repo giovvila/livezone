@@ -701,6 +701,81 @@ test('operator ownership stays protected across subsequent OFFLINE and ONLINE ob
 });
 
 
+test('A5 fresh startup preserves retained LIVE through initial configuration and renderer hydration', async () => {
+    for (const delayed of [false, true]) await harness(async h => {
+        h.binding.destroy();
+        h.controller.destroy();
+        h.state.setProgramScene('LIVE', { source: 'program-output', reason: 'retained-bootstrap' });
+        await flush();
+        const retainedProgram = h.output.snapshot;
+        assert.equal(retainedProgram.source.kind, 'hls');
+        let hydrated = !delayed;
+        const listeners = new Set();
+        const renderer = {
+            get program() { return hydrated ? h.renderer.program : { sceneId: 'LIVE', renderer: null }; },
+            getProgramTransport: () => hydrated ? h.renderer.getProgramTransport() : null,
+            subscribeProgramTransport(fn) {
+                listeners.add(fn); fn(this.getProgramTransport());
+                return () => listeners.delete(fn);
+            },
+            prepareProgramScene: (...args) => h.renderer.prepareProgramScene(...args),
+            discardPreparedProgram: (...args) => h.renderer.discardPreparedProgram(...args)
+        };
+        const calls = { execute: 0, commitPrepared: 0, release: 0 };
+        for (const method of Object.keys(calls)) {
+            const original = h.command[method].bind(h.command);
+            h.command[method] = (...args) => { calls[method]++; return original(...args); };
+        }
+        const fresh = new AutoLiveEntryController({ renderer, config: h.config,
+            catalog: h.controller.catalog, monitor: h.monitor, scheduler: h.scheduler, command: h.command,
+            retainedProgramIdentityResolved: true, retainedProgram,
+            clock: h.time.now, setTimer: h.time.set, clearTimer: h.time.clear });
+        const snapshots = [];
+        fresh.subscribe(snapshot => snapshots.push(snapshot));
+        const publicationStart = h.published.length;
+        const binding = new AutoLiveEntryPresentation({ controller: fresh, renderer, output: h.output,
+            stateManager: h.state, root: h.renderer.program.root, logoUrl: 'https://example.test/logo.svg',
+            setTimer: h.time.set, clearTimer: h.time.clear });
+        try {
+            assert.equal(fresh.start(), true);
+            binding.start();
+            h.monitor.emit('ONLINE');
+            await flush();
+            assert.equal(snapshots.some(s => s.diagnostics.endReason === 'source-changed'), false,
+                'initial fingerprint reconciliation must not close retained LIVE as source-changed');
+            if (delayed) {
+                assert.equal(fresh.session, null);
+                assert.equal(fresh.retainedAdoptionPending, true);
+                assert.equal(h.scheduler.begins, 0);
+                hydrated = true;
+                listeners.forEach(fn => fn(renderer.getProgramTransport()));
+                await flush();
+            }
+            assert.equal(fresh.session?.phase, 'LIVE');
+            assert.equal(fresh.session?.retained, true);
+            assert.equal(fresh.retainedAdoptionPending, false);
+            assert.equal(fresh.acquisitionState, 'ON_AIR');
+            assert.equal(h.state.getProgramSceneId(), 'LIVE');
+            assert.equal(h.state.getPreviewSceneId(), 'P');
+            assert.equal(h.scheduler.begins, 0);
+            assert.deepEqual(calls, { execute: 0, commitPrepared: 0, release: 0 });
+            assert.equal(snapshots.some(s => s.phase === 'PREPARING'), false);
+            assert.equal(h.published.slice(publicationStart).some(s => s.source?.id === 'autolive-entry-slate'), false);
+
+            // Initial adoption must not disable genuine later source-change cleanup.
+            h.config.change({ authorizedSourceId: 'other' });
+            await flush();
+            assert.equal(fresh.session, null);
+            assert.equal(fresh.getSnapshot().diagnostics.endReason, 'source-changed');
+            assert.equal(calls.release, 1);
+            assert.equal(h.state.getProgramSceneId(), null);
+        } finally {
+            fresh.destroy();
+            binding.destroy();
+        }
+    });
+});
+
 test('A5 retained LIVE adoption restores AutoLive ownership without TAKE or Program mutation', async () => {
     await harness(async h => {
         h.state.setProgramScene('LIVE', {source:'program-output',reason:'retained-bootstrap'});

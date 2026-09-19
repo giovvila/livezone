@@ -90,13 +90,14 @@ export default class AutoLiveEntryController extends DominantLiveController {
         return true;
     }
     reconcileConfiguration() {
-        if(this.retainedAdoptionPending)this.tryAdoptRetainedLive();
         const armed = this.config.getSnapshot().armed === true;
         if (!armed) { this.cancelReacquisition(); this.reacquisitionSuppressed = false; }
         // Explicit re-arming authorizes a new entry even if the same external
         // monitor has remained ONLINE without emitting another transition.
         if (this.entryLastArmed === false && armed) this.closedHealthGeneration = undefined;
         this.entryLastArmed = armed;
+        // Base reconciliation initializes the source fingerprint before evaluate()
+        // adopts retained LIVE; otherwise initialization closes it as source-changed.
         super.reconcileConfiguration();
     }
     getSnapshot() {
