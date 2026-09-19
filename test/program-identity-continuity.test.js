@@ -110,8 +110,8 @@ test('A5 Control retries retained Program read once before declaring it absent',
  const first=entry.indexOf('let retainedProgram = await programOutputTransport.readRetained()');
  const firstRestore=entry.indexOf('let retainedProgramIdentityResolved = restoreRetainedProgramIdentity(retainedProgram');
  const retry=entry.indexOf('await programOutputTransport.readRetained({ timeoutMs: 4000 })');
- const retryRestore=entry.indexOf('retainedProgramIdentityResolved = restoreRetainedProgramIdentity(retainedProgram', firstRestore + 1);
- assert.ok(first>=0&&first<firstRestore&&firstRestore<retry&&retry<retryRestore);
+ const unresolved=entry.indexOf('if (!retainedProgramIdentityResolved)',firstRestore);
+ assert.ok(first>=0&&first<firstRestore&&firstRestore<unresolved&&unresolved<retry);
 });
 
 
