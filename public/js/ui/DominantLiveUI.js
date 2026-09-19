@@ -23,10 +23,19 @@ export default class DominantLiveUI {
     render(snapshot) { this.toggle.checked = snapshot.armed;
         this.toggle.setAttribute("aria-checked", String(snapshot.armed));
         const adoption=snapshot.diagnostics?.retainedAdoption;
+        const retainedDetail=adoption?.state==='BLOCKED'
+            ? [adoption.reason,
+                adoption.sceneId?`scene=${adoption.sceneId}`:null,
+                adoption.targetSceneId?`target=${adoption.targetSceneId}`:null,
+                adoption.transportSourceId?`transport=${adoption.transportSourceId}`:null,
+                adoption.renderedSourceId?`rendered=${adoption.renderedSourceId}`:null,
+                adoption.rendererSceneId?`rendererScene=${adoption.rendererSceneId}`:null,
+                adoption.retainedPending===true?'pending=true':null].filter(Boolean).join(' · ')
+            : null;
         this.status.textContent = snapshot.phase === "PREPARING"
             ? `AUTOLIVE · PREPARING · STABLE ${Math.floor(snapshot.diagnostics.entryElapsedMs / 1000)} / ${snapshot.diagnostics.entryRequiredMs / 1000} s`
             : adoption?.state==='BLOCKED' && snapshot.phase==='CLOSED'
-                ? `${snapshot.status} · RETAINED ${adoption.reason}`
+                ? `${snapshot.status} · RETAINED ${retainedDetail}`
                 : snapshot.status; this.source.textContent = snapshot.authorizedSourceName || "NO AUTHORIZED SOURCE";
         this.root.dataset.dominantState = snapshot.status.toLowerCase().replaceAll(" ", "-"); }
 }
