@@ -7,16 +7,19 @@ import AutoLiveActiveHealth from "./AutoLiveActiveHealth.js";
 // Entry owns the interruption from the slate onward. The base controller retains
 // the established post-TAKE source-loss, operator-override and return contract.
 export default class AutoLiveEntryController extends DominantLiveController {
-    constructor({ renderer, entryStabilityMs = AUTO_LIVE_ENTRY_STABILITY_MS,
+    constructor({ renderer, retainedProgramIdentityResolved = null, retainedProgram = null,
+        entryStabilityMs = AUTO_LIVE_ENTRY_STABILITY_MS,
         entryAbandonmentMs = AUTO_LIVE_ENTRY_ABANDONMENT_MS, getProgramRevision = () => null, ...options }) {
         super(options);
         if (![entryStabilityMs, entryAbandonmentMs].every(value => Number.isFinite(value) && value > 0))
             throw new RangeError("AutoLive entry policy requires positive finite durations");
-        Object.assign(this, { renderer, entryStabilityMs, entryAbandonmentMs, getProgramRevision });
+        Object.assign(this, { renderer, retainedProgramIdentityResolved, retainedProgram,
+            entryStabilityMs, entryAbandonmentMs, getProgramRevision });
         this.entryAttempt = 0;
         this.entryElapsedMs = 0;
         this.entryHealthListeners = new Set();
-        this.retainedAdoptionPending = false;
+        this.retainedAdoptionPending = retainedProgramIdentityResolved === true &&
+            retainedProgram?.source?.kind === 'hls';
         this.retainedAdoptionDiagnostics = Object.freeze({state:'IDLE',reason:null});
     }
     start() {
@@ -33,7 +36,6 @@ export default class AutoLiveEntryController extends DominantLiveController {
         const started=super.start();
         if(started){
             this.retainedTransportUnsubscribe=this.renderer?.subscribeProgramTransport?.(()=>this.tryAdoptRetainedLive());
-            this.retainedAdoptionPending = true;
             this.tryAdoptRetainedLive();
         }
         return started;
