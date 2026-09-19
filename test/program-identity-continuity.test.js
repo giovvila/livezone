@@ -96,7 +96,7 @@ test('production Control selects retained identity before cue and renderer start
 test('A5 Control passes retained bootstrap resolution into AutoLive before controller start',async()=>{
  const entry=await readFile(new URL('../public/js/entries/control-room-app.js',import.meta.url),'utf8');
  const read=entry.indexOf('let retainedProgram = await programOutputTransport.readRetained()');
- const resolved=entry.indexOf('const retainedProgramIdentityResolved = restoreRetainedProgramIdentity(retainedProgram');
+ const resolved=entry.indexOf('let retainedProgramIdentityResolved = restoreRetainedProgramIdentity(retainedProgram');
  const ctor=entry.indexOf('dominantLiveController = new AutoLiveEntryController({');
  const resolvedArg=entry.indexOf('retainedProgramIdentityResolved,',ctor);
  const retainedArg=entry.indexOf('retainedProgram,',ctor);
@@ -108,7 +108,19 @@ test('A5 Control passes retained bootstrap resolution into AutoLive before contr
 test('A5 Control retries retained Program read once before declaring it absent',async()=>{
  const entry=await readFile(new URL('../public/js/entries/control-room-app.js',import.meta.url),'utf8');
  const first=entry.indexOf('let retainedProgram = await programOutputTransport.readRetained()');
+ const firstRestore=entry.indexOf('let retainedProgramIdentityResolved = restoreRetainedProgramIdentity(retainedProgram');
  const retry=entry.indexOf('await programOutputTransport.readRetained({ timeoutMs: 4000 })');
- const restore=entry.indexOf('const retainedProgramIdentityResolved = restoreRetainedProgramIdentity(retainedProgram');
- assert.ok(first>=0&&first<retry&&retry<restore);
+ const retryRestore=entry.indexOf('retainedProgramIdentityResolved = restoreRetainedProgramIdentity(retainedProgram', firstRestore + 1);
+ assert.ok(first>=0&&first<firstRestore&&firstRestore<retry&&retry<retryRestore);
+});
+
+
+test('A5 Control retries a present but unresolved retained snapshot before AutoLive evaluation',async()=>{
+ const entry=await readFile(new URL('../public/js/entries/control-room-app.js',import.meta.url),'utf8');
+ const unresolved=entry.indexOf('if (!retainedProgramIdentityResolved)');
+ const retry=entry.indexOf('await programOutputTransport.readRetained({ timeoutMs: 4000 })',unresolved);
+ const assign=entry.indexOf('retainedProgram = retry',retry);
+ const resolveAgain=entry.indexOf('retainedProgramIdentityResolved = restoreRetainedProgramIdentity(retainedProgram',assign);
+ const ctor=entry.indexOf('dominantLiveController = new AutoLiveEntryController({');
+ assert.ok(unresolved>=0&&unresolved<retry&&retry<assign&&assign<resolveAgain&&resolveAgain<ctor);
 });
