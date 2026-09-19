@@ -227,14 +227,24 @@ runtime.start({
         const programOutputTransport = await createProgramOutputTransport({ role: "publisher",
             eventSourceFactory: controlEvents.eventSource });
         let retainedProgram = await programOutputTransport.readRetained();
-        if (!retainedProgram) {
-            const retry = await programOutputTransport.readRetained({ timeoutMs: 4000 });
-            if (retry) retainedProgram = retry;
-        }
-        const retainedProgramIdentityResolved = restoreRetainedProgramIdentity(retainedProgram, {
+        let retainedProgramIdentityResolved = restoreRetainedProgramIdentity(retainedProgram, {
             stateManager: StudioStateManager, catalog: studioCatalogManager,
             sourceManager: StudioSourceManager
         });
+        // A publisher handoff can briefly expose the previous retained snapshot
+        // (for example the AutoLive entry slate) while the committed LIVE
+        // envelope is still reaching the server. Retry unresolved identity once
+        // before allowing AutoLive to evaluate a fresh 30s acquisition.
+        if (!retainedProgramIdentityResolved) {
+            const retry = await programOutputTransport.readRetained({ timeoutMs: 4000 });
+            if (retry) {
+                retainedProgram = retry;
+                retainedProgramIdentityResolved = restoreRetainedProgramIdentity(retainedProgram, {
+                    stateManager: StudioStateManager, catalog: studioCatalogManager,
+                    sourceManager: StudioSourceManager
+                });
+            }
+        }
         const initialProgramContext = programPlaybackContinuity(retainedProgram, {
             stateManager: StudioStateManager, catalog: studioCatalogManager,
             sourceManager: StudioSourceManager
