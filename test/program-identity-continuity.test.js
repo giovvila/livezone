@@ -95,7 +95,7 @@ test('production Control selects retained identity before cue and renderer start
 
 test('A5 Control passes retained bootstrap resolution into AutoLive before controller start',async()=>{
  const entry=await readFile(new URL('../public/js/entries/control-room-app.js',import.meta.url),'utf8');
- const read=entry.indexOf('const retainedProgram = await programOutputTransport.readRetained()');
+ const read=entry.indexOf('let retainedProgram = await programOutputTransport.readRetained()');
  const resolved=entry.indexOf('const retainedProgramIdentityResolved = restoreRetainedProgramIdentity(retainedProgram');
  const ctor=entry.indexOf('dominantLiveController = new AutoLiveEntryController({');
  const resolvedArg=entry.indexOf('retainedProgramIdentityResolved,',ctor);
