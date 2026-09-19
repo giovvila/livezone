@@ -110,6 +110,18 @@ export default class AutoLiveEntryController extends DominantLiveController {
                 entryAbandonmentDeadline: this.entryAbandonmentDeadline ?? null }) });
     }
     evaluate() {
+        if (this.retainedAdoptionPending) {
+            const source = this.getAuthorizedSource();
+            const target = this.resolveTarget(source);
+            const programSceneId = this.command.stateManager.getProgramSceneId();
+            if (source && target?.sceneId && programSceneId === target.sceneId) {
+                this.tryAdoptRetainedLive();
+                if (this.retainedAdoptionPending) {
+                    this.emit();
+                    return;
+                }
+            }
+        }
         if (!this.started || this.session || this.pendingSession || this.closingSession || this.latched || this.reacquisitionSuppressed ||
             !this.config.getSnapshot().armed || !this.schedulerSnapshot?.enabled ||
             this.schedulerSnapshot.interruptionContext || this.health.state !== "ONLINE" ||
