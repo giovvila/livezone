@@ -132,7 +132,7 @@ test('final recheck sees reference created after an UNUSED UI audit',async t=>{c
 async function http(t){
     const h=await fixture(t),auth=new OperatorAuth({username:'operator',password:'d3-password-test-only',secureCookie:false}),session=auth.authenticate('operator','d3-password-test-only');
     const owner=createProgramOutputServer({publisherToken:'d3-test-publisher',operatorAuth:auth,mediaAssetRepository:h.repo,studioStatePath:join(h.root,'studio.json'),schedulePath:join(h.root,'schedule.json')});
-    await new Promise(r=>owner.server.listen(0,'127.0.0.1',r));await owner.scheduler.ready;
+    await new Promise(r=>owner.server.listen(0,'127.0.0.1',r));await Promise.all([owner.scheduler.ready,owner.executionOwnership.ready]);
     t.after(()=>new Promise(r=>{owner.server.closeAllConnections();owner.server.close(r);}));
     const base='http://127.0.0.1:'+owner.server.address().port;
     const headers={Cookie:auth.createCookie(session).split(';')[0],Origin:base,'Content-Type':'application/json','X-Livezone-Operator-Request':'1','X-Livezone-CSRF':session.csrfToken};

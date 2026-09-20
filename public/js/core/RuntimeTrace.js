@@ -12,6 +12,11 @@ const FLAGS = new Set(["paused", "muted", "ended", "playing", "hlsFatal", "grace
 const LABELS = new Set(["sourceId", "programSourceId", "sceneId", "previousSceneId", "publisherSessionId", "kind", "state", "mode", "reason",
     "sourceState", "ownershipState", "acquisitionState", "consumer", "instanceId",
     "selectedPath", "probedPath", "apiState", "playerState", "phase", "authority", "sessionId", "transportState"]);
+// Explicit handoff provenance, subject to the same bounded scalar sanitization.
+['controllerProjectionGeneration','activeProgramCurrentTime','activeProgramLastHealthyAt'].forEach(key=>NUMBERS.add(key));
+['activeProgramPlaybackProgressing','activeProgramHealthProjected'].forEach(key=>FLAGS.add(key));
+['externalMonitorState','externalMonitorReason','externalMonitorAuthority','controllerProjectionState',
+ 'controllerProjectionAuthority','activeProgramPlayerState','activeProgramHealthState','activeProgramAuthority'].forEach(key=>LABELS.add(key));
 const label = value => typeof value === "string" && /^[a-zA-Z0-9_ .-]{1,128}$/.test(value);
 
 // Export-only inspection: no observer, new requests, timers or performance-buffer changes.

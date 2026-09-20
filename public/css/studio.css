@@ -2843,3 +2843,7 @@
     .dominant-live-control { width:100%; box-sizing:border-box; }
     .dominant-live-control > #dominant-live-source { max-width:40vw; }
 }
+
+#autolive-reconcile-panel { flex-basis: 100%; padding: .5rem; border: 1px solid var(--border-color, #39404b); }
+#autolive-reconcile-panel[hidden], #autolive-reconcile[hidden] { display: none; }
+#autolive-reconcile-panel p { max-width: 48rem; margin: 0 0 .5rem; }

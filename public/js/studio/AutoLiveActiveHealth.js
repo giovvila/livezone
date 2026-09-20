@@ -12,6 +12,7 @@ export default class AutoLiveActiveHealth {
         this.session = controller.session;
         this.generation = controller.generation;
         this.state = "ONLINE";
+        this.projected = false;
         this.lastProgressAt = controller.clock();
         this.binding = 0;
         this.visualLost = false;
@@ -23,12 +24,16 @@ export default class AutoLiveActiveHealth {
     current() {
         const c = this.controller;
         return !this.stopped && c.started && c.activeHealth === this &&
+            (!c.executionOwnership || c.executionOwnership.valid()) &&
             c.generation === this.generation && c.session?.sessionId === this.session.sessionId &&
             c.session.phase === "LIVE";
     }
     publish(state, reason) {
-        if (!this.current() || state === this.state) return;
+        if (!this.current() || this.projected && state === this.state) return;
         this.state = state;
+        // Construction is not an observation. Project the first actual progress
+        // or uncertainty sample, then retain ordinary equal-state suppression.
+        this.projected = true;
         this.controller.acceptActiveHealth(this, state, reason);
     }
     decision(reason, close = false) {

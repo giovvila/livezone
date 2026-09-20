@@ -360,7 +360,7 @@ async function httpHarness(t) {
     const session=auth.authenticate('operator','test-reference-password');
     const owner=createProgramOutputServer({publisherToken:'reference-test-publisher',operatorAuth:auth,
         mediaAssetRepository:h.repo,studioStatePath:join(h.root,'http-studio.json'),schedulePath:join(h.root,'http-schedule.json')});
-    await new Promise(resolve=>owner.server.listen(0,'127.0.0.1',resolve));await owner.scheduler.ready;
+    await new Promise(resolve=>owner.server.listen(0,'127.0.0.1',resolve));await Promise.all([owner.scheduler.ready,owner.executionOwnership.ready]);
     t.after(()=>new Promise(resolve=>owner.server.close(resolve)));
     const base='http://127.0.0.1:'+owner.server.address().port;
     const headers={Cookie:auth.createCookie(session).split(';')[0],Origin:base,'Content-Type':'application/json',
@@ -435,4 +435,17 @@ test('D2 HTTP Control identity isolates Preview close even with a shared authent
     assert.equal((await h.request('PUT',path,{sequence:1,generation:own.generation,assets:[a.id]},first)).status,200);
     await h.request('DELETE',path,undefined,second);assert.equal(h.owner.previewOwnership.snapshot().references.length,1);
     await h.request('DELETE',path,undefined,first);assert.equal(h.owner.previewOwnership.snapshot().references.length,0);
+});
+
+test('DP1 historical durable Program protects managed asset after catalog and runtime references disappear',async t=>{
+ const h=await harness(t),asset=await h.upload();await h.catalog([imageSource(asset.id)],[scene]);
+ const [{default:Repository},{default:Coordinator},{default:Store},{createProgramOutputEnvelope}]=await Promise.all([
+  import('../server/program-output/DurableProgramRepository.js'),import('../server/program-output/ProgramCommitCoordinator.js'),
+  import('../server/program-output/ProgramOutputStore.js'),import('../public/js/program-output/ProgramOutputEnvelope.js')]);
+ const path=join(h.root,'durable.json'),repository=new Repository({path}),store=new Store(),c=new Coordinator({repository,store});await c.initialize();
+ const at=new Date().toISOString(),envelope=createProgramOutputEnvelope({version:1,publisherSessionId:'p',revision:1,publishedAt:at,committedAt:at,scene:{id:'scene',name:'Program',type:'IMAGE'},source:{id:'source',kind:'image',url:'http://localhost'+asset.url},playback:{initialTime:0,duration:null,playing:false,ended:false,state:'ready',startedAt:at},graphics:{items:[]},transition:{type:'cut',durationMs:0}});
+ assert.equal((await h.mutations.run(()=>c.accept(envelope,{check:()=>true}))).accepted,true);
+ await h.catalog([],[]);const restored=new Repository({path});await restored.load();
+ const prior=h.inventory.inventories;h.inventory.inventories=async()=>[...await prior(),{name:'Durable PROGRAM',classification:'RUNTIME',complete:true,data:restored.record.envelope.snapshot}];
+ await assert.rejects(h.remove(asset.id),error=>error.code==='ASSET_REFERENCED');assert.ok(h.repo.get(asset.id));
 });

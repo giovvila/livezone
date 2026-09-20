@@ -201,6 +201,9 @@ test('legacy monitor authority reproduces a full false close loop with safe trac
  try{
   await h.detect();await h.advance(61000);
   // Fault injection restores the pre-fix authority path, without modifying files.
+  // Restore its source-monitor sequence too; active Program projections use a
+  // separate sequence and must not make this historical fault's event stale.
+  h.controller.health=h.controller.externalObservation;
   h.controller.activeHealth.destroy();h.controller.activeHealth=null;h.controller.externalObservation=null;
   h.monitor.emit('OFFLINE');await h.advance(6000);h.monitor.emit('ONLINE');await flush();h.progress();await h.advance(61000);
   assert.deepEqual(history(h.published),['A','ENTRY','LIVE','LOSS','A','ENTRY','LIVE']);

@@ -1,3 +1,4 @@
+import OperatorAuth from '../server/auth/OperatorAuth.js';
 import { AUTO_LIVE_ENTRY_ID, AUTO_LIVE_ENTRY_TITLE, AUTO_LIVE_ENTRY_MESSAGE } from "../public/js/program-output/AutoLiveEntrySlate.js";
 import { createProgramOutputServer } from '../test-support/ReferenceAuthorityTestServer.js';
 import { AUTO_LIVE_LOSS_SLATE_ID, AUTO_LIVE_LOSS_TEXT } from "../public/js/program-output/AutoLiveLossSlate.js";
@@ -254,14 +255,14 @@ for (const mode of ["public", "obs"]) test(mode + " fresh subscriber shows loss 
 
 test("real HTTP retained loss slate reaches both Public and OBS late subscribers", async context => {
     const token = "loss-slate-test-publisher-token";
-    const { server } = createProgramOutputServer({ publisherToken: token });
+    const { server } = createProgramOutputServer({ publisherToken: token, operatorAuth:new OperatorAuth({disabled:true}) });
     await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
     context.after(() => new Promise(resolve => server.close(resolve)));
     const base = "http://127.0.0.1:" + server.address().port;
     const live = snapshot(1, "hls");
     live.graphics.items = [{ id: AUTO_LIVE_LOSS_SLATE_ID, kind: "image", position: "top-left", url: base + "/assets/logo/logo-lz.svg" }];
     const response = await fetch(base + "/api/program-output", { method: "POST",
-        headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+        headers: { Authorization: "Bearer " + token, "X-Livezone-Program-Manual":"1", "Content-Type": "application/json" },
         body: JSON.stringify(createProgramOutputEnvelope(live)) });
     assert.equal(response.status, 202);
     for (const mode of ["public", "obs"]) {

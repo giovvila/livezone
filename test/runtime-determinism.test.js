@@ -1,3 +1,4 @@
+import OperatorAuth from '../server/auth/OperatorAuth.js';
 import test from "node:test";
 import assert from "node:assert/strict";
 import PublicProgramController from "../public/js/public/PublicProgramController.js";
@@ -53,7 +54,7 @@ for (const mode of ["public", "obs"]) {
     test(`${mode}: committed LIVE publication crosses real POST/store/SSE and promotes without refresh`, async () => {
         const directory = await mkdtemp(join(tmpdir(), "livezone-continuity-"));
         const token = "isolated-test-publisher-token";
-        const { server, store } = createProgramOutputServer({ publisherToken: token,
+        const { server, store } = createProgramOutputServer({ publisherToken: token, operatorAuth:new OperatorAuth({disabled:true}),
             mediaLibraryRoot: join(directory, "media"), studioStatePath: join(directory, "state.json") });
         await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
         const base = `http://127.0.0.1:${server.address().port}`;
@@ -84,7 +85,8 @@ for (const mode of ["public", "obs"]) {
             };
             let program = snapshot(1, "media");
             const transport = new NetworkProgramOutputTransport({ role: "publisher",
-                publishUrl: `${base}/api/program-output`, tokenProvider: () => token, eventSourceFactory: null });
+                publishUrl: `${base}/api/program-output`, tokenProvider: () => token, eventSourceFactory: null,
+                fetchImplementation:(url,options)=>fetch(url,{...options,headers:{...options.headers,"X-Livezone-Program-Manual":"1"}}) });
             publisher = new ProgramOutputManager({
                 stateManager: { getProgramSceneId: () => program.scene.id, getScene: () => program.scene },
                 catalog: { getDefinition: () => ({ renderer: { kind: "source", sourceId: program.source.id } }) },

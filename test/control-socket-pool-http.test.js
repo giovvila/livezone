@@ -159,7 +159,7 @@ test('real server restart restores the Program channel without falsely confirmin
     const stream=events(await h.request('/api/media-library/reference-presence?'+h.query+'&controlEvents=1'));
     assert.equal((await stream.next('presence')).state,'UNKNOWN');
     assert.equal((await stream.next('schedule-state')).programPlan.execution,'SUSPENDED');
-    const publication=await h.json('/api/program-output',{method:'POST',headers:{...h.headers,Authorization:'Bearer '+token},
+    const publication=await h.json('/api/program-output',{method:'POST',headers:{...h.headers,Authorization:'Bearer '+token,'X-Livezone-Program-Manual':'1'},
         body:createProgramOutputEnvelope(snapshot)});
     assert.equal(publication.status,202);assert.deepEqual((await stream.next('program')).snapshot,snapshot);
     assert.equal(h.owner.referenceClients.epochConfirmed,false);

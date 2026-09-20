@@ -37,6 +37,7 @@ export default class AutoLiveLegacyBridge {
         else this.reportBrowserStage(source?.snapshot);
     }
     reportBrowserStage(snapshot){
+        if(this.executionOwnership && !this.executionOwnership.valid())return;
         if(this.destroyed)return;
         const live=Boolean(snapshot?.session);
         const stage=live?'LIVE':'INACTIVE';

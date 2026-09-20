@@ -161,7 +161,13 @@ test("operator session never replaces the independent Program Output publisher t
         response = await fetch(`${base}/api/program-output`, { method: "POST", headers: {
             Authorization: `Bearer ${PUBLISHER_TOKEN}`, "Content-Type": "application/json"
         }, body: JSON.stringify(envelope) });
-        assert.equal(response.status, 202);
+        assert.equal(response.status, 409);
+        response = await fetch(base+'/api/program-output',{method:'POST',headers:{
+            Authorization:'Bearer '+PUBLISHER_TOKEN,'Content-Type':'application/json',
+            Cookie:session.cookie,Origin:base,'X-Livezone-Operator-Request':'1',
+            'X-Livezone-CSRF':session.csrf,'X-Livezone-Program-Manual':'1'
+        },body:JSON.stringify(envelope)});
+        assert.equal(response.status,202);
     });
 });
 

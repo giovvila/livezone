@@ -101,6 +101,12 @@
                         <span id="dominant-live-source"></span>
                         <strong id="dominant-live-status" role="status"></strong>
                         <progress id="dominant-live-progress" max="30" value="0" aria-label="Preparazione AutoLive" hidden></progress>
+                        <button id="autolive-reconcile" type="button" hidden>RIPRISTINA CONTROLLO AUTOLIVE</button>
+                        <div id="autolive-reconcile-panel" role="group" aria-label="Conferma ripristino AutoLive" hidden>
+                            <p id="autolive-reconcile-description" role="status"></p>
+                            <button id="autolive-reconcile-cancel" type="button">ANNULLA</button>
+                            <button id="autolive-reconcile-confirm" type="button">CONFERMA RIPRISTINO</button>
+                        </div>
                         <details class="operator-diagnostics" id="autolive-details">
                             <summary>DETTAGLI TECNICI AUTOLIVE</summary>
                             <pre id="autolive-controller-diagnostics"></pre>

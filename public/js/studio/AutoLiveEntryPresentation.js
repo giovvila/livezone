@@ -10,6 +10,7 @@ export default class AutoLiveEntryPresentation extends AutoLiveLossPresentation 
         this.handleProgramChanged = () => { changed(); this.setEntry(null); };
     }
     update(snapshot) {
+        if(this.controller.executionReconciliationPending)return;
         if (snapshot.phase === "PREPARING") {
             this.stopObserving();
             this.setPresentation(null);

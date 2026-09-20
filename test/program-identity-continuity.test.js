@@ -124,3 +124,27 @@ test('A5 Control retries a present but unresolved retained snapshot before AutoL
  const ctor=entry.indexOf('dominantLiveController = new AutoLiveEntryController({');
  assert.ok(unresolved>=0&&unresolved<retry&&retry<assign&&assign<resolveAgain&&resolveAgain<ctor);
 });
+
+test('DP1 authenticated current durable binding restores old paused audio without resetting cue',async()=>{
+ const {default:Client}=await import('../public/js/studio/BrowserExecutionOwnershipClient.js');
+ const h=fixture('audio',false),state=h.newState(),snapshot=h.snapshot,now=at+7*60*60*1000;
+ const client=new Client({clock:()=>0});client.grant={leaseId:'private',authorityEpoch:15,authorityProcessSession:'process'};client.deadline=1000;client.retainedProgram=snapshot;
+ client.durableBinding={version:1,generation:1,authorityEpoch:15,authorityProcessSession:'process',publisherSessionId:snapshot.publisherSessionId,revision:snapshot.revision};
+ const options={...h.options(state),now,trustedDurable:v=>client.trustsDurable(v)};
+ assert.equal(restoreRetainedProgramIdentity(snapshot,{...options,trustedDurable:null}),false);
+ assert.equal(restoreRetainedProgramIdentity(snapshot,options),true);
+ assert.equal(programPlaybackContinuity(snapshot,options).transportCueTime,30);
+ assert.equal(programPlaybackContinuity(snapshot,options).transportInitialPlayback,'paused');
+ client.deadline=0;assert.equal(restoreRetainedProgramIdentity(snapshot,options),false);
+});
+
+test('DP1 manual Program change during durable renderer hydration prevents stale activation',async()=>{
+ const {activateBrowserExecution}=await import('../public/js/studio/BrowserExecutionActivation.js');
+ const h=fixture(),state=h.newState();let release,reason,starts=0;const gate=new Promise(r=>release=r);
+ const owner={grant:{leaseId:'lease'},valid:()=>true,trustsDurable:()=>true,lose:r=>reason=r};
+ const renderer={program:{sceneId:'video',renderer:{sourceId:'recorded'}},getProgramTransport:()=>({currentTime:0,state:'playing'}),renderSlot:()=>gate};
+ const output={},controller={start(){starts++;},subscribe:()=>()=>{},emit(){},getAuthorizedSource:()=>({id:'live-source'})};
+ const pending=activateBrowserExecution({owner,current:h.snapshot,controller,output,renderer,stateManager:state,catalog:h.catalog,sourceManager:h.sourceManager});
+ state.setProgramScene('break',{source:'operator'});release();assert.equal(await pending,false);
+ assert.equal(reason,'PROGRAM_CHANGED_DURING_HYDRATION');assert.equal(state.getProgramSceneId(),'break');assert.equal(starts,0);assert.equal(output.executionReady,false);
+});

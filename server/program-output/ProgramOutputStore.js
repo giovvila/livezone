@@ -10,7 +10,7 @@ export default class ProgramOutputStore {
         this.listeners = new Set();
     }
 
-    accept(candidate) {
+    prepare(candidate) {
         // Composite revision and schedule timing are owned exclusively by the server merger.
         if (candidate?.snapshot?.output !== undefined || candidate?.snapshot?.overlays?.sponsor !== undefined || candidate?.snapshot?.overlays?.textCrawl?.scheduled !== undefined)
             return Object.freeze({ accepted: false, reason: "server-owned-output" });
@@ -19,18 +19,24 @@ export default class ProgramOutputStore {
         if (this.retiredSessions.has(envelope.publisherSessionId)) {
             return Object.freeze({ accepted: false, reason: "retired-session" });
         }
-        if (this.current?.publisherSessionId === envelope.publisherSessionId) {
-            if (envelope.revision <= this.current.revision) {
+        const previous=this.current||this.historicalCurrent;
+        if (previous?.publisherSessionId === envelope.publisherSessionId) {
+            if (envelope.revision <= previous.revision) {
                 return Object.freeze({ accepted: false, reason: "stale-revision" });
             }
         }
-        else if (this.current) {
-            this.retire(this.current.publisherSessionId);
-        }
-        this.current = envelope;
-        this.listeners.forEach((listener) => listener(envelope));
-        return Object.freeze({ accepted: true, reason: "accepted", envelope });
+        const retiredPublisherSessions=[...this.retiredSessions];
+        if(previous&&previous.publisherSessionId!==envelope.publisherSessionId)retiredPublisherSessions.push(previous.publisherSessionId);
+        return {accepted:true,envelope,retiredPublisherSessions:retiredPublisherSessions.slice(-MAX_RETIRED_SESSIONS)};
     }
+    restoreHistory(record){this.historicalCurrent=record.envelope;this.retiredSessions=new Set(record.retiredPublisherSessions);}
+    install(candidate,notify=true){
+        this.historicalCurrent=null;
+        this.current=candidate.envelope;this.retiredSessions=new Set(candidate.retiredPublisherSessions);
+        if(notify)this.notify();
+    }
+    notify(){for(const listener of this.listeners)try{listener(this.current);}catch{/* Durable commit cannot be rolled back by an observer. */}}
+    accept(candidate){const next=this.prepare(candidate);if(!next.accepted)return next;this.install(next);return Object.freeze({accepted:true,reason:'accepted',envelope:next.envelope});}
 
     getCurrent() { return this.current; }
     subscribe(listener) {

@@ -111,7 +111,7 @@ test('Program Output POST and retained public SSE remain unchanged by scheduled 
         scene:{id:'A',name:'A',type:'MEDIA'},source:{id:'image',kind:'image',url:'https://example.test/image.png'},
         playback:{initialTime:0,duration:null,playing:false,ended:false,state:'ready',startedAt:stamp(0)},graphics:{items:[]},overlays:{},transition:{type:'cut',durationMs:0}};
     const envelope=createProgramOutputEnvelope(snapshot);assert.ok(envelope);
-    assert.equal((await fetch(h.base+'/api/program-output',{method:'POST',headers:{Authorization:'Bearer separate-test-publisher','Content-Type':'application/json'},body:JSON.stringify(envelope)})).status,202);
+    assert.equal((await fetch(h.base+'/api/program-output',{method:'POST',headers:{...h.headers(),Authorization:'Bearer separate-test-publisher','X-Livezone-Program-Manual':'1','Content-Type':'application/json'},body:JSON.stringify(envelope)})).status,202);
     const retained=h.instance.store.getCurrent();await h.request('POST','/events',event(),0);h.tick(2000);assert.equal(h.instance.store.getCurrent(),retained);
     const abort=new AbortController();try{const r=await fetch(h.base+'/api/program-output/events',{signal:abort.signal});assert.equal(r.status,200);
         const text=new TextDecoder().decode((await r.body.getReader().read()).value);assert.ok(text.includes('event: program'));assert.ok(!text.includes('schedule-state'));assert.ok(!text.includes('asset-test'));

@@ -60,6 +60,7 @@ export default class DominantLiveController {
         this.listeners.add(listener); listener(this.getSnapshot()); return () => this.listeners.delete(listener); }
     refreshDiagnostics() { if (this.started) this.emit(); }
     getSnapshot() { const setting = this.config?.getSnapshot?.() || {};
+        const scheduler=this.started?this.schedulerSnapshot:(this.scheduler?.getSnapshot?.()||this.schedulerSnapshot);
         const source = this.getAuthorizedSource(); const preflight = this.getPreflightDiagnostics();
         const status = !setting.armed || !source ? "DISARMED"
             : this.session ? (this.lossTimer || this.lossGraceExpired || this.programPlaybackLost ? "LOSS GRACE" : "ON AIR")
@@ -71,7 +72,7 @@ export default class DominantLiveController {
                     : this.acquisitionState === "ACQUIRING" ? "ARMED — ACQUIRING"
                     : this.acquisitionState === "READY" ? "ARMED — READY"
                     : !source ? "NO AUTHORIZED SOURCE"
-                    : !this.schedulerSnapshot?.enabled ? "WAITING FOR SCHEDULER"
+                    : !scheduler?.enabled ? "WAITING FOR SCHEDULER"
                     : this.stableTimer ? "ARMED — ONLINE/STABILIZING"
                         : this.health.state === "ONLINE" ? "ARMED — WAITING"
                             : this.health.state === "CHECKING" ? "ARMED — CHECKING"

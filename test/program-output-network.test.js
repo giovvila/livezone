@@ -1,8 +1,10 @@
+import OperatorAuth from '../server/auth/OperatorAuth.js';
+const createProgramOutputServer=options=>createTestServer({operatorAuth:new OperatorAuth({disabled:true}),...options});
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import ProgramOutputStore from "../server/program-output/ProgramOutputStore.js";
-import { createProgramOutputServer } from '../test-support/ReferenceAuthorityTestServer.js';
+import { createProgramOutputServer as createTestServer } from '../test-support/ReferenceAuthorityTestServer.js';
 import { createProgramOutputEnvelope } from
     "../public/js/program-output/ProgramOutputEnvelope.js";
 import NetworkProgramOutputTransport from
@@ -1503,12 +1505,12 @@ test("HTTP publisher auth, validation, retention and SSE late join", async (cont
     assert.equal(response.status, 401);
 
     response = await fetch(`${base}/api/program-output`, {
-        method: "POST", headers: { "Authorization": `Bearer ${TOKEN}`,
+        method: "POST", headers: { "Authorization": `Bearer ${TOKEN}`, "X-Livezone-Program-Manual":"1",
             "Content-Type": "application/json" }, body: "{"
     });
     assert.equal(response.status, 400);
     response = await fetch(`${base}/api/program-output`, {
-        method: "POST", headers: { "Authorization": `Bearer ${TOKEN}` },
+        method: "POST", headers: { "Authorization": `Bearer ${TOKEN}`, "X-Livezone-Program-Manual":"1" },
         body: JSON.stringify(envelope)
     });
     assert.equal(response.status, 415);
@@ -1520,7 +1522,7 @@ test("HTTP publisher auth, validation, retention and SSE late join", async (cont
     response = await publish(base, envelope);
     assert.equal(response.status, 409);
     response = await fetch(`${base}/api/program-output`, {
-        method: "POST", headers: { "Authorization": `Bearer ${TOKEN}`,
+        method: "POST", headers: { "Authorization": `Bearer ${TOKEN}`, "X-Livezone-Program-Manual":"1",
             "Content-Type": "application/json" }, body: JSON.stringify({
             padding: "x".repeat(70 * 1024)
         })
@@ -2392,7 +2394,7 @@ test("late SSE subscriber receives retained AUDIO motion artwork", async (contex
 function publish(base, body) {
     return fetch(`${base}/api/program-output`, {
         method: "POST",
-        headers: { "Authorization": `Bearer ${TOKEN}`, "Content-Type": "application/json" },
+        headers: { "Authorization": `Bearer ${TOKEN}`, "X-Livezone-Program-Manual":"1", "Content-Type": "application/json" },
         body: JSON.stringify(body)
     });
 }

@@ -1,3 +1,9 @@
+import DurableProgramRepository from './program-output/DurableProgramRepository.js';
+import ProgramCommitCoordinator from './program-output/ProgramCommitCoordinator.js';
+import ProgramRestoreValidation from './program-output/ProgramRestoreValidation.js';
+import RestartReconciliation from './autolive/RestartReconciliation.js';
+import BrowserExecutionOwnership from './autolive/BrowserExecutionOwnership.js';
+import {installGracefulShutdown} from './GracefulShutdown.js';
 import { createServer } from "node:http";
 import { createReadStream, statSync } from "node:fs";
 import { extname, join, normalize, relative, resolve } from "node:path";
@@ -58,6 +64,8 @@ export function createProgramOutputServer({
     operatorAuth = OperatorAuth.fromEnvironment(),
     operatorAllowedOrigins = parseOrigins(process.env.LIVEZONE_OPERATOR_ALLOWED_ORIGINS),
     studioStatePath = process.env.LIVEZONE_STUDIO_STATE_PATH || DEFAULT_STUDIO_STATE_PATH,
+    executionClock = () => Date.now(),
+    executionLeaseMs = 15000,
     autoLivePath = studioStatePath + '.autolive.json',
     autoLiveRecoveryPath = studioStatePath + '.autolive-recovery.json',
     autoLiveHealthRegistry = new AutoLiveHealthRegistry({managedClient:mediaIngestStatusClient}),
@@ -75,9 +83,9 @@ export function createProgramOutputServer({
     assertPrivateStudioStatePath(schedulePath);
     assertPrivateStudioStatePath(autoLivePath);
     assertPrivateStudioStatePath(autoLiveRecoveryPath);
-    if(new Set([studioStatePath,schedulePath,autoLivePath,autoLiveRecoveryPath].map(p=>{
+    if(new Set([studioStatePath,schedulePath,autoLivePath,autoLiveRecoveryPath,studioStatePath+'.program-output.json'].map(p=>{
         const path=resolve(p);return process.platform==='win32'?path.toLowerCase():path;
-    })).size!==4)throw new TypeError('AutoLive state paths must be distinct.');
+    })).size!==5)throw new TypeError('AutoLive state paths must be distinct.');
     if (resolve(schedulePath) === resolve(studioStatePath))
         throw new TypeError("Schedule and Studio state paths must be distinct.");
     if (typeof publisherToken !== "string" || publisherToken.length < 16) {
@@ -86,6 +94,7 @@ export function createProgramOutputServer({
     if (!Number.isSafeInteger(mediaLibraryMaxBytes) || mediaLibraryMaxBytes < 1) {
         throw new TypeError("LIVEZONE_MEDIA_LIBRARY_MAX_BYTES must be a positive integer.");
     }
+    const executionOwnership=new BrowserExecutionOwnership({path:autoLivePath+'.execution',clock:executionClock,leaseMs:executionLeaseMs});
     const clients = new Set();
     const assetMutations = new AssetMutationCoordinator();
     mediaAssetRepository.mutationCoordinator = assetMutations;
@@ -115,6 +124,34 @@ export function createProgramOutputServer({
         catalog:()=>studioStateCoordinator.getSnapshot(),catalogReady:autoLiveCatalogReady,coordinator:assetMutations,
         resolveConfigRef:ref=>typeof ref==='string'&&/^[a-zA-Z0-9_.]+$/.test(ref)?ref.split('.').reduce((value,key)=>
             value&&Object.hasOwn(value,key)?value[key]:null,bootstrapConfig):null});
+    const durableProgram=new DurableProgramRepository({path:studioStatePath+'.program-output.json'});
+    assertPrivateStudioStatePath(durableProgram.path);
+    const programValidation=new ProgramRestoreValidation({catalog:()=>studioStateCoordinator.getSnapshot(),assets:mediaAssetRepository,resolveConfigRef:ref=>autoLive.resolveConfigRef(ref)});
+    const programCommits=new ProgramCommitCoordinator({repository:durableProgram,store,
+        bind:value=>programValidation.bind(value),validate:record=>programValidation.validate(record),authorityEpoch:()=>executionOwnership.authorityEpoch});
+    const programReady=Promise.all([executionOwnership.ready,mediaReady,autoLiveCatalogReady]).then(async()=>{
+        if(!executionOwnership.available)return;await programCommits.initialize();
+    }).catch(()=>{durableProgram.status='UNAVAILABLE';durableProgram.error='DURABLE_INITIALIZATION_FAILED';});
+    const validateDurable=async()=>{
+        await programReady;
+        if(!durableProgram.record||!['PRESENT','EXPLICIT_EMPTY'].includes(durableProgram.status))return false;
+        if(!await programValidation.validate(durableProgram.record)){durableProgram.status='UNRESOLVED';return false;}return true;
+    };
+    const durableBinding=()=>durableProgram.record&&['PRESENT','EXPLICIT_EMPTY'].includes(durableProgram.status)&&!executionOwnership.restartBlocked?
+        {version:1,generation:durableProgram.record.generation,authorityEpoch:executionOwnership.authorityEpoch,
+         authorityProcessSession:executionOwnership.authorityProcessSession,publisherSessionId:store.getCurrent()?.publisherSessionId,
+         revision:store.getCurrent()?.revision,checksum:durableProgram.record.checksum.value}:null;
+    const restartReconciliation=new RestartReconciliation({ownership:executionOwnership,store,
+        durable:()=>({status:durableProgram.status,generation:durableProgram.record?.generation??null}),
+        configuration:()=>({available:autoLive.available(),revision:autoLive.store.getSnapshot()?.revision,
+            sourceFingerprint:autoLive.healthRuntime().resolvedSourceFingerprint})});
+    let executionConfigKey;
+    const offExecutionConfig=autoLive.store.subscribe(()=>{
+        const config=autoLive.store.getSnapshot();const key=JSON.stringify([config?.enabled,config?.armed,config?.sourceId]);
+        if(executionConfigKey!==undefined&&key!==executionConfigKey)executionOwnership.configurationChanged();
+        executionConfigKey=key;
+    });
+    void autoLive.ready.then(()=>{if(executionConfigKey===undefined){const config=autoLive.store.getSnapshot();executionConfigKey=JSON.stringify([config?.enabled,config?.armed,config?.sourceId]);}});
     const offAutoLiveCatalog=studioStateCoordinator.subscribe(()=>autoLive.refresh());
     const autoLiveRoutes=new AutoLiveRoutes({authority:autoLive});
     const controlEventFeed = new ControlEventFeed({effectiveOutput, scheduler, autoLive});
@@ -146,7 +183,8 @@ export function createProgramOutputServer({
     previewOwnership.requiredPrincipals=()=>[...referenceClients.clients.values()].filter(client=>client.active&&client.role==='CONTROL').map(client=>client.principal+'|'+client.id+'|'+client.generation);
     const assetReferences=new AssetReferenceInventory({repository:mediaAssetRepository,preview:previewOwnership,diagnostics:assetDiagnostics,
         completeness:()=>referenceClients.snapshot(),inventories:async()=>[
-        ...await staticReferences,
+        ...await programReady.then(()=>staticReferences),
+        {name:'Durable PROGRAM',classification:'RUNTIME',complete:['PRESENT','EXPLICIT_EMPTY'].includes(durableProgram.status)||durableProgram.error==='DURABLE_MISSING',data:durableProgram.record?.envelope?.snapshot},
         ...await autoLive.ready.then(()=>autoLive.references()),
         {name:'Channel Logo confirmation pending',complete:channelLogoAuthority.snapshot().complete,data:channelLogoAuthority.snapshot().references},
         {name:'Catalogo asset legacy',complete:true,data:referenceClients.legacyReferences()},
@@ -278,12 +316,44 @@ export function createProgramOutputServer({
                 await scheduleRoutes.handle(request, response, url);
                 return;
             }
+            if (url.pathname === '/api/studio/execution-ownership') {
+                const session=request.method==='POST'?operatorGuard.authorizeMutation(request,response):operatorGuard.authorize(request,response);
+                if(!session)return;
+                if(request.method!=='POST'){sendJson(response,405,{ok:false,error:'method-not-allowed'});return;}
+                let value;try{value=JSON.parse(await readBody(request));}catch{sendJson(response,400,{ok:false,error:'invalid-json'});return;}
+                if(['prepare-reconciliation','reconcile'].includes(value?.operation)){
+                    await Promise.all([executionOwnership.ready,autoLive.ready,programReady]);
+                    try{const result=await assetMutations.run(async()=>{
+                        await validateDurable();
+                        if(!operatorGuard.session(request))throw Object.assign(Error('UNAUTHORIZED'),{code:'UNAUTHORIZED'});
+                        return restartReconciliation.execute(value,session.id||'development');
+                    });sendJson(response,200,{...result,...(result.grant?{durableBinding:durableBinding()}:{} )});}
+                    catch(error){
+                        if(error.code==='UNAUTHORIZED'){sendJson(response,401,{error:'UNAUTHORIZED'});return;}
+                        let current=null;try{current=restartReconciliation.current();}catch{}
+                        sendJson(response,409,{error:error.code||'RECONCILIATION_FAILED',state:executionOwnership.snapshot(),current});
+                    }return;
+                }
+                if(!['acquire','renew','release','inspect'].includes(value?.operation)){sendJson(response,400,{ok:false,error:'invalid-operation'});return;}
+                try{await programReady;const result=value.operation==='acquire'?await assetMutations.run(async()=>{if(!executionOwnership.restartBlocked&&!executionOwnership.grant)await validateDurable();return executionOwnership.operate(value,session.id||'development');}):await executionOwnership.operate(value,session.id||'development');sendJson(response,200,{...result,...(result.grant?{retainedProgram:store.getCurrent()?.snapshot??null,durableBinding:durableBinding()}:{})});}
+                catch{sendJson(response,400,{ok:false,error:'invalid-owner'});}return;
+            }
             if (url.pathname === "/api/program-output" && request.method === "OPTIONS") {
                 handlePublishOptions(request, response, allowedOrigins);
                 return;
             }
             if (url.pathname === "/api/program-output" && request.method === "POST") {
-                await handlePublish(request, response, { publisherToken, allowedOrigins, store,
+                if(!originAllowed(request,allowedOrigins)){sendJson(response,403,{ok:false,error:'origin-rejected'});return;}
+                if(!tokenMatches(request.headers.authorization,publisherToken)){sendJson(response,401,{ok:false,error:'unauthorized'});return;}
+                await Promise.all([executionOwnership.ready,programReady]);
+                let grant;try{grant=JSON.parse(request.headers['x-livezone-execution-grant']||'null');}catch{}
+                const manual=request.headers['x-livezone-program-manual']==='1';
+                const session=manual?operatorGuard.authorizeMutation(request,response):operatorGuard.session(request);
+                if(manual&&!session)return;
+                const finishManualIntent=manual?restartReconciliation.beginManualIntent():()=>{};
+                if(!manual&&!executionOwnership.matches(grant,session?.id|| (session?.developmentBypass?'development':null))){sendJson(response,409,{ok:false,error:'execution-owner-required'});return;}
+                const publicationIntent=restartReconciliation.manualIntentRevision;
+                try { await handlePublish(request, response, { publisherToken, allowedOrigins, store,
                     accept: async payload => {
                         await referenceClients.ready;
                         const client=referenceClients.clients.get(request.headers['x-livezone-reference-client']);
@@ -292,12 +362,20 @@ export function createProgramOutputServer({
                         await mediaReady;
                         try { assetReferences.validate(payload, { classification: 'RUNTIME', kind: 'PROGRAM' }); }
                         catch (error) { return { accepted: false, reason: error.code }; }
-                        return store.accept(payload);
-                    });} });
+                        if(!executionOwnership.available||executionOwnership.closed)return {accepted:false,reason:'execution-owner-required'};
+                        if(!manual&&!executionOwnership.matches(grant,session?.id||(session?.developmentBypass?'development':null),payload?.publisherSessionId))return {accepted:false,reason:'execution-owner-required'};
+                        if(!operatorGuard.session(request))return {accepted:false,reason:'execution-owner-required'};
+                        return programCommits.accept(payload,{
+                            check:()=>executionOwnership.available&&!executionOwnership.closed&&Boolean(operatorGuard.session(request))&&
+                                publicationIntent===restartReconciliation.manualIntentRevision&&
+                                (manual||Boolean(executionOwnership.matches(grant,session?.id||(session?.developmentBypass?'development':null),payload?.publisherSessionId))),
+                            afterInstall:()=>{if(manual)executionOwnership.revokeForManual(payload.publisherSessionId);}
+                        });
+                    });} }); } finally { finishManualIntent(); }
                 return;
             }
             if (url.pathname === "/api/program-output/events" && request.method === "GET") {
-                handleEvents(request, response, clients, effectiveOutput);
+                await programReady;handleEvents(request, response, clients, effectiveOutput);
                 return;
             }
             if (url.pathname === "/config/program-output.json" && request.method === "GET") {
@@ -320,8 +398,9 @@ export function createProgramOutputServer({
         controlEventFeed.close();
         scheduleRoutes.close();
         effectiveOutput.close();
-        offAutoLiveCatalog();
-        const drained = Promise.all([scheduler.close(),autoLive.close()]);
+        offAutoLiveCatalog();offExecutionConfig();
+        programCommits.closed=true;
+        const drained = programReady.then(()=>assetMutations.run(()=>{})).then(()=>Promise.all([scheduler.close(),autoLive.close(),executionOwnership.close()]));
         const callback = args[0];
         return close(error => { void drained.then(() => callback?.(error)); });
     };
@@ -334,7 +413,7 @@ export function createProgramOutputServer({
         clients.forEach((response) => response.end());
         clients.clear();
     });
-    return { server, store, clients, studioStateCoordinator, scheduler, effectiveOutput, autoLive,
+    return { server, store, clients, durableProgram,programCommits,programReady,programValidation, studioStateCoordinator, scheduler, effectiveOutput, autoLive, executionOwnership,
         assetReferences, assetMutations, previewOwnership,referenceClients,assetDiagnostics };
 }
 
@@ -479,9 +558,9 @@ async function handlePublish(request, response, { publisherToken, allowedOrigins
     }
     const result = accept ? await accept(payload) : store.accept(payload);
     if (!result.accepted) {
-        const stale = ["stale-revision", "retired-session"]
+        const stale = ["stale-revision", "retired-session", "execution-owner-required"]
             .includes(result.reason);
-        sendJson(response, stale ? 409 : 422, { ok: false, error: result.reason }, cors);
+        sendJson(response, result.reason.startsWith('durable-')?503:stale ? 409 : 422, { ok: false, error: result.reason }, cors);
         return;
     }
     sendJson(response, 202, { ok: true, publisherSessionId:
@@ -665,5 +744,5 @@ function publishCorsHeaders(request, allowedOrigins) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-    startProgramOutputServer();
+    installGracefulShutdown(startProgramOutputServer());
 }

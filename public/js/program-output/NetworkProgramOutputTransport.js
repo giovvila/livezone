@@ -98,11 +98,13 @@ export default class NetworkProgramOutputTransport {
         });
     }
 
-    publish(snapshot) {
+    publish(snapshot, context = null) {
         const envelope = createProgramOutputEnvelope(snapshot);
         if (!this.started || this.role !== "publisher" || !envelope ||
             !this.fetchImplementation || !this.publishUrl) return false;
         this.latestEnvelope = envelope;
+        if(this.executionOwnership)this.publicationContexts??=new WeakMap();
+        if(this.executionOwnership)this.publicationContexts.set(envelope,this.executionOwnership.capture(context?.manual===true));
         if (this.retryTimer !== null || this.status === "auth-error") {
             return true;
         }
@@ -162,6 +164,7 @@ export default class NetworkProgramOutputTransport {
         this.eventSource = this.eventSourceFactory(this.subscribeUrl.href);
         this.eventSource.addEventListener("open", this.handleOpen);
         this.eventSource.addEventListener("error", this.handleError);
+        this.eventSource.addEventListener("program", this.handleProgram);
     }
 
     async sendEnvelope(envelope, generation) {
@@ -187,7 +190,8 @@ export default class NetworkProgramOutputTransport {
         }, PUBLISH_TIMEOUT_MS);
         timeoutTimer?.unref?.();
         try {
-            const response = await this.fetchImplementation(this.publishUrl.href, {
+            const send=this.executionOwnership ? (url,options)=>this.executionOwnership.publish(url,options,this.publicationContexts?.get(envelope)) : this.fetchImplementation;
+            const response = await send(this.publishUrl.href, {
                 method: "POST",
                 headers: {
                     ...(this.publishUrl.origin===globalThis.location?.origin?getReferenceClientHeaders():{}),
@@ -263,6 +267,7 @@ export default class NetworkProgramOutputTransport {
             if (!envelope) { trace.record("network", "sse-rejected"); return; }
             trace.record("network", "sse-revision", { ...programTraceFields(envelope.snapshot),
                 eventSourceState: this.eventSource?.readyState });
+            this.onRetainedSnapshot?.(envelope.snapshot);
             this.listeners.forEach((listener) => listener(
                 envelope.snapshot, { livePublisher: true }
             ));
@@ -273,6 +278,7 @@ export default class NetworkProgramOutputTransport {
     handleOpen() {
         trace.record("network", "sse-open", { mode: this.role, eventSourceState: this.eventSource?.readyState });
         if (this.role === "subscriber") return this.setStatus("connected");
+        if(this.executionOwnership?.grant)void this.executionOwnership.exchange('renew');
         const shouldRecover = this.publisherMonitorOpened && this.publisherMonitorDisconnected;
         this.publisherMonitorOpened = true;
         this.publisherMonitorDisconnected = false;

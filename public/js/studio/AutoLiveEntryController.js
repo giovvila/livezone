@@ -23,8 +23,10 @@ export default class AutoLiveEntryController extends DominantLiveController {
         this.retainedAdoptionDiagnostics = Object.freeze({state:'IDLE',reason:null});
     }
     start() {
+        if(this.executionOwnership && !this.executionOwnership.valid())return false;
         if (this.started) return true;
         this.removeProgramGuard = this.command.stateManager?.addProgramGuard?.(request => {
+            if(this.executionOwnership && !this.executionOwnership.valid())return request.source === "operator";
             const session = this.session;
             if (!session || session.phase !== "LIVE") return true;
             const allowed = request.sceneId === session.sceneId || request.source === "operator";
@@ -131,6 +133,7 @@ export default class AutoLiveEntryController extends DominantLiveController {
                 entryAbandonmentDeadline: this.entryAbandonmentDeadline ?? null }) });
     }
     evaluate() {
+        if(this.executionOwnership && !this.executionOwnership.valid()){if(this.started)this.suspendOwnership();return;}
         if (this.retainedAdoptionPending) {
             const source = this.getAuthorizedSource();
             const target = this.resolveTarget(source);
@@ -185,7 +188,8 @@ export default class AutoLiveEntryController extends DominantLiveController {
     }
     handleHealth(snapshot) {
         this.traceHandoff("health-observation", { state: snapshot.state, reason: snapshot.reason,
-            sourceState: snapshot.state, monitorGeneration: snapshot.generation, sourceId: snapshot.sourceId });
+            sourceState: snapshot.state, monitorGeneration: snapshot.generation, sourceId: snapshot.sourceId,
+            externalMonitorState:snapshot.state, externalMonitorReason:snapshot.reason, externalMonitorAuthority:snapshot.authority });
         if (this.session?.retained) this.establishActiveHealth(snapshot);
         if (this.activeHealth?.current()) {
             if (snapshot.sourceHealth && snapshot.sourceId === this.session.sourceId &&
@@ -314,6 +318,7 @@ export default class AutoLiveEntryController extends DominantLiveController {
         this.entryCandidateGeneration = null;
     }
     endSession(reason) {
+        if(this.executionOwnership && !this.executionOwnership.valid()){this.suspendOwnership();return false;}
         if (!["manual-override", "disarmed", "source-changed", "runtime-stopped"].includes(reason) && this.activeHealth?.current()) {
             const owner = this.activeHealth;
             owner.check();
@@ -394,6 +399,21 @@ export default class AutoLiveEntryController extends DominantLiveController {
             sourceId: this.session?.sourceId || this.getAuthorizedSource()?.id,
             sessionId: this.session?.sessionId ?? this.traceClosedSessionId, phase: this.session?.phase || "CLOSED",
             sourceState: this.health.state, authority: this.health.authority,
+            externalMonitorState:this.externalObservation?.state,
+            externalMonitorReason:this.externalObservation?.reason,
+            externalMonitorAuthority:this.externalObservation?.authority,
+            controllerProjectionState:this.health.state,
+            controllerProjectionAuthority:this.health.authority,
+            controllerProjectionGeneration:this.health.generation,
+            activeProgramPlayerState:surface?.getHealth?.().state,
+            activeProgramHealthState:this.activeHealth?.state,
+            activeProgramAuthority:this.activeHealth?.current()?'active-program':null,
+            activeProgramHealthProjected:this.activeHealth?.projected===true,
+            activeProgramCurrentTime:surface?.video?.currentTime,
+            activeProgramLastHealthyAt:this.activePlayback?.lastProgressAt,
+            activeProgramPlaybackProgressing:Boolean(this.session?.phase==='LIVE' && this.activePlayback &&
+                this.activePlayback.instanceId===surface?.instanceId &&
+                this.clock()-this.activePlayback.lastProgressAt<this.lossGraceMs && !this.programPlaybackLost),
             playerState: surface?.getHealth?.().state, instanceId: surface?.instanceId,
             currentTime: surface?.video?.currentTime, revision: this.getProgramRevision(),
             playing: Boolean(surface?.video && !surface.video.paused && !surface.video.ended),
@@ -404,6 +424,7 @@ export default class AutoLiveEntryController extends DominantLiveController {
             ...fields });
     }
     async restoreReturnTarget(target) {
+        if(this.executionOwnership && !this.executionOwnership.valid())return false;
         this.traceHandoff("restore-request", { reason: this.traceCloseReason });
         if (this.session || this.lossTimer !== null || this.lossGraceExpired) return false;
         if (target?.sceneId && this.command.stateManager.getProgramSceneId() === target.sceneId) {
@@ -433,7 +454,21 @@ export default class AutoLiveEntryController extends DominantLiveController {
         if (!this.session && this.closingSession && record?.source !== "dominant-live") ++this.generation;
         super.handleProgramChanged(record);
     }
+    suspendOwnership() {
+        this.executionActivationUnsubscribe?.();this.executionActivationUnsubscribe=null;this.executionReconciliationPending=false;
+        // Fencing is not source loss: retire callbacks without TAKE, return, Preview change or Program release.
+        this.retainedAdoptionPending=false;
+        this.activeHealth?.destroy();this.activeHealth=null;
+        this.cancelReacquisition();this.clearEntryWork();
+        this.retainedTransportUnsubscribe?.();this.retainedTransportUnsubscribe=null;
+        this.removeProgramGuard?.();this.removeProgramGuard=null;
+        const listeners=new Set(this.listeners);
+        super.destroy();this.listeners=listeners;
+        this.session=null;this.pendingSession=null;this.acquisitionState='BLOCKED';
+        this.emit();
+    }
     destroy() {
+        this.executionActivationUnsubscribe?.();this.executionActivationUnsubscribe=null;this.executionReconciliationPending=false;
         this.retainedAdoptionPending=false;
         this.retainedTransportUnsubscribe?.(); this.retainedTransportUnsubscribe=null;
         this.removeProgramGuard?.(); this.removeProgramGuard = null;

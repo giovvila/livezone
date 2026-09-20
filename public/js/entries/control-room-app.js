@@ -1,3 +1,5 @@
+import {activateBrowserExecution} from '../studio/BrowserExecutionActivation.js';
+import {startBrowserExecutionOwnership} from '../studio/BrowserExecutionOwnershipClient.js';
 import ControlCrawlObserver from '../program-output/ControlCrawlObserver.js';
 import ControlEventStream from '../core/ControlEventStream.js';
 import NetworkProgramOutputTransport from '../program-output/NetworkProgramOutputTransport.js';
@@ -113,6 +115,8 @@ let studioRenderer = null;
 let studioTransitionCoordinator = null;
 let programFullscreenUI = null;
 let programOutputManager = null;
+let executionOwnership = null;
+let removeExecutionGuard = null;
 let controlCrawlObserver = null;
 let programOutputSetupUI = null;
 let studioScheduleUI = null;
@@ -165,6 +169,9 @@ const traceControlVisibility = () => traceControlProgram(document.visibilityStat
 document.addEventListener?.("visibilitychange", traceControlVisibility);
 
 function destroyControlRoom() {
+    executionOwnership?.close();
+    removeExecutionGuard?.();
+    dominantLiveController?.suspendOwnership();
     autoLiveBridge?.destroy();
     previewOwnershipClient?.stop();
     unsubscribePreviewOwnership?.();
@@ -245,9 +252,16 @@ runtime.start({
                 });
             }
         }
+        executionOwnership=await startBrowserExecutionOwnership();
+        programOutputTransport.executionOwnership=executionOwnership;
+        if(executionOwnership.valid()){
+            retainedProgram=executionOwnership.retainedProgram;
+            retainedProgramIdentityResolved=restoreRetainedProgramIdentity(retainedProgram,{
+                stateManager:StudioStateManager,catalog:studioCatalogManager,sourceManager:StudioSourceManager,trustedDurable:value=>executionOwnership.trustsDurable(value)});
+        }
         const initialProgramContext = programPlaybackContinuity(retainedProgram, {
             stateManager: StudioStateManager, catalog: studioCatalogManager,
-            sourceManager: StudioSourceManager
+            sourceManager: StudioSourceManager, trustedDurable:value=>executionOwnership?.trustsDurable(value)===true
         });
         studioRenderer = new StudioRenderer({
             previewRoot: document.getElementById("studio-preview-renderer"),
@@ -324,6 +338,15 @@ runtime.start({
             transport: programOutputTransport,
             initialProgramContext
         });
+        if(executionOwnership.publisherSessionId)programOutputManager.publisherSessionId=executionOwnership.publisherSessionId;
+        programOutputManager.snapshot=retainedProgramIdentityResolved?retainedProgram:null;
+        removeExecutionGuard=StudioStateManager.addProgramGuard(request=>request.source!=='dominant-live'||
+            Boolean(executionOwnership.valid()&&dominantLiveController?.started));
+        programOutputTransport.onRetainedSnapshot=snapshot=>{
+            if(executionOwnership.valid() || studioTransitionCoordinator.isBusy() || snapshot.output?.overlayOnly ||
+                snapshot.publisherSessionId===programOutputManager.publisherSessionId)return;
+            restoreRetainedProgramIdentity(snapshot,{stateManager:StudioStateManager,catalog:studioCatalogManager,sourceManager:StudioSourceManager});
+        };
         programOutputManager.start();
         programOutputSetupUI = new ProgramOutputSetupUI({
             root: document,
@@ -364,6 +387,7 @@ runtime.start({
         autoLiveBridge=new AutoLiveLegacyBridge({config:dominantLiveConfig,runtimeState:schedulerRuntimeState,
             client:new AutoLiveAuthorityClient({streamFactory:()=>controlEvents.eventSource('/api/studio/schedule/events')}),
             root:document.getElementById('dominant-live-control')});
+        autoLiveBridge.executionOwnership=executionOwnership;
         await autoLiveBridge.start();
         if(autoLiveBridge.destroyed)return;
         schedulerEngine = new SchedulerEngine({
@@ -456,7 +480,43 @@ runtime.start({
             targetResolver: dominantLiveTargetResolver,
             probeDiagnosticsProvider: () => ({ healthAuthority: "source" })
         });
-        dominantLiveController.start();
+        dominantLiveController.executionOwnership=executionOwnership;
+        let activeLease=null,firstOwnership=Boolean(executionOwnership.valid());
+        const ownershipDiagnostics=document.createElement('pre');
+        document.getElementById('autolive-server-diagnostics')?.append(ownershipDiagnostics);
+        executionOwnership.subscribe(async owner=>{
+            ownershipDiagnostics.textContent=JSON.stringify({...owner.state,leaseValid:Boolean(owner.valid()),
+                instruction:owner.everOwned&&!owner.valid()?'Ricaricare Control per riconciliare la proprietà':null},null,2);
+            if(!owner.valid()){
+                activeLease=null;programOutputManager.executionReady=false;
+                if(dominantLiveController.started)dominantLiveController.suspendOwnership();
+                return;
+            }
+            const lease=owner.grant.leaseId;if(activeLease===lease)return;activeLease=lease;
+            programOutputManager.executionReady=false;
+            const current=firstOwnership?retainedProgram:owner.retainedProgram;
+            if(owner.reconciliation?.result==='BROWSER_OWNER'||owner.trustsDurable(current)){
+                firstOwnership=false;
+                await activateBrowserExecution({owner,current,controller:dominantLiveController,output:programOutputManager,
+                    renderer:studioRenderer,stateManager:StudioStateManager,catalog:studioCatalogManager,sourceManager:StudioSourceManager});
+                return;
+            }
+            const resolved=firstOwnership?retainedProgramIdentityResolved:restoreRetainedProgramIdentity(current,{
+                stateManager:StudioStateManager,catalog:studioCatalogManager,sourceManager:StudioSourceManager});
+            if(!firstOwnership && resolved && ['media','audio'].includes(current?.source?.kind)){
+                const context=programPlaybackContinuity(current,{stateManager:StudioStateManager,catalog:studioCatalogManager,sourceManager:StudioSourceManager});
+                await studioRenderer.renderSlot(studioRenderer.program,current.scene.id,context);
+            }
+            firstOwnership=false;
+            if(!owner.valid()||owner.grant.leaseId!==lease)return;
+            if(current&&!resolved){owner.lose('RETAINED_IDENTITY_UNRESOLVED');return;}
+            dominantLiveController.retainedProgram=current;
+            dominantLiveController.retainedProgramIdentityResolved=resolved;
+            dominantLiveController.retainedAdoptionPending=resolved&&current?.source?.kind==='hls';
+            programOutputManager.snapshot=resolved?current:null;
+            programOutputManager.executionReady=true;
+            dominantLiveController.start();
+        });
         autoLiveBridge.setShadowProvider(()=>({...dominantHealthMonitor.getSnapshot(),
             endpoint:dominantLiveController.getAuthorizedSource()?.url}));
         autoLiveBridge.setBrowserStageProvider(()=>({controller:dominantLiveController,

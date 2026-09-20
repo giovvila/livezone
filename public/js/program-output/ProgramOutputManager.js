@@ -38,7 +38,7 @@ export default class ProgramOutputManager {
             this.handleProgramTransport
         );
         this.started = true;
-        this.publishWhenProgramReady("startup");
+        if (!this.transport.executionOwnership) this.publishWhenProgramReady("startup");
     }
 
     destroy() {
@@ -51,7 +51,8 @@ export default class ProgramOutputManager {
         this.started = false;
     }
 
-    handleProgramChanged() {
+    handleProgramChanged(record) {
+        this.manualActivation = record?.source === "operator";
         this.autoLiveEntrySlate = null;
         this.autoLiveLossSlate = null;
         this.initialProgramContext = null;
@@ -143,6 +144,7 @@ export default class ProgramOutputManager {
     }
 
     publish(reason) {
+        if(this.transport.executionOwnership && !this.manualActivation && (!this.executionReady || !this.transport.executionOwnership.valid()))return null;
         if (this.autoLiveEntrySlate) return this.publishEntrySlate();
         const sceneId = this.stateManager.getProgramSceneId();
         if (!sceneId) return this.publishEmpty(reason);
@@ -178,12 +180,13 @@ export default class ProgramOutputManager {
         }
         this.snapshot = snapshot;
         trace.record("program-output", "publish-attempt", { ...programTraceFields(snapshot), reason });
-        this.transport.publish(snapshot);
+        this.transport.publish(snapshot, {manual:this.manualActivation===true});
         return snapshot;
     }
 
     setAutoLiveEntrySlate(value) {
         if (JSON.stringify(value) === JSON.stringify(this.autoLiveEntrySlate ?? null)) return;
+        this.manualActivation = false;
         this.autoLiveEntrySlate = value;
         if (this.started) this.publish("program");
     }
