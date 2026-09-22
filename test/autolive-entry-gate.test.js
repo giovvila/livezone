@@ -14,6 +14,8 @@ import { AUTO_LIVE_ENTRY_ABANDONMENT_MS } from "../public/js/studio/AutoLiveEntr
 import StudioMediaSurface from "../public/js/studio/renderers/StudioMediaSurface.js";
 import StudioAudioSurface from "../public/js/studio/renderers/StudioAudioSurface.js";
 import DominantLiveUI from "../public/js/ui/DominantLiveUI.js";
+import AutoLiveDecisionShadow from "../server/autolive/AutoLiveDecisionShadow.js";
+import { evaluateReadiness } from "../server/autolive/ExecutionReadinessModel.js";
 
 const flush = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); };
 class Element extends EventTarget {
@@ -132,6 +134,37 @@ async function harness(run, { paused = false, candidateReady = true } = {}) {
         globalThis.clearTimeout = old.clearTimeout; Date.now = old.now; console.log = old.log;
     }
 }
+
+test("Phase 1 compares production browser ENTRY with advisory shadow at the exact 30-second boundary", async () => {
+    await harness(async h => {
+        await h.detect();
+        const shadow = new AutoLiveDecisionShadow({clock: h.time.now});
+        const sample = () => shadow.update({enabled: true, armed: true, sourceId: 'live', sourceFingerprint: 'a'.repeat(64),
+            health: {state: 'ONLINE', freshness: 'FRESH', validUntil: h.time.now() + 10000}});
+        sample();
+        await h.advance(29999);
+        assert.equal(h.controller.entryElapsedMs, 29999); assert.equal(sample().entryEligible, false);
+        await h.advance(1);
+        assert.equal(h.controller.session.phase, 'LIVE'); assert.equal(sample().entryEligible, true);
+        assert.equal(sample().executionAllowed, false);
+        const model = evaluateReadiness({now: h.time.now(), observations: []});
+        assert.equal(model.executionAllowed, false); assert.ok(model.blockers.includes('NO_EVIDENCE'));
+        assert.equal(h.state.getPreviewSceneId(), 'P');
+    });
+});
+
+test("Phase 1 keeps HTTP-only shadow eligibility distinct from stalled production ENTRY", async () => {
+    await harness(async h => {
+        await h.detect();
+        const shadow = new AutoLiveDecisionShadow({clock: h.time.now});
+        const sample = () => shadow.update({enabled: true, armed: true, sourceId: 'live', sourceFingerprint: 'a'.repeat(64),
+            health: {state: 'ONLINE', freshness: 'FRESH', validUntil: h.time.now() + 10000}});
+        sample(); await h.advance(30000, false);
+        assert.equal(sample().entryEligible, true); assert.notEqual(h.controller.session?.phase, 'LIVE');
+        assert.notEqual(h.state.getProgramSceneId(), 'LIVE');
+        assert.equal(h.state.getPreviewSceneId(), 'P');
+    });
+});
 
 test("entry immediately pauses A at its cue, preserves Preview and promotes the same candidate only at 30s", async () => {
     await harness(async h => {

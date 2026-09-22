@@ -51,53 +51,66 @@ async function resolveAddresses(host,signal){
 // the next validated answer without another DNS lookup; policy/HTTP failures do not.
 // TLS still verifies the original host. Redirects repeat the complete policy.
 export default class AutoLiveSafeHttp {
-    constructor({resolve=resolveAddresses,allowAddress=publicAddress,parseUrl=externalUrl,timeoutMs=2500}={}){
-        Object.assign(this,{resolve,allowAddress,parseUrl,timeoutMs});
+    constructor({resolve=resolveAddresses,allowAddress=publicAddress,parseUrl=externalUrl,timeoutMs=2500,validateRedirect=null}={}){
+        Object.assign(this,{resolve,allowAddress,parseUrl,timeoutMs,validateRedirect});
     }
-    async read(value,{signal,segment=false,stage=null}={}){
+    async read(value,{signal,segment=false,stage=null,binary=false,maxBytes=131072,timeoutMs=this.timeoutMs}={}){
+        if(typeof binary!=='boolean'||!Number.isSafeInteger(maxBytes)||maxBytes<1||maxBytes>16777216||
+    !binary&&maxBytes>131072||binary&&segment||
+    !Number.isSafeInteger(timeoutMs)||timeoutMs<1||timeoutMs>10000)throw error('BODY_OPTIONS_INVALID');
         const controller=new AbortController(),abort=()=>controller.abort();signal?.addEventListener('abort',abort,{once:true});
-        if(signal?.aborted)controller.abort();const timer=setTimeout(abort,this.timeoutMs);
+        if(signal?.aborted)controller.abort();const timer=setTimeout(abort,timeoutMs);
+        let requestPhase='URL';
         try{
             let url=this.parseUrl(value);
             for(let redirects=0;redirects<=3;redirects++){
                 const host=url.hostname.replace(/^\[|\]$/g,'');
+                requestPhase='DNS';
                 const addresses=isIP(host)?[{address:host,family:isIP(host)}]:await abortable(this.resolve(host,controller.signal),controller.signal);
                 if(!addresses.length)throw error('DNS_ERROR');
                 if(addresses.length>32||addresses.some(a=>!this.allowAddress(a.address)))throw error('ADDRESS_FORBIDDEN');
                 let result,lastNetworkError;
                 for(const address of addresses){
-                    try{result=await this.request(url,address,controller.signal,segment,stage);lastNetworkError=null;break;}
+                    try{requestPhase='REQUEST';result=await this.request(url,address,controller.signal,segment,stage,{binary,maxBytes});lastNetworkError=null;break;}
                     catch(e){
-                        if(controller.signal.aborted)throw error('ABORTED');
+                        if(controller.signal.aborted){const aborted=error('ABORTED');if(binary){aborted.receivedBytes=e.receivedBytes??0;aborted.headersReceived=e.headersReceived??false;}throw aborted;}
                         if(e?.code!=='NETWORK_ERROR')throw e;
                         lastNetworkError=e;
                     }
                 }
                 if(!result)throw lastNetworkError||error('NETWORK_ERROR');
-                if(result.location){if(redirects===3)throw error('REDIRECT_LIMIT');url=this.parseUrl(new URL(result.location,url).href);continue;}
+                if(result.location){if(redirects===3)throw error('REDIRECT_LIMIT');this.validateRedirect?.(result.location,url.href);url=this.parseUrl(new URL(result.location,url).href);continue;}
                 return {...result,url:url.href};
             }
-        }finally{clearTimeout(timer);signal?.removeEventListener('abort',abort);controller.abort();}
+        }catch(e){if(binary)e.requestPhase=requestPhase;throw e;}
+        finally{clearTimeout(timer);signal?.removeEventListener('abort',abort);controller.abort();}
     }
-    request(url,address,signal,segment,stage=null){
+    request(url,address,signal,segment,stage=null,{binary=false,maxBytes=131072}={}){
         return new Promise((resolve,reject)=>{
+            let receivedBytes=0,headersReceived=false;
+            const failure=()=>{const e=error(signal.aborted?'ABORTED':'NETWORK_ERROR');if(binary){e.receivedBytes=receivedBytes;e.headersReceived=headersReceived;}return e;};
             const request=(url.protocol==='https:'?https:http).request(url,{agent:false,signal,maxHeaderSize:16384,
                 lookup:(host,options,callback)=>options.all?callback(null,[address]):callback(null,address.address,address.family),
-                headers:{Accept:segment?'*/*':'application/vnd.apple.mpegurl','Accept-Encoding':'identity',...(segment?{Range:'bytes=0-0'}:{})}},response=>{
+                headers:{Accept:segment||binary?'*/*':'application/vnd.apple.mpegurl','Accept-Encoding':'identity',...(segment?{Range:'bytes=0-0'}:{})}},response=>{
+                headersReceived=true;
                 const status=response.statusCode;
                 if([301,302,303,307,308].includes(status)){const location=response.headers.location;response.destroy();return location?resolve({location}):reject(error('REDIRECT_INVALID'));}
                 if(status<200||status>=300){response.destroy();return reject(codedError('HTTP_ERROR',{status,stage:stage||null}));}
+                if(binary&&status!==200){response.destroy();return reject(error('PARTIAL_BODY_UNSUPPORTED'));}
                 if(response.headers['content-encoding']&&response.headers['content-encoding']!=='identity'){response.destroy();return reject(error('ENCODING_UNSUPPORTED'));}
                 const chunks=[];let bytes=0,done=false;
                 const finish=value=>{if(done)return;done=true;resolve(value);};
                 response.on('data',chunk=>{
+                    receivedBytes+=chunk.length;
                     if(segment){finish({body:null,bytes:1});response.destroy();return;}
-                    bytes+=chunk.length;if(bytes>131072){done=true;response.destroy();reject(error('BODY_LIMIT'));return;}chunks.push(chunk);
+                    bytes+=chunk.length;if(bytes>maxBytes){done=true;response.destroy();reject(error('BODY_LIMIT'));return;}chunks.push(chunk);
                 });
-                response.on('end',()=>segment?finish({body:null,bytes:0}):finish({body:Buffer.concat(chunks).toString('utf8'),bytes}));
-                response.on('error',()=>{if(!done)reject(error('NETWORK_ERROR'));});
+                response.on('end',()=>segment?finish({body:null,bytes:0}):finish({body:binary?Buffer.concat(chunks):Buffer.concat(chunks).toString('utf8'),bytes}));
+                response.on('error',()=>{if(!done)reject(failure());});
             });
-            request.on('error',()=>reject(error(signal.aborted?'ABORTED':'NETWORK_ERROR')));request.end();
+            request.on('error',()=>{
+                reject(failure());
+            });request.end();
         });
     }
 }
