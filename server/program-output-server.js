@@ -26,6 +26,13 @@ import SchedulerServer from "./scheduler/SchedulerServer.js";
 import ScheduleRoutes from "./scheduler/ScheduleRoutes.js";
 import LiveAutomationCoordinator from './scheduler/LiveAutomationCoordinator.js';
 import ScheduledLiveOwnershipCoordinator from './scheduler/ScheduledLiveOwnershipCoordinator.js';
+import ScheduledLiveExecutionCoordinator from './scheduler/ScheduledLiveExecutionCoordinator.js';
+import {
+    scheduledLiveProgramIdentity
+} from './scheduler/ScheduledLiveProgramIdentity.js';
+import {
+    createScheduledLiveProgram
+} from './scheduler/ScheduledLiveProgramFactory.js';
 import ScheduledLiveExecutionRepository from './scheduler/ScheduledLiveExecutionRepository.js';
 import ScheduledLivePersistenceCoordinator from './scheduler/ScheduledLivePersistenceCoordinator.js';
 import EffectiveProgramOutput from "./program-output/EffectiveProgramOutput.js";
@@ -215,6 +222,38 @@ export function createProgramOutputServer({
 
     let scheduledAutomationEventId=null;
 
+    /*
+     * BUILD-1003.9A1 / STEP 8C-2C4
+     *
+     * Scheduled LIVE may reach PROGRAM only through:
+     *
+     * assetMutations
+     *      ->
+     * ProgramCommitCoordinator
+     *      ->
+     * final Scheduled execution fence.
+     *
+     * The same canonical execution ownership and restart/manual
+     * reconciliation objects used by ScheduledLiveOwnershipCoordinator
+     * are reused here.
+     */
+    const scheduledLiveExecution =
+        new ScheduledLiveExecutionCoordinator({
+            ownership:
+                executionOwnership,
+
+            reconciliation:
+                restartReconciliation,
+
+            scheduledOwnership:
+                scheduledLiveOwnership,
+
+            mutations:
+                assetMutations,
+
+            commits:
+                programCommits
+        });
     const offScheduledLiveOwnership=
         liveAutomation.subscribe(snapshot=>{
             const eventId=snapshot?.eventId??null;
@@ -248,15 +287,89 @@ export function createProgramOutputServer({
                         scheduledLiveOwnership.transaction();
 
                     void scheduledLiveExecutionReady
-                        .then(()=>
-                            scheduledLivePersistence.persist(
+                        .then(async()=>{
+                            /*
+                             * Durability precedes execution.
+                             */
+                            await scheduledLivePersistence.persist(
                                 transaction
-                            )
-                        )
+                            );
+
+                            /*
+                             * Persistence may have taken time.
+                             * Re-evaluate Scheduled ownership before
+                             * constructing or committing PROGRAM.
+                             */
+                            const ownershipSnapshot=
+                                scheduledLiveOwnership.snapshot();
+
+                            if(
+                                ownershipSnapshot.active!==true ||
+                                ownershipSnapshot.eventId!==eventId ||
+                                ownershipSnapshot.sourceId!==sourceId
+                            ){
+                                return;
+                            }
+
+                            const executionFence=
+                                ownershipSnapshot.fence;
+
+                            const source=
+                                studioStateCoordinator
+                                    .getSnapshot()
+                                    ?.sources
+                                    ?.find(
+                                        candidate=>
+                                            candidate.id===sourceId
+                                    );
+
+                            if(!source)
+                                throw new Error(
+                                    'SCHEDULED_LIVE_SOURCE_NOT_FOUND'
+                                );
+
+                            const sourceUrl=
+                                source.url ??
+                                autoLive.resolveConfigRef(
+                                    source.configRef
+                                );
+
+                            const identity=
+                                scheduledLiveProgramIdentity({
+                                    eventId,
+                                    revision:1
+                                });
+
+                            const candidate=
+                                createScheduledLiveProgram({
+                                    eventId,
+                                    sourceId,
+                                    sourceUrl,
+
+                                    publisherSessionId:
+                                        identity.publisherSessionId,
+
+                                    revision:
+                                        identity.revision,
+
+                                    now:scheduleClock()
+                                });
+
+                            await scheduledLiveExecution.commit({
+                                eventId,
+                                sourceId,
+                                fence:executionFence,
+
+                                manualIntentRevision:
+                                    transaction.manualIntentRevision,
+
+                                payload:candidate
+                            });
+                        })
                         .catch(()=>{
                             /*
-                             * Fail closed: a persistence failure must not
-                             * create execution authority.
+                             * Any persistence/source/commit failure is
+                             * fail-closed for Scheduled ownership.
                              */
                             scheduledLiveOwnership.release(eventId);
 
@@ -568,7 +681,7 @@ export function createProgramOutputServer({
         controlEventFeed.close();
         scheduleRoutes.close();
         effectiveOutput.close();
-        offAutoLiveCatalog();offExecutionConfig();offScheduledLiveOwnership();scheduledLiveOwnership.close();scheduledLivePersistence.close();
+        offAutoLiveCatalog();offExecutionConfig();offScheduledLiveOwnership();scheduledLiveOwnership.close();scheduledLiveExecution.close();scheduledLivePersistence.close();
         programCommits.closed=true;
         const drained = programReady.then(()=>assetMutations.run(()=>{})).then(()=>Promise.all([Promise.resolve(liveAutomationReady).then(()=>liveAutomation.close()),scheduler.close(),autoLive.close(),executionOwnership.close(),scheduledLiveExecutionRepository.close()]));
         const callback = args[0];
@@ -577,13 +690,13 @@ export function createProgramOutputServer({
     server.on("close", () => {
         scheduleRoutes.close();
         void scheduler.close();
-        offAutoLiveCatalog();offScheduledLiveOwnership();scheduledLiveOwnership.close();scheduledLivePersistence.close();liveAutomation.close();void autoLive.close();
+        offAutoLiveCatalog();offScheduledLiveOwnership();scheduledLiveOwnership.close();scheduledLiveExecution.close();scheduledLivePersistence.close();liveAutomation.close();void autoLive.close();
         unsubscribe();
         studioStateRoutes.close();
         clients.forEach((response) => response.end());
         clients.clear();
     });
-    return { server, store, clients, durableProgram,programCommits,programReady,programValidation, studioStateCoordinator, scheduler, effectiveOutput, autoLive, liveAutomation, scheduledLiveOwnership, scheduledLivePersistence, scheduledLiveExecutionRepository, scheduledLiveExecutionReady, scheduledLiveHydrationReady, executionOwnership,
+    return { server, store, clients, durableProgram,programCommits,programReady,programValidation, studioStateCoordinator, scheduler, effectiveOutput, autoLive, liveAutomation, scheduledLiveOwnership, scheduledLivePersistence, scheduledLiveExecution, scheduledLiveExecutionRepository, scheduledLiveExecutionReady, scheduledLiveHydrationReady, executionOwnership,
         assetReferences, assetMutations, previewOwnership,referenceClients,assetDiagnostics };
 }
 

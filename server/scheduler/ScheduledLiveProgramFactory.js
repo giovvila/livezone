@@ -2,6 +2,9 @@ import {
     createProgramOutputEnvelope
 } from '../../public/js/program-output/ProgramOutputEnvelope.js';
 
+import ScheduleTargetResolver from
+    '../../public/js/scheduler/ScheduleTargetResolver.js';
+
 const PREROLL_TITLE='LIVEZONE';
 const PREROLL_MESSAGE='TRA POCO IN DIRETTA';
 
@@ -151,7 +154,12 @@ export function createScheduledLiveProgram({
         committedAt:at,
 
         scene:{
-            id:`schedule-source-${sourceId}`,
+            id:new ScheduleTargetResolver({
+                namespace:'schedule-source'
+            }).getRuntimeSceneId({
+                kind:'source',
+                id:sourceId
+            }),
             name:'Scheduled LIVE',
             type:'LIVE'
         },

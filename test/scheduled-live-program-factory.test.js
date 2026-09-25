@@ -1,4 +1,5 @@
 import test from 'node:test';
+import ScheduleTargetResolver from '../public/js/scheduler/ScheduleTargetResolver.js';
 import assert from 'node:assert/strict';
 
 import {
@@ -224,7 +225,12 @@ test('scheduled LIVE candidate is canonical playing HLS PROGRAM envelope',async(
 
     assert.equal(
         envelope.snapshot.scene.id,
-        'schedule-source-live-a'
+        new ScheduleTargetResolver({
+            namespace:'schedule-source'
+        }).getRuntimeSceneId({
+            kind:'source',
+            id:'live-a'
+        })
     );
 
     assert.equal(
