@@ -1,0 +1,553 @@
+import test from 'node:test';
+import {
+    createProgramOutputEnvelope
+} from '../public/js/program-output/ProgramOutputEnvelope.js';
+import assert from 'node:assert/strict';
+import {mkdtemp,rm,writeFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+
+import {createProgramOutputServer}
+    from '../server/program-output-server.js';
+
+import {createInitializedState}
+    from '../server/studio/AuthoritativeStateContract.js';
+
+const epoch=Date.parse('2026-09-28T18:00:00.000Z');
+const stamp=ms=>new Date(epoch+ms).toISOString();
+
+function liveEvent(){
+    return {
+        id:'scheduled-live-a',
+        version:1,
+        type:'source.live',
+        enabled:true,
+        startAt:stamp(300000),
+        endAt:stamp(600000),
+        priority:10,
+        payload:{
+            sourceId:'live-a',
+            precheckSeconds:180,
+            unavailableAction:'KEEP_PROGRAM',
+            unavailableSceneId:null,
+            endAction:'RETURN',
+            endSceneId:null
+        },
+        createdAt:stamp(0),
+        updatedAt:stamp(0)
+    };
+}
+
+test('real server fences browser ownership during scheduled LIVE without mutating PROGRAM',async t=>{
+    const dir=await mkdtemp(
+        join(tmpdir(),'lz-live-automation-server-')
+    );
+
+    const studio=createInitializedState({
+        sources:[
+            {
+                id:'live-a',
+                name:'Scheduled LIVE',
+                kind:'hls',
+                enabled:true,
+                url:'https://live.example/index.m3u8'
+            }
+        ],
+        scenes:[],
+        scheduler:{
+            version:1,
+            timezone:'Europe/Rome',
+            items:[],
+            enabled:false
+        },
+        globalOverlays:{textCrawl:null},
+        dominantLive:{
+            armed:false,
+            authorizedSourceId:null
+        }
+    },{
+        stateId:'studio',
+        updatedAt:stamp(0)
+    });
+
+    assert.ok(studio);
+
+    await writeFile(
+        join(dir,'studio.json'),
+        JSON.stringify(studio)
+    );
+
+    let now=epoch;
+    const timers=new Map();
+    let timerSequence=0;
+
+    const leases=[];
+    const releases=[];
+
+    const healthRegistry={
+        acquire(descriptor,listener){
+            const lease={
+                descriptor,
+                listener,
+                current:{
+                    sourceId:descriptor.sourceId,
+                    sourceFingerprint:descriptor.fingerprint,
+                    state:'CHECKING',
+                    reason:'INITIAL',
+                    freshness:'FRESH',
+                    validUntil:now+60000,
+                    playlistProgressing:null,
+                    segmentReachable:null
+                },
+
+                getSnapshot(){
+                    return this.current;
+                },
+
+                release(){
+                    releases.push(descriptor.sourceId);
+                }
+            };
+
+            leases.push(lease);
+
+            queueMicrotask(()=>listener(lease.current));
+
+            return lease;
+        }
+    };
+
+    const owner=createProgramOutputServer({
+        publisherToken:'separate-live-shadow-token',
+
+        studioStatePath:join(dir,'studio.json'),
+        schedulePath:join(dir,'schedule.json'),
+        mediaLibraryRoot:join(dir,'media'),
+
+        mediaAssetRepository:{
+            initialize:async()=>{},
+            list:()=>[],
+            get:()=>null
+        },
+
+        autoLiveHealthRegistry:healthRegistry,
+
+        scheduleClock:()=>now,
+
+        scheduleSetTimer:(fn,delay)=>{
+            const id=++timerSequence;
+            timers.set(id,{fn,delay});
+            return id;
+        },
+
+        scheduleClearTimer:id=>{
+            timers.delete(id);
+        }
+    });
+
+    t.after(async()=>{
+        owner.server.closeAllConnections?.();
+
+        if(owner.server.listening){
+            await new Promise(resolve=>
+                owner.server.close(resolve)
+            );
+        }
+
+        await rm(dir,{
+            recursive:true,
+            force:true
+        });
+    });
+
+    await Promise.all([
+        owner.scheduler.ready,
+        owner.studioStateCoordinator.ready
+    ]);
+
+    /*
+     * No HTTP listener is required for this gate.
+     * We are exercising the real server-owned authorities returned
+     * by createProgramOutputServer().
+     */
+
+    const retainedAt='2026-09-25T06:00:00.000Z';
+
+    const retainedProgram=createProgramOutputEnvelope({
+        version:1,
+        publisherSessionId:'retained-before-scheduled',
+        revision:1,
+        publishedAt:retainedAt,
+        committedAt:retainedAt,
+        scene:{
+            id:'retained-scene',
+            name:'Retained PROGRAM',
+            type:'MEDIA'
+        },
+        source:{
+            id:'retained-source',
+            kind:'media',
+            url:'https://example.test/retained.mp4'
+        },
+        playback:{
+            initialTime:27,
+            duration:120,
+            playing:true,
+            ended:false,
+            state:'playing',
+            startedAt:retainedAt
+        },
+        graphics:{items:[]},
+        transition:{
+            type:'cut',
+            durationMs:0
+        }
+    });
+
+    assert.ok(retainedProgram);
+    assert.equal(
+        owner.store.accept(retainedProgram).accepted,
+        true
+    );
+
+    const browser=await owner.executionOwnership.operate({
+        operation:'acquire',
+        ownerInstanceId:'scheduled-gate-browser',
+        publisherSessionId:'scheduled-gate-publisher'
+    },'operator');
+
+    assert.ok(browser.grant);
+    const programBefore=owner.store.getCurrent();
+
+    assert.deepEqual(programBefore,retainedProgram);
+    assert.equal(owner.liveAutomation.getSnapshot().state,'IDLE');
+    assert.equal(leases.length,0);
+
+    /*
+     * Persist through the real ScheduleStore.
+     */
+    const mutation=await owner.scheduler.store.insert(
+        liveEvent(),
+        0
+    );
+
+    assert.equal(mutation.schedule.revision,1);
+
+    /*
+     * At T=0 the authoritative next deadline must be PRECHECK:
+     * start 300s - precheck 180s = T+120s.
+     */
+    let schedulerState=owner.scheduler.runtime.getSnapshot();
+
+    assert.equal(
+        schedulerState.nextDeadline,
+        epoch+120000
+    );
+
+    assert.equal(leases.length,0);
+    assert.equal(owner.liveAutomation.getSnapshot().state,'IDLE');
+
+    function fireAt(offset){
+        now=epoch+offset;
+
+        const entries=[...timers.entries()];
+
+        assert.ok(
+            entries.length>0,
+            'scheduler must own a pending timer'
+        );
+
+        /*
+         * ScheduleAuthority caps wakeups at 1 second. Rather than
+         * fast-forwarding one-second polling 120 times, reconcile
+         * at the exact authoritative wall-clock boundary.
+         *
+         * This is still the real ScheduleAuthority path.
+         */
+        owner.scheduler.runtime.reconcile();
+    }
+
+    /*
+     * PRECHECK
+     */
+    fireAt(120000);
+
+    assert.equal(leases.length,1);
+    assert.equal(
+        leases[0].descriptor.sourceId,
+        'live-a'
+    );
+
+    let automation=owner.liveAutomation.getSnapshot();
+
+    assert.ok([
+        'PRECHECK',
+        'UNAVAILABLE'
+    ].includes(automation.state));
+
+    assert.equal(automation.serverTake,false);
+    assert.equal(automation.executionAllowed,false);
+
+    /*
+     * Health becomes transport-ready.
+     */
+    leases[0].current={
+        ...leases[0].current,
+        state:'ONLINE',
+        reason:'PLAYLIST_ADVANCING',
+        freshness:'FRESH',
+        validUntil:now+60000,
+        playlistProgressing:true,
+        segmentReachable:true
+    };
+
+    leases[0].listener(leases[0].current);
+
+    automation=owner.liveAutomation.getSnapshot();
+
+    assert.equal(
+        automation.state,
+        'TRANSPORT_READY'
+    );
+
+    assert.equal(automation.intent,null);
+    assert.equal(automation.serverTake,false);
+
+    /*
+     * START
+     *
+     * A real HealthRegistry continues sampling during PRECHECK.
+     * Refresh the controlled observation at the START boundary so
+     * the decision is based on current evidence, not the sample
+     * emitted three minutes earlier.
+     */
+    fireAt(300000);
+
+    leases[0].current={
+        ...leases[0].current,
+        state:'ONLINE',
+        reason:'PLAYLIST_ADVANCING',
+        freshness:'FRESH',
+        validUntil:now+60000,
+        playlistProgressing:true,
+        segmentReachable:true
+    };
+
+    leases[0].listener(leases[0].current);
+
+    automation=owner.liveAutomation.getSnapshot();
+
+    assert.equal(
+        automation.state,
+        'TAKE_REQUESTED'
+    );
+
+    assert.deepEqual(
+        automation.intent,
+        {
+            kind:'TAKE_LIVE',
+            sourceId:'live-a'
+        }
+    );
+
+    assert.equal(
+        automation.automaticTakeAuthority,
+        false
+    );
+
+    assert.equal(
+        automation.executionAllowed,
+        false
+    );
+
+    assert.equal(
+        automation.serverTake,
+        false
+    );
+    /*
+     * 8C-2B runtime gate:
+     * the real server subscriber must have crossed into
+     * ScheduledLiveOwnershipCoordinator.capture().
+     */
+    const scheduledOwnership=
+        owner.scheduledLiveOwnership.snapshot();
+
+    assert.equal(scheduledOwnership.active,true);
+    assert.equal(scheduledOwnership.eventId,'scheduled-live-a');
+    assert.equal(scheduledOwnership.sourceId,'live-a');
+    assert.equal(scheduledOwnership.executionAllowed,false);
+    assert.equal(scheduledOwnership.serverTake,false);
+
+    const executionDuringTake=
+        owner.executionOwnership.snapshot();
+
+    assert.equal(executionDuringTake.scheduledSuppressed,true);
+    assert.equal(
+        executionDuringTake.scheduledEventId,
+        'scheduled-live-a'
+    );
+    assert.equal(
+        executionDuringTake.reason,
+        'SCHEDULED_OVERRIDE'
+    );
+
+    assert.equal(
+        Boolean(
+            owner.executionOwnership.matches(
+                browser.grant,
+                'operator',
+                'scheduled-gate-publisher'
+            )
+        ),
+        false
+    );
+
+    const blockedBrowser=
+        await owner.executionOwnership.operate({
+            operation:'acquire',
+            ownerInstanceId:'blocked-during-scheduled',
+            publisherSessionId:'blocked-during-scheduled'
+        },'operator');
+
+    assert.equal(blockedBrowser.grant,null);
+
+    assert.strictEqual(
+        owner.store.getCurrent(),
+        programBefore
+    );
+
+    /*
+     * Critical invariant:
+     * advisory automation did not touch PROGRAM.
+     */
+    assert.strictEqual(
+        owner.store.getCurrent(),
+        programBefore
+    );
+
+    /*
+     * END -> BLACK
+     */
+    fireAt(600000);
+
+    assert.equal(
+        owner.liveAutomation.getSnapshot().state,
+        'POSTROLL_REQUESTED'
+    );
+
+    assert.deepEqual(
+        owner.liveAutomation.getSnapshot().intent,
+        {
+            kind:'SHOW_BLACK',
+            durationMs:3000
+        }
+    );
+
+    assert.deepEqual(
+        releases,
+        ['live-a']
+    );
+
+    assert.strictEqual(
+        owner.store.getCurrent(),
+        programBefore
+    );
+
+    /*
+     * Still BLACK inside the three-second post-roll.
+     */
+    fireAt(602000);
+
+    assert.equal(
+        owner.liveAutomation.getSnapshot().state,
+        'POSTROLL_REQUESTED'
+    );
+
+    assert.equal(
+        owner.liveAutomation.getSnapshot().intent.kind,
+        'SHOW_BLACK'
+    );
+
+    assert.strictEqual(
+        owner.store.getCurrent(),
+        programBefore
+    );
+
+    /*
+     * END + 3s -> advisory RETURN.
+     */
+    fireAt(603000);
+
+    assert.equal(
+        owner.liveAutomation.getSnapshot().state,
+        'RETURN_REQUESTED'
+    );
+
+    assert.deepEqual(
+        owner.liveAutomation.getSnapshot().intent,
+        {
+            kind:'RESTORE_PROGRAM',
+            action:'RETURN',
+            sceneId:null
+        }
+    );
+    assert.equal(
+        owner.scheduledLiveOwnership.snapshot().active,
+        false
+    );
+
+    const executionAfterReturn=
+        owner.executionOwnership.snapshot();
+
+    assert.equal(
+        executionAfterReturn.scheduledSuppressed,
+        false
+    );
+
+    assert.strictEqual(
+        owner.store.getCurrent(),
+        programBefore
+    );
+
+    const browserAfterReturn=
+        await owner.executionOwnership.operate({
+            operation:'acquire',
+            ownerInstanceId:'browser-after-scheduled',
+            publisherSessionId:'browser-after-scheduled'
+        },'operator');
+
+    assert.ok(browserAfterReturn.grant);
+
+    /*
+     * Shadow invariant: even RETURN cannot mutate PROGRAM.
+     */
+    assert.strictEqual(
+        owner.store.getCurrent(),
+        programBefore
+    );
+
+    assert.equal(
+        owner.liveAutomation.getSnapshot().serverTake,
+        false
+    );
+
+    /*
+     * After restoration boundary the retained sequence is gone.
+     */
+    fireAt(603001);
+
+    assert.equal(
+        owner.liveAutomation.getSnapshot().state,
+        'IDLE'
+    );
+
+    assert.equal(
+        owner.liveAutomation.getSnapshot().intent,
+        null
+    );
+
+    assert.strictEqual(
+        owner.store.getCurrent(),
+        programBefore
+    );
+});

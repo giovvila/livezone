@@ -25,6 +25,7 @@ import StudioStateRoutes from "./studio/StudioStateRoutes.js";
 import SchedulerServer from "./scheduler/SchedulerServer.js";
 import ScheduleRoutes from "./scheduler/ScheduleRoutes.js";
 import LiveAutomationCoordinator from './scheduler/LiveAutomationCoordinator.js';
+import ScheduledLiveOwnershipCoordinator from './scheduler/ScheduledLiveOwnershipCoordinator.js';
 import EffectiveProgramOutput from "./program-output/EffectiveProgramOutput.js";
 import ControlEventFeed from "./program-output/ControlEventFeed.js";
 import AutoLiveAuthority from './autolive/AutoLiveAuthority.js';
@@ -172,6 +173,67 @@ export function createProgramOutputServer({
     });
 
     const liveAutomationReady = liveAutomation.start();
+
+    const scheduledLiveOwnership =
+        new ScheduledLiveOwnershipCoordinator({
+            ownership:executionOwnership,
+            reconciliation:restartReconciliation,
+            program:()=>store.getCurrent(),
+            clock:scheduleClock
+        });
+
+    let scheduledAutomationEventId=null;
+
+    const offScheduledLiveOwnership=
+        liveAutomation.subscribe(snapshot=>{
+            const eventId=snapshot?.eventId??null;
+            const sourceId=snapshot?.sourceId??null;
+
+            /*
+             * STEP 8C-2B:
+             * TAKE_REQUESTED may fence browser execution,
+             * but it still has no authority to mutate PROGRAM.
+             */
+            if(
+                snapshot?.state==='TAKE_REQUESTED' &&
+                eventId &&
+                sourceId
+            ){
+                const result=
+                    scheduledLiveOwnership.capture({
+                        eventId,
+                        sourceId
+                    });
+
+                if(result?.accepted===true){
+                    scheduledAutomationEventId=eventId;
+                }
+
+                return;
+            }
+
+            /*
+             * Once the scheduled sequence leaves its TAKE phase,
+             * browser execution may be eligible again.
+             *
+             * This does not restore or mutate PROGRAM.
+             */
+            if(
+                scheduledAutomationEventId &&
+                (
+                    snapshot?.state==='RETURN_REQUESTED' ||
+                    snapshot?.state==='IDLE' ||
+                    snapshot?.state==='UNAVAILABLE'
+                )
+            ){
+                scheduledLiveOwnership.release(
+                    scheduledAutomationEventId
+                );
+
+                scheduledAutomationEventId=null;
+            }
+        });
+
 
     const controlEventFeed = new ControlEventFeed({
         effectiveOutput,
@@ -447,7 +509,7 @@ export function createProgramOutputServer({
         controlEventFeed.close();
         scheduleRoutes.close();
         effectiveOutput.close();
-        offAutoLiveCatalog();offExecutionConfig();
+        offAutoLiveCatalog();offExecutionConfig();offScheduledLiveOwnership();scheduledLiveOwnership.close();
         programCommits.closed=true;
         const drained = programReady.then(()=>assetMutations.run(()=>{})).then(()=>Promise.all([Promise.resolve(liveAutomationReady).then(()=>liveAutomation.close()),scheduler.close(),autoLive.close(),executionOwnership.close()]));
         const callback = args[0];
@@ -456,13 +518,13 @@ export function createProgramOutputServer({
     server.on("close", () => {
         scheduleRoutes.close();
         void scheduler.close();
-        offAutoLiveCatalog();liveAutomation.close();void autoLive.close();
+        offAutoLiveCatalog();offScheduledLiveOwnership();scheduledLiveOwnership.close();liveAutomation.close();void autoLive.close();
         unsubscribe();
         studioStateRoutes.close();
         clients.forEach((response) => response.end());
         clients.clear();
     });
-    return { server, store, clients, durableProgram,programCommits,programReady,programValidation, studioStateCoordinator, scheduler, effectiveOutput, autoLive, liveAutomation, executionOwnership,
+    return { server, store, clients, durableProgram,programCommits,programReady,programValidation, studioStateCoordinator, scheduler, effectiveOutput, autoLive, liveAutomation, scheduledLiveOwnership, executionOwnership,
         assetReferences, assetMutations, previewOwnership,referenceClients,assetDiagnostics };
 }
 
