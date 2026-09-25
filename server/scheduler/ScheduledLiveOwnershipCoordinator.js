@@ -36,6 +36,11 @@ export default class ScheduledLiveOwnershipCoordinator {
         this.active=null;
     }
 
+    transaction(){
+        return this.active?.transaction
+            ? structuredClone(this.active.transaction)
+            : null;
+    }
     snapshot(){
         return this.active
             ? freeze({

@@ -26,6 +26,8 @@ import SchedulerServer from "./scheduler/SchedulerServer.js";
 import ScheduleRoutes from "./scheduler/ScheduleRoutes.js";
 import LiveAutomationCoordinator from './scheduler/LiveAutomationCoordinator.js';
 import ScheduledLiveOwnershipCoordinator from './scheduler/ScheduledLiveOwnershipCoordinator.js';
+import ScheduledLiveExecutionRepository from './scheduler/ScheduledLiveExecutionRepository.js';
+import ScheduledLivePersistenceCoordinator from './scheduler/ScheduledLivePersistenceCoordinator.js';
 import EffectiveProgramOutput from "./program-output/EffectiveProgramOutput.js";
 import ControlEventFeed from "./program-output/ControlEventFeed.js";
 import AutoLiveAuthority from './autolive/AutoLiveAuthority.js';
@@ -77,6 +79,8 @@ export function createProgramOutputServer({
     studioStateCoordinator = new StudioStateCoordinator({ repository: authoritativeStateRepository }),
     readiness,
     schedulePath = process.env.LIVEZONE_SCHEDULE_PATH || DEFAULT_SCHEDULE_PATH,
+    scheduledLiveExecutionPath =
+        studioStatePath + '.scheduled-live-execution.json',
     scheduleClock = () => Date.now(),
     scheduleSetTimer = setTimeout,
     scheduleClearTimer = clearTimeout
@@ -86,6 +90,7 @@ export function createProgramOutputServer({
     assertPrivateStudioStatePath(schedulePath);
     assertPrivateStudioStatePath(autoLivePath);
     assertPrivateStudioStatePath(autoLiveRecoveryPath);
+    assertPrivateStudioStatePath(scheduledLiveExecutionPath);
     if(new Set([studioStatePath,schedulePath,autoLivePath,autoLiveRecoveryPath,studioStatePath+'.program-output.json'].map(p=>{
         const path=resolve(p);return process.platform==='win32'?path.toLowerCase():path;
     })).size!==5)throw new TypeError('AutoLive state paths must be distinct.');
@@ -174,6 +179,32 @@ export function createProgramOutputServer({
 
     const liveAutomationReady = liveAutomation.start();
 
+    const scheduledLiveExecutionRepository =
+        new ScheduledLiveExecutionRepository({
+            path:scheduledLiveExecutionPath,
+            publicRoot:PUBLIC_ROOT
+        });
+
+    const scheduledLiveExecutionReady =
+        scheduledLiveExecutionRepository.initialize();
+
+    scheduledLiveExecutionReady.catch(()=>{});
+
+    const scheduledLivePersistence =
+        new ScheduledLivePersistenceCoordinator({
+            repository:scheduledLiveExecutionRepository
+        });
+
+    /*
+     * Hydration is diagnostic only.
+     * Persisted Scheduled LIVE state cannot replay PROGRAM.
+     */
+    const scheduledLiveHydrationReady =
+        scheduledLiveExecutionReady.then(()=>
+            scheduledLivePersistence.hydrate()
+        );
+
+    scheduledLiveHydrationReady.catch(()=>{});
     const scheduledLiveOwnership =
         new ScheduledLiveOwnershipCoordinator({
             ownership:executionOwnership,
@@ -207,6 +238,34 @@ export function createProgramOutputServer({
 
                 if(result?.accepted===true){
                     scheduledAutomationEventId=eventId;
+
+                    /*
+                     * Persist the exact transaction already captured
+                     * by the ownership coordinator. Persistence remains
+                     * non-executing and cannot mutate PROGRAM.
+                     */
+                    const transaction=
+                        scheduledLiveOwnership.transaction();
+
+                    void scheduledLiveExecutionReady
+                        .then(()=>
+                            scheduledLivePersistence.persist(
+                                transaction
+                            )
+                        )
+                        .catch(()=>{
+                            /*
+                             * Fail closed: a persistence failure must not
+                             * create execution authority.
+                             */
+                            scheduledLiveOwnership.release(eventId);
+
+                            if(
+                                scheduledAutomationEventId===eventId
+                            ){
+                                scheduledAutomationEventId=null;
+                            }
+                        });
                 }
 
                 return;
@@ -509,22 +568,22 @@ export function createProgramOutputServer({
         controlEventFeed.close();
         scheduleRoutes.close();
         effectiveOutput.close();
-        offAutoLiveCatalog();offExecutionConfig();offScheduledLiveOwnership();scheduledLiveOwnership.close();
+        offAutoLiveCatalog();offExecutionConfig();offScheduledLiveOwnership();scheduledLiveOwnership.close();scheduledLivePersistence.close();
         programCommits.closed=true;
-        const drained = programReady.then(()=>assetMutations.run(()=>{})).then(()=>Promise.all([Promise.resolve(liveAutomationReady).then(()=>liveAutomation.close()),scheduler.close(),autoLive.close(),executionOwnership.close()]));
+        const drained = programReady.then(()=>assetMutations.run(()=>{})).then(()=>Promise.all([Promise.resolve(liveAutomationReady).then(()=>liveAutomation.close()),scheduler.close(),autoLive.close(),executionOwnership.close(),scheduledLiveExecutionRepository.close()]));
         const callback = args[0];
         return close(error => { void drained.then(() => callback?.(error)); });
     };
     server.on("close", () => {
         scheduleRoutes.close();
         void scheduler.close();
-        offAutoLiveCatalog();offScheduledLiveOwnership();scheduledLiveOwnership.close();liveAutomation.close();void autoLive.close();
+        offAutoLiveCatalog();offScheduledLiveOwnership();scheduledLiveOwnership.close();scheduledLivePersistence.close();liveAutomation.close();void autoLive.close();
         unsubscribe();
         studioStateRoutes.close();
         clients.forEach((response) => response.end());
         clients.clear();
     });
-    return { server, store, clients, durableProgram,programCommits,programReady,programValidation, studioStateCoordinator, scheduler, effectiveOutput, autoLive, liveAutomation, scheduledLiveOwnership, executionOwnership,
+    return { server, store, clients, durableProgram,programCommits,programReady,programValidation, studioStateCoordinator, scheduler, effectiveOutput, autoLive, liveAutomation, scheduledLiveOwnership, scheduledLivePersistence, scheduledLiveExecutionRepository, scheduledLiveExecutionReady, scheduledLiveHydrationReady, executionOwnership,
         assetReferences, assetMutations, previewOwnership,referenceClients,assetDiagnostics };
 }
 
