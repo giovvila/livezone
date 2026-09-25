@@ -24,7 +24,7 @@ export default class BrowserExecutionOwnership {
   finally{if(releaseGate)try{await releaseGate();}catch(error){this.available=false;this.reason='AUTHORITY_UNAVAILABLE';this.initializationError=error.code||error.message;}}
  }
  expire(){if(this.grant&&this.clock()>=this.grant.expiresAt){this.retiredInstances.add(this.grant.ownerInstanceId);this.grant=null;this.principal=null;this.reason='LEASE_EXPIRED';++this.grantRevision;}}
- snapshot(){this.expire();return {available:this.available===true,state:this.grant?'BROWSER_OWNER':'NO_OWNER',ownerKind:this.grant?'BROWSER':null,ownerInstanceId:this.grant?.ownerInstanceId??null,authorityEpoch:this.authorityEpoch,authorityProcessSession:this.authorityProcessSession,grantRevision:this.grantRevision,expiresAt:this.grant?.expiresAt??null,reason:this.reason,manualSuppressed:this.manualSuppressed===true,executionAllowed:false,serverTake:false};}
+ snapshot(){this.expire();return {available:this.available===true,state:this.grant?'BROWSER_OWNER':'NO_OWNER',ownerKind:this.grant?'BROWSER':null,ownerInstanceId:this.grant?.ownerInstanceId??null,authorityEpoch:this.authorityEpoch,authorityProcessSession:this.authorityProcessSession,grantRevision:this.grantRevision,expiresAt:this.grant?.expiresAt??null,reason:this.reason,manualSuppressed:this.manualSuppressed===true,scheduledSuppressed:this.scheduledSuppressed===true,scheduledEventId:this.scheduledEventId??null,executionAllowed:false,serverTake:false};}
  matches(candidate,principal,publisherSessionId=candidate?.publisherSessionId){
   this.expire();const g=this.grant;
   return this.available===true&&!this.closed&&g&&principal===this.principal&&candidate&&
@@ -36,7 +36,7 @@ export default class BrowserExecutionOwnership {
   if(value.operation==='acquire'){
    if(!validId(value.ownerInstanceId)||!validId(value.publisherSessionId))throw Error('INVALID_OWNER');
    if(this.retiredInstances.has(value.ownerInstanceId)||this.retiredInstances.size>=4096){this.reason='OWNER_RETIRED';return {state:this.snapshot(),grant:null};}
-   if(!this.grant&&!this.restartBlocked&&!this.manualSuppressed){this.principal=principal;this.grant={authorityEpoch:this.authorityEpoch,authorityProcessSession:this.authorityProcessSession,ownerKind:'BROWSER',ownerInstanceId:value.ownerInstanceId,publisherSessionId:value.publisherSessionId,grantRevision:++this.grantRevision,leaseId:randomUUID(),expiresAt:this.clock()+this.leaseMs};this.reason='GRANTED';grant={...this.grant};}
+   if(!this.grant&&!this.restartBlocked&&!this.manualSuppressed&&!this.scheduledSuppressed){this.principal=principal;this.grant={authorityEpoch:this.authorityEpoch,authorityProcessSession:this.authorityProcessSession,ownerKind:'BROWSER',ownerInstanceId:value.ownerInstanceId,publisherSessionId:value.publisherSessionId,grantRevision:++this.grantRevision,leaseId:randomUUID(),expiresAt:this.clock()+this.leaseMs};this.reason='GRANTED';grant={...this.grant};}
    // Knowing an instance ID never retrieves its secret or extends its lease.
    if(!grant&&this.grant)return {state:{...this.snapshot(),reason:'OWNER_HELD'},grant:null};
   }else if(value.operation==='renew'&&this.matches(value.grant,principal)){
@@ -47,6 +47,29 @@ export default class BrowserExecutionOwnership {
   return {state:this.snapshot(),grant,leaseRemainingMs:grant?Math.max(0,grant.expiresAt-this.clock()):0};
  }
  configurationChanged(){this.manualSuppressed=false;}
- revokeForManual(publisherSessionId){this.restartBlocked=false;if(!this.grant||this.grant.publisherSessionId!==publisherSessionId){this.manualSuppressed=true;if(this.grant)this.retiredInstances.add(this.grant.ownerInstanceId);this.grant=null;this.principal=null;++this.grantRevision;this.reason='MANUAL_OVERRIDE';}}
+ suppressForScheduled(eventId){
+  if(!validId(eventId))throw Error('INVALID_SCHEDULED_OWNER');
+  if(!this.available||this.closed||this.restartBlocked)return false;
+  if(this.scheduledSuppressed&&this.scheduledEventId!==eventId)return false;
+  if(this.grant)this.retiredInstances.add(this.grant.ownerInstanceId);
+  this.grant=null;this.principal=null;++this.grantRevision;
+  this.scheduledSuppressed=true;this.scheduledEventId=eventId;this.reason='SCHEDULED_OVERRIDE';
+  return true;
+ }
+ releaseScheduled(eventId){
+  if(!validId(eventId)||!this.scheduledSuppressed||this.scheduledEventId!==eventId)return false;
+  this.scheduledSuppressed=false;this.scheduledEventId=null;++this.grantRevision;
+  this.reason=this.manualSuppressed?'MANUAL_OVERRIDE':'NO_OWNER';
+  return true;
+ }
+ revokeForManual(publisherSessionId){
+  this.restartBlocked=false;
+  this.scheduledSuppressed=false;this.scheduledEventId=null;
+  if(!this.grant||this.grant.publisherSessionId!==publisherSessionId){
+   this.manualSuppressed=true;
+   if(this.grant)this.retiredInstances.add(this.grant.ownerInstanceId);
+   this.grant=null;this.principal=null;++this.grantRevision;this.reason='MANUAL_OVERRIDE';
+  }
+ }
  async close(){if(this.closing)return this.closing;this.closed=true;this.closing=(async()=>{await this.ready;this.available=false;this.grant=null;if(this.lock){await this.lock.close();await unlink(this.path+'.lock').catch(()=>{});this.lock=null;}})();return this.closing;}
 }
