@@ -16,7 +16,7 @@ export function normalizeEvent(v) {
     if (!exact(v, ['id','version','type','enabled','startAt','endAt','priority','payload','createdAt','updatedAt',...(Object.hasOwn(v||{},'name')?['name']:[])])) fail('INVALID_EVENT');
     if (Object.hasOwn(v,'name')&&!text(v.name,120)) fail('INVALID_NAME');
     if (!text(v.id,120) || !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(v.id)) fail('INVALID_ID');
-    if (v.version !== 1 || !['overlay.crawl','overlay.sponsor'].includes(v.type)) fail('UNSUPPORTED_EVENT');
+    if (v.version !== 1 || !['overlay.crawl','overlay.sponsor','source.live'].includes(v.type)) fail('UNSUPPORTED_EVENT');
     if (typeof v.enabled !== 'boolean' || !Number.isInteger(v.priority) || Math.abs(v.priority) > 100) fail('INVALID_EVENT');
     ['startAt','endAt','createdAt','updatedAt'].forEach(k => timestamp(v[k]));
     if (v.endAt <= v.startAt) fail('INVALID_INTERVAL');
@@ -29,7 +29,7 @@ export function normalizeEvent(v) {
             p.styleId !== 'broadcast-default' || typeof p.background !== 'boolean') fail('INVALID_PAYLOAD');
         payload = { text:p.text.trim(), position:p.position, direction:p.direction, speed:p.speed,
             repeat:p.repeat, styleId:p.styleId, background:p.background };
-    } else {
+    } else if (v.type === 'overlay.sponsor') {
         const layout=p?.layout===undefined?'CORNER':p.layout;
         if (!object(p) || Object.keys(p).some(k=>!['assetId','layout','position','sizePercent','fit','opacity'].includes(k)) || !['CORNER','FULLSCREEN'].includes(layout) || !text(p.assetId,120) ||
             !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(p.assetId) ||
@@ -38,6 +38,67 @@ export function normalizeEvent(v) {
             (layout==='FULLSCREEN' && !['CONTAIN','COVER'].includes(p.fit)) ||
             !Number.isFinite(p.opacity) || p.opacity < 0 || p.opacity > 1) fail('INVALID_PAYLOAD');
         payload = {assetId:p.assetId,layout,...(layout==='FULLSCREEN'?{fit:p.fit}:{position:p.position,sizePercent:p.sizePercent}),opacity:p.opacity};
+    } else {
+        if (!exact(p,[
+            'sourceId',
+            'precheckSeconds',
+            'unavailableAction',
+            'unavailableSceneId',
+            'endAction',
+            'endSceneId'
+        ])) fail('INVALID_PAYLOAD');
+
+        if (!text(p.sourceId,120) ||
+            !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(p.sourceId))
+            fail('INVALID_PAYLOAD');
+
+        if (!Number.isInteger(p.precheckSeconds) ||
+            p.precheckSeconds < 0 ||
+            p.precheckSeconds > 900)
+            fail('INVALID_PAYLOAD');
+
+        if (!['KEEP_PROGRAM','TAKE_SCENE','RADIO'].includes(p.unavailableAction))
+            fail('INVALID_PAYLOAD');
+
+        if (!['RETURN','TAKE_SCENE','RADIO','HOLD'].includes(p.endAction))
+            fail('INVALID_PAYLOAD');
+
+        const unavailableSceneId =
+            p.unavailableAction === 'TAKE_SCENE'
+                ? p.unavailableSceneId
+                : null;
+
+        const endSceneId =
+            p.endAction === 'TAKE_SCENE'
+                ? p.endSceneId
+                : null;
+
+        if (p.unavailableAction === 'TAKE_SCENE' &&
+            (!text(unavailableSceneId,120) ||
+             !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(unavailableSceneId)))
+            fail('INVALID_PAYLOAD');
+
+        if (p.endAction === 'TAKE_SCENE' &&
+            (!text(endSceneId,120) ||
+             !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(endSceneId)))
+            fail('INVALID_PAYLOAD');
+
+        if (p.unavailableAction !== 'TAKE_SCENE' &&
+            p.unavailableSceneId !== null)
+            fail('INVALID_PAYLOAD');
+
+        if (p.endAction !== 'TAKE_SCENE' &&
+            p.endSceneId !== null)
+            fail('INVALID_PAYLOAD');
+
+        payload = {
+            sourceId:p.sourceId,
+            precheckSeconds:p.precheckSeconds,
+            unavailableAction:p.unavailableAction,
+            unavailableSceneId,
+            endAction:p.endAction,
+            endSceneId
+        };
     }
     return freeze({id:v.id,...(v.name?{name:v.name.trim()}:{}),version:1,type:v.type,enabled:v.enabled,startAt:v.startAt,endAt:v.endAt,
         priority:v.priority,payload,createdAt:v.createdAt,updatedAt:v.updatedAt});
@@ -57,7 +118,31 @@ export function resolveSchedule(schedule, now) {
     candidates.sort((a,b)=>b.priority-a.priority || Date.parse(b.startAt)-Date.parse(a.startAt) || compareIds(a.id,b.id));
     const winners = new Map();
     for (const e of candidates) if (!winners.has(e.type)) winners.set(e.type,e);
-    const deadlines = canonical.events.filter(e=>e.enabled).flatMap(e=>[Date.parse(e.startAt),Date.parse(e.endAt)]).filter(t=>t>now);
+    const deadlines = canonical.events
+        .filter(e=>e.enabled)
+        .flatMap(e=>{
+            const start=Date.parse(e.startAt);
+            const end=Date.parse(e.endAt);
+
+            if(e.type==='source.live'){
+                const precheck=
+                    start-e.payload.precheckSeconds*1000;
+
+                const preRoll=start-10000;
+                const postRollEnd=end+3000;
+
+                return [
+                    precheck,
+                    preRoll,
+                    start,
+                    end,
+                    postRollEnd
+                ];
+            }
+
+            return [start,end];
+        })
+        .filter(t=>t>now);
     if(canonical.programPlan){const plan=validateProgramSchedule(canonical.programPlan).schedule;for(const item of plan.items)for(const t of [item.startMs,item.endMs])if(t>now)deadlines.push(t);}
     return freeze({activeEvents:[...winners.values()].sort((a,b)=>compareIds(a.type,b.type)),
         nextDeadline:deadlines.length ? Math.min(...deadlines) : null,

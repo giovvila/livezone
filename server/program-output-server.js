@@ -24,11 +24,13 @@ import StudioStateCoordinator from "./studio/StudioStateCoordinator.js";
 import StudioStateRoutes from "./studio/StudioStateRoutes.js";
 import SchedulerServer from "./scheduler/SchedulerServer.js";
 import ScheduleRoutes from "./scheduler/ScheduleRoutes.js";
+import LiveAutomationCoordinator from './scheduler/LiveAutomationCoordinator.js';
 import EffectiveProgramOutput from "./program-output/EffectiveProgramOutput.js";
 import ControlEventFeed from "./program-output/ControlEventFeed.js";
 import AutoLiveAuthority from './autolive/AutoLiveAuthority.js';
 import AutoLiveRoutes from './autolive/AutoLiveRoutes.js';
 import AutoLiveHealthRegistry from './autolive/AutoLiveHealthRegistry.js';
+import {resolveHealthSource} from './autolive/AutoLiveHealthContract.js';
 import AssetReferenceInventory from './media-library/AssetReferenceInventory.js';
 import AssetMutationCoordinator from './media-library/AssetMutationCoordinator.js';
 import PreviewOwnership from './media-library/PreviewOwnership.js';
@@ -68,7 +70,7 @@ export function createProgramOutputServer({
     executionLeaseMs = 15000,
     autoLivePath = studioStatePath + '.autolive.json',
     autoLiveRecoveryPath = studioStatePath + '.autolive-recovery.json',
-    autoLiveHealthRegistry = new AutoLiveHealthRegistry({managedClient:mediaIngestStatusClient}),
+    autoLiveHealthRegistry,
     assetAuthorityPath = studioStatePath + '.asset-authority',
     authoritativeStateRepository = new AuthoritativeStateRepository({ path: studioStatePath }),
     studioStateCoordinator = new StudioStateCoordinator({ repository: authoritativeStateRepository }),
@@ -94,6 +96,10 @@ export function createProgramOutputServer({
     if (!Number.isSafeInteger(mediaLibraryMaxBytes) || mediaLibraryMaxBytes < 1) {
         throw new TypeError("LIVEZONE_MEDIA_LIBRARY_MAX_BYTES must be a positive integer.");
     }
+    autoLiveHealthRegistry ??= new AutoLiveHealthRegistry({
+        managedClient:mediaIngestStatusClient
+    });
+
     const executionOwnership=new BrowserExecutionOwnership({path:autoLivePath+'.execution',clock:executionClock,leaseMs:executionLeaseMs});
     const clients = new Set();
     const assetMutations = new AssetMutationCoordinator();
@@ -154,7 +160,25 @@ export function createProgramOutputServer({
     void autoLive.ready.then(()=>{if(executionConfigKey===undefined){const config=autoLive.store.getSnapshot();executionConfigKey=JSON.stringify([config?.enabled,config?.armed,config?.sourceId]);}});
     const offAutoLiveCatalog=studioStateCoordinator.subscribe(()=>autoLive.refresh());
     const autoLiveRoutes=new AutoLiveRoutes({authority:autoLive});
-    const controlEventFeed = new ControlEventFeed({effectiveOutput, scheduler, autoLive});
+
+    const liveAutomation = new LiveAutomationCoordinator({
+        scheduler,
+        healthRegistry:autoLiveHealthRegistry,
+        catalog:()=>studioStateCoordinator.getSnapshot(),
+        catalogReady:autoLiveCatalogReady,
+        resolveConfigRef:ref=>autoLive.resolveConfigRef(ref),
+        managedConfig:mediaIngestConfig,
+        clock:scheduleClock
+    });
+
+    const liveAutomationReady = liveAutomation.start();
+
+    const controlEventFeed = new ControlEventFeed({
+        effectiveOutput,
+        scheduler,
+        autoLive,
+        liveAutomation
+    });
     mediaRoutes.controlEventFeed = controlEventFeed;
     const staticReferences = Promise.all(['studio.json', 'assets.json', 'config.json'].map(async name =>
         ({ name: 'Configurazione ' + name, complete: true, data: JSON.parse(await readFile(join(PUBLIC_ROOT, 'config', name), 'utf8')) })))
@@ -202,7 +226,32 @@ export function createProgramOutputServer({
     referenceClients.validateLegacy=values=>assetReferences.validate(values.map(value=>({...value,kind:value.kind==='video'?'media':value.kind})));
     referenceClients.currentCatalogRevision=()=>studioStateCoordinator.getSnapshot()?.revision;
     scheduler.store.mutationCoordinator=assetMutations;
-    scheduler.store.referenceValidator=async value=>{await mediaReady;assetReferences.validate(value);};
+    scheduler.store.referenceValidator=async value=>{
+        await Promise.all([mediaReady,autoLiveCatalogReady]);
+
+        if(value?.type==='source.live'){
+            const source=studioStateCoordinator.getSnapshot()?.sources
+                ?.find(source=>source.id===value.payload?.sourceId);
+
+            if(!source ||
+                source.kind!=='hls' ||
+                source.enabled===false ||
+                !resolveHealthSource(
+                    source,
+                    autoLive.resolveConfigRef,
+                    mediaIngestConfig
+                )){
+                throw Object.assign(
+                    new Error('SOURCE_UNRESOLVED'),
+                    {code:'SOURCE_UNRESOLVED'}
+                );
+            }
+
+            return;
+        }
+
+        assetReferences.validate(value);
+    };
     studioStateCoordinator.referenceValidator=async value=>{await mediaReady;assetReferences.validate(value);};
     autoLive.recovery.validateReferences=async state=>{
         if(!state.record)return;
@@ -400,20 +449,20 @@ export function createProgramOutputServer({
         effectiveOutput.close();
         offAutoLiveCatalog();offExecutionConfig();
         programCommits.closed=true;
-        const drained = programReady.then(()=>assetMutations.run(()=>{})).then(()=>Promise.all([scheduler.close(),autoLive.close(),executionOwnership.close()]));
+        const drained = programReady.then(()=>assetMutations.run(()=>{})).then(()=>Promise.all([Promise.resolve(liveAutomationReady).then(()=>liveAutomation.close()),scheduler.close(),autoLive.close(),executionOwnership.close()]));
         const callback = args[0];
         return close(error => { void drained.then(() => callback?.(error)); });
     };
     server.on("close", () => {
         scheduleRoutes.close();
         void scheduler.close();
-        offAutoLiveCatalog();void autoLive.close();
+        offAutoLiveCatalog();liveAutomation.close();void autoLive.close();
         unsubscribe();
         studioStateRoutes.close();
         clients.forEach((response) => response.end());
         clients.clear();
     });
-    return { server, store, clients, durableProgram,programCommits,programReady,programValidation, studioStateCoordinator, scheduler, effectiveOutput, autoLive, executionOwnership,
+    return { server, store, clients, durableProgram,programCommits,programReady,programValidation, studioStateCoordinator, scheduler, effectiveOutput, autoLive, liveAutomation, executionOwnership,
         assetReferences, assetMutations, previewOwnership,referenceClients,assetDiagnostics };
 }
 

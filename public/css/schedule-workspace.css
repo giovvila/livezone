@@ -689,3 +689,145 @@ button:hover, button:focus-visible, input:focus-visible, select:focus-visible, a
 .operator-overlays { display:flex; flex-wrap:wrap; gap:8px; flex-basis:100%; min-width:0; }
 .operator-overlays:empty { display:none; }
 .operator-overlays > span { overflow-wrap:anywhere; }
+
+/* ============================================================
+   Scheduled LIVE events
+   Separate layout from the editorial running-order grid.
+   ============================================================ */
+
+.scheduled-live-item {
+    grid-template-columns:
+        minmax(145px, 180px)
+        minmax(260px, 1fr)
+        minmax(105px, auto)
+        minmax(250px, auto);
+    gap: 14px;
+    min-height: 68px;
+    padding: 10px 12px;
+    align-items: center;
+}
+
+.scheduled-live-item .schedule-item__start {
+    display: block;
+    min-width: 0;
+    color: #f1f5fb;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.35;
+    white-space: normal;
+}
+
+.scheduled-live-item .schedule-item__program {
+    display: grid;
+    min-width: 0;
+    gap: 4px;
+}
+
+.scheduled-live-item .schedule-item__title {
+    overflow: visible;
+    color: #f1f5fb;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.25;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.scheduled-live-item .schedule-item__scene {
+    overflow: visible;
+    color: #93a1b5;
+    font-size: 9px;
+    line-height: 1.45;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.scheduled-live-item .schedule-item__type {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    min-width: 0;
+}
+
+.scheduled-live-item .schedule-item__type strong {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 26px;
+    padding: 4px 8px;
+    font-size: 8px;
+    letter-spacing: .04em;
+}
+
+.scheduled-live-item .schedule-item__actions {
+    display: grid;
+    grid-template-columns:
+        minmax(72px, 1fr)
+        minmax(72px, 1fr)
+        minmax(72px, 1fr);
+    gap: 6px;
+    width: 100%;
+}
+
+.scheduled-live-item .schedule-item__actions button,
+.scheduled-live-item .schedule-item__actions button:last-child {
+    min-height: 30px;
+    padding: 4px 8px;
+    font-size: 8px;
+}
+
+/* Medium width */
+@media (max-width: 1100px) {
+    .scheduled-live-item {
+        grid-template-columns:
+            minmax(130px, 160px)
+            minmax(220px, 1fr)
+            minmax(100px, auto);
+    }
+
+    .scheduled-live-item .schedule-item__actions {
+        grid-column: 1 / -1;
+        justify-self: stretch;
+    }
+}
+
+/* Tablet / narrow Control Room */
+@media (max-width: 760px) {
+    .scheduled-live-item {
+        grid-template-columns:
+            minmax(110px, auto)
+            minmax(0, 1fr);
+        gap: 8px 12px;
+    }
+
+    .scheduled-live-item .schedule-item__type {
+        grid-column: 1;
+        grid-row: 2;
+    }
+
+    .scheduled-live-item .schedule-item__actions {
+        grid-column: 1 / -1;
+        grid-row: 3;
+    }
+}
+
+/* Mobile */
+@media (max-width: 520px) {
+    .scheduled-live-item {
+        grid-template-columns: 1fr;
+    }
+
+    .scheduled-live-item .schedule-item__start,
+    .scheduled-live-item .schedule-item__program,
+    .scheduled-live-item .schedule-item__type,
+    .scheduled-live-item .schedule-item__actions {
+        grid-column: 1;
+        grid-row: auto;
+    }
+
+    .scheduled-live-item .schedule-item__actions {
+        grid-template-columns: 1fr;
+    }
+}

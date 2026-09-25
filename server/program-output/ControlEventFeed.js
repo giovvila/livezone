@@ -1,12 +1,15 @@
 // Multiplex existing authorities on the authenticated reference-presence response.
 // No state merge, revisions, scheduler clock or authority is introduced here.
 export default class ControlEventFeed {
-    constructor({effectiveOutput, scheduler, autoLive = null}) {
-        Object.assign(this, {effectiveOutput, scheduler, autoLive});
+    constructor({effectiveOutput, scheduler, autoLive = null, liveAutomation = null}) {
+        Object.assign(this, {effectiveOutput, scheduler, autoLive, liveAutomation});
         this.clients = new Set();
         this.offProgram = effectiveOutput.subscribe(value => this.broadcast('program', value));
         this.offSchedule = scheduler.subscribe(value => this.broadcast('schedule-state', value));
         this.offAutoLive = autoLive?.subscribe(value => this.broadcast('autolive-state', value));
+        this.offLiveAutomation = liveAutomation?.subscribe(
+            value => this.broadcast('live-automation-state', value)
+        );
     }
 
     connect(response) {
@@ -20,6 +23,14 @@ export default class ControlEventFeed {
         else if(this.autoLive)void this.autoLive.ready.then(()=>{
             if(!this.closed&&this.clients.has(response))this.write(response,'autolive-state',this.autoLive.current());
         });
+
+        if(this.liveAutomation)
+            this.write(
+                response,
+                'live-automation-state',
+                this.liveAutomation.getSnapshot()
+            );
+
         return () => this.clients.delete(response);
     }
 
@@ -40,6 +51,7 @@ export default class ControlEventFeed {
         this.offProgram();
         this.offSchedule();
         this.offAutoLive?.();
+        this.offLiveAutomation?.();
         for (const response of this.clients) response.end();
         this.clients.clear();
     }

@@ -16,6 +16,7 @@ import ScheduleStore from "../scheduler/ServerScheduleStore.js";
 import ScheduleWorkspaceUI from "../ui/ScheduleWorkspaceUI.js";
 import StudioAssetsUI from "../ui/StudioAssetsUI.js";
 import StudioLiveSourcesUI from "../ui/StudioLiveSourcesUI.js";
+import ScheduledLiveUI from '../ui/ScheduledLiveUI.js';
 import DominantLiveConfig from "../studio/DominantLiveConfig.js";
 import AutoLiveAuthorityClient from '../studio/AutoLiveAuthorityClient.js';
 import AutoLiveLegacyBridge from '../studio/AutoLiveLegacyBridge.js';
@@ -93,6 +94,12 @@ const liveSourcesUI = new StudioLiveSourcesUI(
     workspace, catalog, scheduleStore, dominantLiveConfig
 );
 
+const scheduledLiveUI = new ScheduledLiveUI({
+    root: workspace,
+    store: scheduleStore,
+    catalog
+});
+
 scheduleUI.start();
 const mediaLibraryUI=new MediaLibraryUI(document.getElementById('media-library'),mediaLibraryManager,{
     manageCollapse:false,
@@ -102,3 +109,10 @@ const mediaLibraryUI=new MediaLibraryUI(document.getElementById('media-library')
 globalThis.addEventListener('pagehide',()=>mediaLibraryUI.destroy(),{once:true});
 assetsUI.start();
 liveSourcesUI.start();
+scheduledLiveUI.start();
+
+globalThis.addEventListener(
+    'pagehide',
+    ()=>scheduledLiveUI.destroy(),
+    {once:true}
+);
