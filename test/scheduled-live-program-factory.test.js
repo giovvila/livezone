@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
@@ -192,6 +192,170 @@ test('invalid identity and revision are rejected',()=>{
 
 test('factory constructs candidate only and has no execution authority',()=>{
     const envelope=preroll();
+
+    assert.equal(
+        Object.hasOwn(envelope,'executionAllowed'),
+        false
+    );
+
+    assert.equal(
+        Object.hasOwn(envelope,'serverTake'),
+        false
+    );
+});
+
+test('scheduled LIVE candidate is canonical playing HLS PROGRAM envelope',async()=>{
+    const {
+        createScheduledLiveProgram
+    }=await import('../server/scheduler/ScheduledLiveProgramFactory.js');
+
+    const envelope=createScheduledLiveProgram({
+        eventId:'scheduled-live-1',
+        sourceId:'live-a',
+        sourceUrl:'https://live.example/index.m3u8',
+        publisherSessionId:'scheduled-live-server',
+        revision:18,
+        now:600000
+    });
+
+    assert.ok(
+        validateProgramOutputEnvelope(envelope)
+    );
+
+    assert.equal(
+        envelope.snapshot.scene.id,
+        'schedule-source-live-a'
+    );
+
+    assert.equal(
+        envelope.snapshot.scene.type,
+        'LIVE'
+    );
+
+    assert.deepEqual(
+        envelope.snapshot.source,
+        {
+            id:'live-a',
+            kind:'hls',
+            url:'https://live.example/index.m3u8'
+        }
+    );
+
+    assert.deepEqual(
+        envelope.snapshot.playback,
+        {
+            initialTime:0,
+            duration:null,
+            playing:true,
+            ended:false,
+            state:'playing',
+            startedAt:new Date(600000).toISOString()
+        }
+    );
+});
+
+test('scheduled LIVE candidate accepts already-resolved configRef endpoint',async()=>{
+    const {
+        createScheduledLiveProgram
+    }=await import('../server/scheduler/ScheduledLiveProgramFactory.js');
+
+    const envelope=createScheduledLiveProgram({
+        eventId:'scheduled-live-config',
+        sourceId:'live-config',
+        sourceUrl:'http://127.0.0.1:8888/livezone-test/index.m3u8',
+        publisherSessionId:'scheduled-live-server',
+        revision:19,
+        now:610000
+    });
+
+    assert.equal(
+        envelope.snapshot.source.url,
+        'http://127.0.0.1:8888/livezone-test/index.m3u8'
+    );
+});
+
+test('scheduled LIVE candidate rejects unresolved or unsafe endpoint',async()=>{
+    const {
+        createScheduledLiveProgram
+    }=await import('../server/scheduler/ScheduledLiveProgramFactory.js');
+
+    const base={
+        eventId:'scheduled-live-1',
+        sourceId:'live-a',
+        publisherSessionId:'scheduled-live-server',
+        revision:20,
+        now:620000
+    };
+
+    for(const sourceUrl of [
+        undefined,
+        '',
+        '../live.m3u8',
+        'ftp://example.test/live.m3u8',
+        'https://user:secret@example.test/live.m3u8'
+    ]){
+        assert.throws(
+            ()=>createScheduledLiveProgram({
+                ...base,
+                sourceUrl
+            }),
+            /INVALID_SCHEDULED_LIVE_PROGRAM/
+        );
+    }
+});
+
+test('scheduled LIVE candidate rejects invalid execution identity',async()=>{
+    const {
+        createScheduledLiveProgram
+    }=await import('../server/scheduler/ScheduledLiveProgramFactory.js');
+
+    const base={
+        eventId:'scheduled-live-1',
+        sourceId:'live-a',
+        sourceUrl:'https://live.example/index.m3u8',
+        publisherSessionId:'scheduled-live-server',
+        revision:21,
+        now:630000
+    };
+
+    assert.throws(
+        ()=>createScheduledLiveProgram({
+            ...base,
+            sourceId:'bad source'
+        }),
+        /INVALID_SCHEDULED_LIVE_PROGRAM/
+    );
+
+    assert.throws(
+        ()=>createScheduledLiveProgram({
+            ...base,
+            revision:0
+        }),
+        /INVALID_SCHEDULED_LIVE_PROGRAM/
+    );
+
+    assert.throws(
+        ()=>createScheduledLiveProgram({
+            ...base,
+            publisherSessionId:''
+        }),
+        /INVALID_SCHEDULED_LIVE_PROGRAM/
+    );
+});
+
+test('scheduled LIVE candidate has no execution authority or writer capability',async()=>{
+    const {
+        createScheduledLiveProgram
+    }=await import('../server/scheduler/ScheduledLiveProgramFactory.js');
+
+    const envelope=createScheduledLiveProgram({
+        eventId:'scheduled-live-1',
+        sourceId:'live-a',
+        sourceUrl:'https://live.example/index.m3u8',
+        publisherSessionId:'scheduled-live-server',
+        revision:22,
+        now:640000
+    });
 
     assert.equal(
         Object.hasOwn(envelope,'executionAllowed'),

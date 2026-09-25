@@ -1,4 +1,4 @@
-﻿import {
+import {
     createProgramOutputEnvelope
 } from '../../public/js/program-output/ProgramOutputEnvelope.js';
 
@@ -22,21 +22,30 @@ function validTime(value){
     return Number.isSafeInteger(value) && value>=0;
 }
 
-function validHttpUrl(value){
+function canonicalHttpUrl(value){
     if(typeof value!=='string' || !value.trim())
-        return false;
+        return null;
 
     try{
         const url=new URL(value);
 
-        return (
-            url.protocol==='http:' ||
-            url.protocol==='https:'
-        );
+        if(
+            !['http:','https:'].includes(url.protocol) ||
+            url.username ||
+            url.password
+        ){
+            return null;
+        }
+
+        return url.href;
     }
     catch{
-        return false;
+        return null;
     }
+}
+
+function validHttpUrl(value){
+    return canonicalHttpUrl(value)!==null;
 }
 
 export function createScheduledLivePreroll({
@@ -106,6 +115,79 @@ export function createScheduledLivePreroll({
 
     if(!envelope)
         fail('SCHEDULED_LIVE_PREROLL_REJECTED');
+
+    return envelope;
+}
+
+export function createScheduledLiveProgram({
+    eventId,
+    sourceId,
+    sourceUrl,
+    publisherSessionId,
+    revision,
+    now
+}={}){
+    const url=canonicalHttpUrl(sourceUrl);
+
+    if(
+        !validId(eventId) ||
+        !validId(sourceId) ||
+        !url ||
+        typeof publisherSessionId!=='string' ||
+        !publisherSessionId.trim() ||
+        !validRevision(revision) ||
+        !validTime(now)
+    ){
+        fail('INVALID_SCHEDULED_LIVE_PROGRAM');
+    }
+
+    const at=new Date(now).toISOString();
+
+    const snapshot={
+        version:1,
+        publisherSessionId:publisherSessionId.trim(),
+        revision,
+        publishedAt:at,
+        committedAt:at,
+
+        scene:{
+            id:`schedule-source-${sourceId}`,
+            name:'Scheduled LIVE',
+            type:'LIVE'
+        },
+
+        source:{
+            id:sourceId,
+            kind:'hls',
+            url
+        },
+
+        playback:{
+            initialTime:0,
+            duration:null,
+            playing:true,
+            ended:false,
+            state:'playing',
+            startedAt:at
+        },
+
+        graphics:{
+            items:[]
+        },
+
+        overlays:{},
+
+        transition:{
+            type:'cut',
+            durationMs:0
+        }
+    };
+
+    const envelope=
+        createProgramOutputEnvelope(snapshot);
+
+    if(!envelope)
+        fail('SCHEDULED_LIVE_PROGRAM_REJECTED');
 
     return envelope;
 }
