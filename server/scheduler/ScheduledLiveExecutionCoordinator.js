@@ -44,6 +44,7 @@ export default class ScheduledLiveExecutionCoordinator {
     commit({
         eventId,
         sourceId,
+        expectedState,
         fence,
         manualIntentRevision,
         payload
@@ -63,6 +64,7 @@ export default class ScheduledLiveExecutionCoordinator {
         if(!this.#check({
             eventId,
             sourceId,
+            expectedState,
             fence,
             manualIntentRevision
         })){
@@ -92,6 +94,7 @@ export default class ScheduledLiveExecutionCoordinator {
                     check:()=>this.#check({
                         eventId,
                         sourceId,
+                        expectedState,
                         fence,
                         manualIntentRevision
                     })
@@ -103,6 +106,7 @@ export default class ScheduledLiveExecutionCoordinator {
     #check({
         eventId,
         sourceId,
+        expectedState,
         fence,
         manualIntentRevision
     }){
@@ -111,6 +115,15 @@ export default class ScheduledLiveExecutionCoordinator {
 
         const transaction=
             this.scheduledOwnership.transaction();
+
+        // Event/source ownership alone cannot authorize an earlier action
+        // after an await: TAKE belongs to LIVE, BLACK to POSTROLL.
+        if(
+            !['LIVE','POSTROLL'].includes(expectedState) ||
+            transaction?.state!==expectedState
+        ){
+            return false;
+        }
 
         return scheduledLiveCommitCheck({
             fence,

@@ -271,3 +271,144 @@ test('close releases active scheduled suppression',()=>{
         false
     );
 });
+test('ownership transition advances only the active canonical transaction',()=>{
+    const h=harness();
+
+    h.coordinator.capture({
+        eventId:'scheduled-live-1',
+        sourceId:'primecast'
+    });
+
+    assert.equal(
+        h.coordinator.transaction().state,
+        'CAPTURED'
+    );
+
+    const preroll=
+        h.coordinator.transition(
+            'begin-preroll'
+        );
+
+    assert.equal(
+        preroll.state,
+        'PREROLL'
+    );
+
+    assert.equal(
+        h.coordinator.transaction().state,
+        'PREROLL'
+    );
+
+    const live=
+        h.coordinator.transition(
+            'begin-live'
+        );
+
+    assert.equal(
+        live.state,
+        'LIVE'
+    );
+
+    assert.equal(
+        h.coordinator.transaction().state,
+        'LIVE'
+    );
+
+    const postroll=
+        h.coordinator.transition(
+            'begin-postroll'
+        );
+
+    assert.equal(
+        postroll.state,
+        'POSTROLL'
+    );
+
+    assert.equal(
+        h.coordinator.transaction().state,
+        'POSTROLL'
+    );
+
+    assert.equal(
+        postroll.executionAllowed,
+        false
+    );
+
+    assert.equal(
+        postroll.serverTake,
+        false
+    );
+});
+
+test('ownership transition cannot skip canonical Scheduled phases',()=>{
+    const h=harness();
+
+    h.coordinator.capture({
+        eventId:'scheduled-live-1',
+        sourceId:'primecast'
+    });
+
+    assert.throws(
+        ()=>h.coordinator.transition(
+            'begin-live'
+        ),
+        /INVALID_TRANSACTION_TRANSITION/
+    );
+
+    assert.equal(
+        h.coordinator.transaction().state,
+        'CAPTURED'
+    );
+});
+
+test('manual revision change aborts ownership during transition',()=>{
+    const h=harness();
+
+    h.coordinator.capture({
+        eventId:'scheduled-live-1',
+        sourceId:'primecast'
+    });
+
+    h.reconciliation.manualIntentRevision=12;
+
+    const result=
+        h.coordinator.transition(
+            'begin-preroll'
+        );
+
+    assert.equal(
+        result.state,
+        'ABORTED'
+    );
+
+    assert.equal(
+        result.reason,
+        'MANUAL_INTENT_DOMINATES'
+    );
+
+    assert.equal(
+        h.coordinator.transaction(),
+        null
+    );
+
+    assert.equal(
+        h.coordinator.snapshot().active,
+        false
+    );
+});
+
+test('ownership transition without active transaction is inert',()=>{
+    const h=harness();
+
+    assert.equal(
+        h.coordinator.transition(
+            'begin-preroll'
+        ),
+        null
+    );
+
+    assert.equal(
+        h.coordinator.snapshot().active,
+        false
+    );
+});

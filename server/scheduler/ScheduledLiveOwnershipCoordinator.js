@@ -1,5 +1,6 @@
 import {
-    createScheduledLiveTransaction
+    createScheduledLiveTransaction,
+    transitionScheduledLiveTransaction
 } from './ScheduledLiveExecutionTransaction.js';
 
 import {
@@ -40,6 +41,72 @@ export default class ScheduledLiveOwnershipCoordinator {
         return this.active?.transaction
             ? structuredClone(this.active.transaction)
             : null;
+    }
+    transition(operation,{currentProgram=null}={}){
+        if(!this.active)
+            return null;
+
+        const transaction=
+            transitionScheduledLiveTransaction(
+                this.active.transaction,
+                operation,
+                {
+                    manualIntentRevision:
+                        this.reconciliation.manualIntentRevision,
+
+                    currentProgram
+                }
+            );
+
+        /*
+         * The transaction transition may itself encode manual
+         * dominance as ABORTED. Never retain Scheduled ownership
+         * after that terminal decision.
+         */
+        if(transaction.state==='ABORTED'){
+            this.ownership.releaseScheduled(
+                transaction.eventId
+            );
+
+            this.active=null;
+
+            return structuredClone(transaction);
+        }
+
+        const fence=
+            evaluateScheduledLiveExecutionFence({
+                transaction,
+
+                manualIntentRevision:
+                    transaction.manualIntentRevision,
+
+                currentManualIntentRevision:
+                    this.reconciliation.manualIntentRevision,
+
+                authorityAvailable:
+                    this.ownership.available===true,
+
+                authorityClosed:
+                    this.ownership.closed===true,
+
+                restartBlocked:
+                    this.ownership.restartBlocked===true,
+
+                manualPending:
+                    Boolean(this.reconciliation.manualPending)
+            });
+
+        /*
+         * A phase transition never manufactures execution
+         * authority. It only advances the transaction owned by
+         * this coordinator and refreshes its decision fence.
+         */
+        this.active={
+            transaction,
+            fence
+        };
+
+        return structuredClone(transaction);
     }
     snapshot(){
         return this.active

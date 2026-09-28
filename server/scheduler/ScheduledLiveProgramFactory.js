@@ -200,6 +200,71 @@ export function createScheduledLiveProgram({
     return envelope;
 }
 
+
+export function createScheduledLiveBlack({
+    eventId,
+    publisherSessionId,
+    revision,
+    now
+}={}){
+    if(
+        !validId(eventId) ||
+        typeof publisherSessionId!=='string' ||
+        !publisherSessionId.trim() ||
+        !validRevision(revision) ||
+        !validTime(now)
+    ){
+        fail('INVALID_SCHEDULED_LIVE_BLACK');
+    }
+
+    const at=new Date(now).toISOString();
+
+    /*
+     * Scheduled BLACK is canonical Explicit Empty PROGRAM.
+     *
+     * It is intentionally not represented as a break/slate:
+     * break requires visible title/message/logo presentation,
+     * while SHOW_BLACK means no active Program scene/source.
+     */
+    const snapshot={
+        version:1,
+        publisherSessionId:publisherSessionId.trim(),
+        revision,
+        publishedAt:at,
+        committedAt:at,
+
+        scene:null,
+        source:null,
+
+        playback:{
+            initialTime:0,
+            duration:null,
+            playing:false,
+            ended:false,
+            state:'ready',
+            startedAt:at
+        },
+
+        graphics:{
+            items:[]
+        },
+
+        overlays:{},
+
+        transition:{
+            type:'cut',
+            durationMs:0
+        }
+    };
+
+    const envelope=
+        createProgramOutputEnvelope(snapshot);
+
+    if(!envelope)
+        fail('SCHEDULED_LIVE_BLACK_REJECTED');
+
+    return envelope;
+}
 export const SCHEDULED_LIVE_PREROLL=Object.freeze({
     title:PREROLL_TITLE,
     message:PREROLL_MESSAGE

@@ -123,6 +123,7 @@ async function testAcceptedCommitUsesSharedMutationAndCommitPath(){
     };
 
     const result=await h.coordinator.commit({
+        expectedState:'LIVE',
         eventId:'event-1',
         sourceId:'source-1',
         fence:fence(),
@@ -154,6 +155,7 @@ async function testManualRevisionChangeBeforeCommitFailsInitialFence(){
     h.reconciliation.manualIntentRevision=8;
 
     const result=await h.coordinator.commit({
+        expectedState:'LIVE',
         eventId:'event-1',
         sourceId:'source-1',
         fence:fence(),
@@ -283,6 +285,7 @@ async function testManualRevisionChangeDuringCommitFailsFinalFence(){
 
     const pending=
         coordinator.commit({
+            expectedState:'LIVE',
             eventId:'event-1',
             sourceId:'source-1',
             fence:fence(),
@@ -335,6 +338,7 @@ async function testManualPendingFailsClosed(){
     });
 
     const result=await h.coordinator.commit({
+        expectedState:'LIVE',
         eventId:'event-1',
         sourceId:'source-1',
         fence:fence(),
@@ -356,6 +360,7 @@ async function testRestartBlockedFailsClosed(){
     });
 
     const result=await h.coordinator.commit({
+        expectedState:'LIVE',
         eventId:'event-1',
         sourceId:'source-1',
         fence:fence(),
@@ -379,6 +384,7 @@ async function testTransactionIdentityChangeFailsClosed(){
     });
 
     const result=await h.coordinator.commit({
+        expectedState:'LIVE',
         eventId:'event-1',
         sourceId:'source-1',
         fence:fence(),
@@ -398,6 +404,7 @@ async function testRejectedFenceNeverEntersCommitPath(){
     const h=createHarness();
 
     const result=await h.coordinator.commit({
+        expectedState:'LIVE',
         eventId:'event-1',
         sourceId:'source-1',
         fence:fence({

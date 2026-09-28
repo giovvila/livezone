@@ -145,11 +145,10 @@ test('real server runs scheduled LIVE shadow from precheck through end without m
     t.after(async()=>{
         owner.server.closeAllConnections?.();
 
-        if(owner.server.listening){
-            await new Promise(resolve=>
-                owner.server.close(resolve)
-            );
-        }
+        // Drain repositories even though this fixture has no HTTP listener.
+        await new Promise(resolve=>owner.server.close(()=>resolve()));
+        assert.equal(owner.scheduledLiveExecutionRepository.closed,true);
+        assert.equal(owner.scheduledLiveExecutionRepository.lock,null);
 
         await rm(dir,{
             recursive:true,

@@ -164,11 +164,10 @@ test('real server scheduled TAKE installs canonical LIVE PROGRAM',async t=>{
     t.after(async()=>{
         owner.server.closeAllConnections?.();
 
-        if(owner.server.listening){
-            await new Promise(resolve=>
-                owner.server.close(resolve)
-            );
-        }
+        // Drain repositories even though this fixture has no HTTP listener.
+        await new Promise(resolve=>owner.server.close(()=>resolve()));
+        assert.equal(owner.scheduledLiveExecutionRepository.closed,true);
+        assert.equal(owner.scheduledLiveExecutionRepository.lock,null);
 
         await rm(dir,{
             recursive:true,
@@ -432,17 +431,25 @@ test('real server scheduled TAKE installs canonical LIVE PROGRAM',async t=>{
         programBefore
     );
     /*
-     * 8C-2C3 durable journal gate.
-     * Persistence is asynchronous relative to the automation callback,
-     * so wait for the repository queue to observe the installed record.
+     * BUILD-1003.9A1 durable TAKE gate.
+     *
+     * TAKE now advances the canonical durable lifecycle through
+     * CAPTURED -> PREROLL -> LIVE before PROGRAM execution.
+     *
+     * Do not stop at the first repository record: PREROLL is an
+     * intentional intermediate durable write.
      */
-    for(
-        let attempt=0;
-        attempt<100 &&
-        owner.scheduledLiveExecutionRepository.record===null;
-        attempt++
-    ){
-        await new Promise(resolve=>setTimeout(resolve,5));
+    for(let attempt=0;attempt<100;attempt++){
+
+        const current=
+            owner.scheduledLiveExecutionRepository.record;
+
+        if(current?.state==='LIVE')
+            break;
+
+        await new Promise(
+            resolve=>setTimeout(resolve,5)
+        );
     }
 
     const persisted=
@@ -467,7 +474,7 @@ test('real server scheduled TAKE installs canonical LIVE PROGRAM',async t=>{
 
     assert.equal(
         persisted.state,
-        'CAPTURED'
+        'LIVE'
     );
 
     assert.equal(

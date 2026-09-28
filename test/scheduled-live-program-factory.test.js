@@ -373,3 +373,168 @@ test('scheduled LIVE candidate has no execution authority or writer capability',
         false
     );
 });
+test('scheduled LIVE BLACK is canonical Explicit Empty PROGRAM',async()=>{
+    const {
+        createScheduledLiveBlack
+    }=await import('../server/scheduler/ScheduledLiveProgramFactory.js');
+
+    const envelope=
+        createScheduledLiveBlack({
+            eventId:'scheduled-live-1',
+            publisherSessionId:'scheduled:scheduled-live-1',
+            revision:2,
+            now:650000
+        });
+
+    assert.ok(
+        validateProgramOutputEnvelope(envelope)
+    );
+
+    assert.equal(
+        envelope.publisherSessionId,
+        'scheduled:scheduled-live-1'
+    );
+
+    assert.equal(
+        envelope.revision,
+        2
+    );
+
+    assert.equal(
+        envelope.snapshot.scene,
+        null
+    );
+
+    assert.equal(
+        envelope.snapshot.source,
+        null
+    );
+
+    assert.deepEqual(
+        envelope.snapshot.playback,
+        {
+            initialTime:0,
+            duration:null,
+            playing:false,
+            ended:false,
+            state:'ready',
+            startedAt:new Date(650000).toISOString()
+        }
+    );
+
+    assert.deepEqual(
+        envelope.snapshot.graphics,
+        {
+            items:[]
+        }
+    );
+
+    assert.deepEqual(
+        envelope.snapshot.overlays,
+        {}
+    );
+
+    assert.deepEqual(
+        envelope.snapshot.transition,
+        {
+            type:'cut',
+            durationMs:0
+        }
+    );
+});
+
+test('scheduled LIVE BLACK advances inside event-scoped Scheduled publisher identity',async()=>{
+    const {
+        createScheduledLiveBlack
+    }=await import('../server/scheduler/ScheduledLiveProgramFactory.js');
+
+    const first=
+        createScheduledLiveBlack({
+            eventId:'event-a',
+            publisherSessionId:'scheduled:event-a',
+            revision:2,
+            now:660000
+        });
+
+    const later=
+        createScheduledLiveBlack({
+            eventId:'event-a',
+            publisherSessionId:'scheduled:event-a',
+            revision:3,
+            now:670000
+        });
+
+    const other=
+        createScheduledLiveBlack({
+            eventId:'event-b',
+            publisherSessionId:'scheduled:event-b',
+            revision:2,
+            now:680000
+        });
+
+    assert.equal(
+        first.publisherSessionId,
+        later.publisherSessionId
+    );
+
+    assert.equal(first.revision,2);
+    assert.equal(later.revision,3);
+
+    assert.notEqual(
+        first.publisherSessionId,
+        other.publisherSessionId
+    );
+});
+
+test('scheduled LIVE BLACK rejects invalid execution identity',async()=>{
+    const {
+        createScheduledLiveBlack
+    }=await import('../server/scheduler/ScheduledLiveProgramFactory.js');
+
+    const base={
+        eventId:'event-a',
+        publisherSessionId:'scheduled:event-a',
+        revision:2,
+        now:660000
+    };
+
+    for(const change of [
+        {eventId:'bad id'},
+        {publisherSessionId:''},
+        {revision:0},
+        {revision:1.5},
+        {now:Number.NaN}
+    ]){
+        assert.throws(
+            ()=>createScheduledLiveBlack({
+                ...base,
+                ...change
+            }),
+            /INVALID_SCHEDULED_LIVE_BLACK/
+        );
+    }
+});
+
+test('scheduled LIVE BLACK factory has no execution authority',async()=>{
+    const {
+        createScheduledLiveBlack
+    }=await import('../server/scheduler/ScheduledLiveProgramFactory.js');
+
+    const envelope=
+        createScheduledLiveBlack({
+            eventId:'event-a',
+            publisherSessionId:'scheduled:event-a',
+            revision:2,
+            now:670000
+        });
+
+    assert.equal(
+        Object.hasOwn(envelope,'executionAllowed'),
+        false
+    );
+
+    assert.equal(
+        Object.hasOwn(envelope,'serverTake'),
+        false
+    );
+});

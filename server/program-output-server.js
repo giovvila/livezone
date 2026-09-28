@@ -31,7 +31,8 @@ import {
     scheduledLiveProgramIdentity
 } from './scheduler/ScheduledLiveProgramIdentity.js';
 import {
-    createScheduledLiveProgram
+    createScheduledLiveProgram,
+    createScheduledLiveBlack
 } from './scheduler/ScheduledLiveProgramFactory.js';
 import ScheduledLiveExecutionRepository from './scheduler/ScheduledLiveExecutionRepository.js';
 import ScheduledLivePersistenceCoordinator from './scheduler/ScheduledLivePersistenceCoordinator.js';
@@ -258,6 +259,141 @@ export function createProgramOutputServer({
         liveAutomation.subscribe(snapshot=>{
             const eventId=snapshot?.eventId??null;
             const sourceId=snapshot?.sourceId??null;
+            /*
+             * BUILD-1003.9A1 / STEP 8C-2C5D2
+             *
+             * POSTROLL / SHOW_BLACK is a distinct Scheduled
+             * execution boundary.
+             *
+             * BLACK is canonical Explicit Empty PROGRAM and may
+             * reach PROGRAM only through the existing Scheduled
+             * execution coordinator / final fence.
+             */
+            if(
+                snapshot?.state==='POSTROLL_REQUESTED' &&
+                snapshot?.intent?.kind==='SHOW_BLACK'
+            ){
+const blackEventId=
+                    eventId ??
+                    scheduledAutomationEventId;
+
+                if(
+                    !blackEventId ||
+                    scheduledAutomationEventId!==blackEventId
+                ){
+                    return;
+                }
+
+                const ownershipSnapshot=
+                    scheduledLiveOwnership.snapshot();
+
+                const transaction=
+                    scheduledLiveOwnership.transaction();
+if(
+                    ownershipSnapshot.active!==true ||
+                    ownershipSnapshot.eventId!==blackEventId ||
+                    !transaction ||
+                    transaction.eventId!==blackEventId ||
+                    transaction.state!=='LIVE'
+                ){
+                    return;
+                }
+
+                const postrollTransaction=
+                    scheduledLiveOwnership.transition(
+                        'begin-postroll'
+                    );
+if(
+                    !postrollTransaction ||
+                    postrollTransaction.state!=='POSTROLL'
+                ){
+                    return;
+                }
+
+                void scheduledLiveExecutionReady
+                    .then(async()=>{
+                        /*
+                         * Durability precedes BLACK execution.
+                         */
+
+                        await scheduledLivePersistence.persist(
+                            postrollTransaction
+                        );
+
+
+                        /*
+                         * Persistence may have taken time.
+                         * Re-evaluate the exact Scheduled owner before
+                         * constructing or committing PROGRAM.
+                         */
+                        const currentOwnership=
+                            scheduledLiveOwnership.snapshot();
+
+                        const currentTransaction=
+                            scheduledLiveOwnership.transaction();
+if(
+                            currentOwnership.active!==true ||
+                            currentOwnership.eventId!==blackEventId ||
+                            !currentTransaction ||
+                            currentTransaction.eventId!==blackEventId ||
+                            currentTransaction.sourceId!==postrollTransaction.sourceId ||
+                            currentTransaction.capturedAt!==postrollTransaction.capturedAt ||
+                            currentTransaction.state!=='POSTROLL'
+                        ){
+                            return;
+                        }
+
+                        const executionFence=
+                            currentOwnership.fence;
+
+                        const identity=
+                            scheduledLiveProgramIdentity({
+                                eventId:blackEventId,
+                                revision:2
+                            });
+
+                        const candidate=
+                            createScheduledLiveBlack({
+                                eventId:blackEventId,
+
+                                publisherSessionId:
+                                    identity.publisherSessionId,
+
+                                revision:
+                                    identity.revision,
+
+                                now:
+                                    scheduleClock()
+                            });
+                        await scheduledLiveExecution.commit({
+                                eventId:blackEventId,
+                                expectedState:'POSTROLL',
+
+                                sourceId:
+                                    postrollTransaction.sourceId,
+
+                                fence:
+                                    executionFence,
+
+                                manualIntentRevision:
+                                    postrollTransaction
+                                        .manualIntentRevision,
+
+                                payload:
+                                    candidate
+                            });
+                    })
+                    .catch(()=>{
+                        /*
+                         * BLACK execution is fail-closed.
+                         *
+                         * Never manufacture RETURN and never bypass
+                         * the canonical PROGRAM commit path.
+                         */
+                    });
+
+                return;
+            }
 
             /*
              * STEP 8C-2B:
@@ -286,13 +422,68 @@ export function createProgramOutputServer({
                     const transaction=
                         scheduledLiveOwnership.transaction();
 
+                    // The automation clock may leave TAKE while persistence is
+                    // pending, before the transaction itself can advance.
+                    // Never advance a replacement owner's transaction either.
+                    const ownsTakePhase=state=>{
+                        const automation=liveAutomation.getSnapshot();
+                        const current=scheduledLiveOwnership.transaction();
+                        return automation.state==='TAKE_REQUESTED' &&
+                            automation.eventId===eventId &&
+                            automation.sourceId===sourceId &&
+                            current?.eventId===eventId &&
+                            current.sourceId===sourceId &&
+                            current.capturedAt===transaction.capturedAt &&
+                            current.manualIntentRevision===transaction.manualIntentRevision &&
+                            current.state===state;
+                    };
+
                     void scheduledLiveExecutionReady
                         .then(async()=>{
+                            if(!ownsTakePhase('CAPTURED'))return;
                             /*
-                             * Durability precedes execution.
+                             * TAKE is the first server execution boundary.
+                             *
+                             * The durable transaction state machine requires
+                             * CAPTURED -> PREROLL -> LIVE. These transitions
+                             * carry no execution authority; they only align
+                             * durable lifecycle with the TAKE being executed.
+                             */
+                            const prerollTransaction=
+                                scheduledLiveOwnership.transition(
+                                    'begin-preroll'
+                                );
+
+                            if(
+                                !prerollTransaction ||
+                                prerollTransaction.state!=='PREROLL'
+                            ){
+                                return;
+                            }
+
+                            await scheduledLivePersistence.persist(
+                                prerollTransaction
+                            );
+
+                            if(!ownsTakePhase('PREROLL'))return;
+
+                            const liveTransaction=
+                                scheduledLiveOwnership.transition(
+                                    'begin-live'
+                                );
+
+                            if(
+                                !liveTransaction ||
+                                liveTransaction.state!=='LIVE'
+                            ){
+                                return;
+                            }
+
+                            /*
+                             * LIVE durability precedes PROGRAM execution.
                              */
                             await scheduledLivePersistence.persist(
-                                transaction
+                                liveTransaction
                             );
 
                             /*
@@ -358,10 +549,11 @@ export function createProgramOutputServer({
                             await scheduledLiveExecution.commit({
                                 eventId,
                                 sourceId,
+                                expectedState:'LIVE',
                                 fence:executionFence,
 
                                 manualIntentRevision:
-                                    transaction.manualIntentRevision,
+                                    liveTransaction.manualIntentRevision,
 
                                 payload:candidate
                             });

@@ -40,7 +40,7 @@ function liveEvent(){
     };
 }
 
-test('real server durably persists captured scheduled LIVE transaction without mutating PROGRAM',async t=>{
+test('real server durably preserves captured PROGRAM through scheduled LIVE lifecycle',async t=>{
     const dir=await mkdtemp(
         join(tmpdir(),'lz-live-automation-server-')
     );
@@ -156,11 +156,11 @@ test('real server durably persists captured scheduled LIVE transaction without m
     t.after(async()=>{
         owner.server.closeAllConnections?.();
 
-        if(owner.server.listening){
-            await new Promise(resolve=>
-                owner.server.close(resolve)
-            );
-        }
+        // This server has no HTTP listener, but still owns async repositories.
+        // Drain its shutdown before removing files that those writers may use.
+        await new Promise(resolve=>owner.server.close(()=>resolve()));
+        assert.equal(owner.scheduledLiveExecutionRepository.closed,true);
+        assert.equal(owner.scheduledLiveExecutionRepository.lock,null);
 
         await rm(dir,{
             recursive:true,
@@ -419,22 +419,25 @@ test('real server durably persists captured scheduled LIVE transaction without m
 
     assert.equal(blockedBrowser.grant,null);
 
-    assert.strictEqual(
-        owner.store.getCurrent(),
-        programBefore
-    );
+
     /*
-     * 8C-2C3 durable journal gate.
-     * Persistence is asynchronous relative to the automation callback,
-     * so wait for the repository queue to observe the installed record.
+     * Durable lifecycle gate.
+     *
+     * TAKE advances CAPTURED -> PREROLL -> LIVE before PROGRAM
+     * execution. PREROLL is therefore an intentional intermediate
+     * repository record; wait for the durable LIVE state.
      */
-    for(
-        let attempt=0;
-        attempt<100 &&
-        owner.scheduledLiveExecutionRepository.record===null;
-        attempt++
-    ){
-        await new Promise(resolve=>setTimeout(resolve,5));
+    for(let attempt=0;attempt<100;attempt++){
+
+        const current=
+            owner.scheduledLiveExecutionRepository.record;
+
+        if(current?.state==='LIVE')
+            break;
+
+        await new Promise(
+            resolve=>setTimeout(resolve,5)
+        );
     }
 
     const persisted=
@@ -459,7 +462,7 @@ test('real server durably persists captured scheduled LIVE transaction without m
 
     assert.equal(
         persisted.state,
-        'CAPTURED'
+        'LIVE'
     );
 
     assert.equal(
@@ -540,19 +543,16 @@ test('real server durably persists captured scheduled LIVE transaction without m
     );
 
     /*
-     * Journal installation itself must never replace PROGRAM.
+     * Persistence must preserve the exact return target even after
+     * Scheduled TAKE has installed a different PROGRAM.
      */
-    assert.strictEqual(
-        owner.store.getCurrent(),
+    assert.deepEqual(
+        persisted.capturedProgram,
         programBefore
     );
 
-    /*
-     * Critical invariant:
-     * advisory automation did not touch PROGRAM.
-     */
-    assert.strictEqual(
-        owner.store.getCurrent(),
+    assert.notStrictEqual(
+        persisted.capturedProgram,
         programBefore
     );
 
@@ -579,10 +579,7 @@ test('real server durably persists captured scheduled LIVE transaction without m
         ['live-a']
     );
 
-    assert.strictEqual(
-        owner.store.getCurrent(),
-        programBefore
-    );
+
 
     /*
      * Still BLACK inside the three-second post-roll.
@@ -599,10 +596,7 @@ test('real server durably persists captured scheduled LIVE transaction without m
         'SHOW_BLACK'
     );
 
-    assert.strictEqual(
-        owner.store.getCurrent(),
-        programBefore
-    );
+
 
     /*
      * END + 3s -> advisory RETURN.
@@ -635,10 +629,7 @@ test('real server durably persists captured scheduled LIVE transaction without m
         false
     );
 
-    assert.strictEqual(
-        owner.store.getCurrent(),
-        programBefore
-    );
+
 
     const browserAfterReturn=
         await owner.executionOwnership.operate({
@@ -652,10 +643,7 @@ test('real server durably persists captured scheduled LIVE transaction without m
     /*
      * Shadow invariant: even RETURN cannot mutate PROGRAM.
      */
-    assert.strictEqual(
-        owner.store.getCurrent(),
-        programBefore
-    );
+
 
     assert.equal(
         owner.liveAutomation.getSnapshot().serverTake,
@@ -677,8 +665,5 @@ test('real server durably persists captured scheduled LIVE transaction without m
         null
     );
 
-    assert.strictEqual(
-        owner.store.getCurrent(),
-        programBefore
-    );
+
 });
