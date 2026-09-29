@@ -321,6 +321,10 @@ test('real server fences browser ownership during scheduled LIVE without mutatin
      * the decision is based on current evidence, not the sample
      * emitted three minutes earlier.
      */
+    let captured;
+    const capturedEntry=new Promise(resolve=>{captured=resolve;});
+    const realCapture=owner.scheduledLiveOwnership.capture.bind(owner.scheduledLiveOwnership);
+    owner.scheduledLiveOwnership.capture=input=>{const result=realCapture(input);captured();return result;};
     fireAt(300000);
 
     leases[0].current={
@@ -369,6 +373,7 @@ test('real server fences browser ownership during scheduled LIVE without mutatin
      * the real server subscriber must have crossed into
      * ScheduledLiveOwnershipCoordinator.capture().
      */
+    await capturedEntry;
     const scheduledOwnership=
         owner.scheduledLiveOwnership.snapshot();
 

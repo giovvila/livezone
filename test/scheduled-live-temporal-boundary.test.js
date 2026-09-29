@@ -146,6 +146,7 @@ async function serverHarness(t){
         };
     }
     const settle=async()=>{
+        await owner.scheduledEntry.idle();
         // Drain explicit operations and the real mutation queue, not elapsed time.
         do {await Promise.allSettled([...jobs]);await owner.assetMutations.run(()=>{});}while(jobs.size);
     };

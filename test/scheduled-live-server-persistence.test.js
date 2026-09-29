@@ -377,6 +377,7 @@ test('real server durably preserves captured PROGRAM through scheduled LIVE life
      * the real server subscriber must have crossed into
      * ScheduledLiveOwnershipCoordinator.capture().
      */
+    await owner.scheduledEntry.idle();
     const scheduledOwnership=
         owner.scheduledLiveOwnership.snapshot();
 

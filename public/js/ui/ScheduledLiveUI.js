@@ -204,8 +204,7 @@ export default class ScheduledLiveUI {
                     startAt,
                     endAt,
                     priority,
-                    payload,
-                    updatedAt:now
+                    payload
                 }
             );
         } else {

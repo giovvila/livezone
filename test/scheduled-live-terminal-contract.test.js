@@ -1,3 +1,4 @@
+import {scheduledPublisher} from '../test-support/ScheduledEntryTestIdentity.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises';
@@ -61,6 +62,7 @@ async function harness(t){
         };
     }
     const settle=async()=>{
+        await owner.scheduledEntry.idle();
         do {await Promise.all([...jobs]);await owner.assetMutations.run(()=>{});}while(jobs.size);
     };
     const fire=offset=>{now=epoch+offset;owner.scheduler.runtime.reconcile();};
@@ -76,7 +78,7 @@ async function harness(t){
             await owner.scheduler.store.insert(event,0);
             fire(120000);healthy();fire(300000);healthy();await settle();
             assert.equal(owner.scheduledLiveOwnership.transaction().state,'LIVE');
-            assert.equal(owner.store.getCurrent().publisherSessionId,'scheduled:event');
+            assert.equal(owner.store.getCurrent().publisherSessionId,scheduledPublisher(owner,'event'));
         },
         async manual(){
             const finish=owner.scheduledLiveExecution.reconciliation.beginManualIntent();
@@ -124,7 +126,7 @@ for(const scenario of ['black','manual-before-black','manual-after-black','skip-
                 assert.equal(owner.scheduledLiveOwnership.transaction().state,'POSTROLL');
                 assert.equal(owner.executionOwnership.snapshot().scheduledSuppressed,true);
                 expected=owner.store.getCurrent();
-                assert.equal(expected.publisherSessionId,'scheduled:event');assert.equal(expected.revision,2);
+                assert.equal(expected.publisherSessionId,scheduledPublisher(owner,'event'));assert.equal(expected.revision,2);
                 assert.equal(expected.snapshot.scene,null);assert.equal(expected.snapshot.source,null);
                 assert.equal(expected.snapshot.playback.playing,false);
                 assert.equal(owner.scheduledLiveExecutionRepository.record.state,'POSTROLL');

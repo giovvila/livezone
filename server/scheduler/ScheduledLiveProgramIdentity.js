@@ -16,6 +16,7 @@ export function scheduledLivePublisherSessionId(eventId){
 
 export function scheduledLiveProgramIdentity({
     eventId,
+    entryKey,
     revision
 }={}){
     if(
@@ -27,9 +28,11 @@ export function scheduledLiveProgramIdentity({
         );
     }
 
+    const legacyPublisher=scheduledLivePublisherSessionId(eventId);
+    if(entryKey!==undefined && (typeof entryKey!=='string' || !/^[a-f0-9]{64}$/.test(entryKey)))throw new TypeError('INVALID_SCHEDULED_ENTRY_KEY');
     return Object.freeze({
         publisherSessionId:
-            scheduledLivePublisherSessionId(eventId),
+            entryKey===undefined?legacyPublisher:`scheduled-entry:${entryKey}`,
 
         revision
     });

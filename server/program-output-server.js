@@ -36,6 +36,7 @@ import {
 } from './scheduler/ScheduledLiveProgramFactory.js';
 import ScheduledLiveExecutionRepository from './scheduler/ScheduledLiveExecutionRepository.js';
 import ScheduledLivePersistenceCoordinator from './scheduler/ScheduledLivePersistenceCoordinator.js';
+import ScheduledEntryRuntime,{initializeEntryLedger} from './scheduler/ScheduledEntryRuntime.js';
 import EffectiveProgramOutput from "./program-output/EffectiveProgramOutput.js";
 import ControlEventFeed from "./program-output/ControlEventFeed.js";
 import AutoLiveAuthority from './autolive/AutoLiveAuthority.js';
@@ -89,6 +90,10 @@ export function createProgramOutputServer({
     schedulePath = process.env.LIVEZONE_SCHEDULE_PATH || DEFAULT_SCHEDULE_PATH,
     scheduledLiveExecutionPath =
         studioStatePath + '.scheduled-live-execution.json',
+    scheduledEntryLedgerPath = studioStatePath + '.scheduled-entry-ledger.json',
+    scheduledEntryLedgerBootstrap = process.env.LIVEZONE_SCHEDULED_ENTRY_BOOTSTRAP==='1',
+    scheduledEntryLedgerOptions = {},
+    scheduledEntryLogger = entry=>console.info('[scheduled-entry]',JSON.stringify(entry)),
     scheduleClock = () => Date.now(),
     scheduleSetTimer = setTimeout,
     scheduleClearTimer = clearTimeout
@@ -99,9 +104,10 @@ export function createProgramOutputServer({
     assertPrivateStudioStatePath(autoLivePath);
     assertPrivateStudioStatePath(autoLiveRecoveryPath);
     assertPrivateStudioStatePath(scheduledLiveExecutionPath);
-    if(new Set([studioStatePath,schedulePath,autoLivePath,autoLiveRecoveryPath,studioStatePath+'.program-output.json'].map(p=>{
+    assertPrivateStudioStatePath(scheduledEntryLedgerPath);
+    if(new Set([studioStatePath,schedulePath,autoLivePath,autoLiveRecoveryPath,studioStatePath+'.program-output.json',scheduledLiveExecutionPath,scheduledEntryLedgerPath].map(p=>{
         const path=resolve(p);return process.platform==='win32'?path.toLowerCase():path;
-    })).size!==5)throw new TypeError('AutoLive state paths must be distinct.');
+    })).size!==7)throw new TypeError('AutoLive state paths must be distinct.');
     if (resolve(schedulePath) === resolve(studioStatePath))
         throw new TypeError("Schedule and Studio state paths must be distinct.");
     if (typeof publisherToken !== "string" || publisherToken.length < 16) {
@@ -222,6 +228,15 @@ export function createProgramOutputServer({
         });
 
     let scheduledAutomationEventId=null;
+    const startupSchedule=scheduler.ready.then(()=>scheduler.store.getSnapshot());
+    const scheduledEntryReady=Promise.all([programReady,startupSchedule,scheduledLiveExecutionReady]).then(([,schedule])=>
+        initializeEntryLedger({path:scheduledEntryLedgerPath,ownership:executionOwnership,startupSchedule:schedule,
+            executionRepository:scheduledLiveExecutionRepository,bootstrap:scheduledEntryLedgerBootstrap,options:scheduledEntryLedgerOptions}));
+    const scheduledEntry=new ScheduledEntryRuntime({scheduler,automation:liveAutomation,ownership:executionOwnership,
+        reconciliation:restartReconciliation,scheduledOwnership:scheduledLiveOwnership,mutations:assetMutations,
+        clock:scheduleClock,ready:scheduledEntryReady,logger:scheduledEntryLogger});
+    scheduler.entryDiagnostics=()=>scheduledEntry.diagnostics();
+    scheduledEntryReady.then(ledger=>scheduledEntry.record(null,ledger.status,{reason:ledger.error??null})).catch(()=>{});
 
     /*
      * BUILD-1003.9A1 / STEP 8C-2C4
@@ -253,10 +268,12 @@ export function createProgramOutputServer({
                 assetMutations,
 
             commits:
-                programCommits
+                programCommits,
+            entryCheck:context=>scheduledEntry.checkCommit(context)
         });
     const offScheduledLiveOwnership=
-        liveAutomation.subscribe(snapshot=>{
+        liveAutomation.subscribeEvaluation(snapshot=>{
+            scheduledEntry.observe();
             const eventId=snapshot?.eventId??null;
             const sourceId=snapshot?.sourceId??null;
             /*
@@ -349,6 +366,7 @@ if(
                         const identity=
                             scheduledLiveProgramIdentity({
                                 eventId:blackEventId,
+                                entryKey:scheduledEntry.tickets.get(blackEventId)?.entryKey,
                                 revision:2
                             });
 
@@ -401,17 +419,11 @@ if(
              * but it still has no authority to mutate PROGRAM.
              */
             if(
-                snapshot?.state==='TAKE_REQUESTED' &&
+                ['TAKE_REQUESTED','LIVE_ACTIVE_REQUESTED','FALLBACK_REQUESTED'].includes(snapshot?.state) &&
                 eventId &&
                 sourceId
             ){
-                const result=
-                    scheduledLiveOwnership.capture({
-                        eventId,
-                        sourceId
-                    });
-
-                if(result?.accepted===true){
+                scheduledEntry.request(snapshot,async entryTicket=>{
                     scheduledAutomationEventId=eventId;
 
                     /*
@@ -428,7 +440,7 @@ if(
                     const ownsTakePhase=state=>{
                         const automation=liveAutomation.getSnapshot();
                         const current=scheduledLiveOwnership.transaction();
-                        return automation.state==='TAKE_REQUESTED' &&
+                        return scheduledEntry.valid(entryTicket) &&
                             automation.eventId===eventId &&
                             automation.sourceId===sourceId &&
                             current?.eventId===eventId &&
@@ -438,7 +450,7 @@ if(
                             current.state===state;
                     };
 
-                    void scheduledLiveExecutionReady
+                    return scheduledLiveExecutionReady
                         .then(async()=>{
                             if(!ownsTakePhase('CAPTURED'))return;
                             /*
@@ -453,6 +465,7 @@ if(
                                 scheduledLiveOwnership.transition(
                                     'begin-preroll'
                                 );
+                            scheduledEntry.record({eventId},'TRANSITION',{state:prerollTransaction?.state??null,consumptionId:entryTicket.consumptionId});
 
                             if(
                                 !prerollTransaction ||
@@ -471,6 +484,7 @@ if(
                                 scheduledLiveOwnership.transition(
                                     'begin-live'
                                 );
+                            scheduledEntry.record({eventId},'TRANSITION',{state:liveTransaction?.state??null,consumptionId:entryTicket.consumptionId});
 
                             if(
                                 !liveTransaction ||
@@ -528,6 +542,7 @@ if(
                             const identity=
                                 scheduledLiveProgramIdentity({
                                     eventId,
+                                    entryKey:entryTicket.entryKey,
                                     revision:1
                                 });
 
@@ -546,7 +561,7 @@ if(
                                     now:scheduleClock()
                                 });
 
-                            await scheduledLiveExecution.commit({
+                            const commitResult=await scheduledLiveExecution.commit({
                                 eventId,
                                 sourceId,
                                 expectedState:'LIVE',
@@ -557,12 +572,16 @@ if(
 
                                 payload:candidate
                             });
+                            scheduledEntry.record({eventId},'PROGRAM_COMMIT',{entryKey:entryTicket.entryKey,consumptionId:entryTicket.consumptionId,
+                                accepted:commitResult.accepted,reason:commitResult.reason});
                         })
-                        .catch(()=>{
+                        .catch(error=>{
                             /*
                              * Any persistence/source/commit failure is
                              * fail-closed for Scheduled ownership.
                              */
+                            scheduledEntry.record({eventId},'PIPELINE_FAILED',{entryKey:entryTicket.entryKey,
+                                consumptionId:entryTicket.consumptionId,reason:error.code||error.message});
                             scheduledLiveOwnership.release(eventId);
 
                             if(
@@ -571,7 +590,7 @@ if(
                                 scheduledAutomationEventId=null;
                             }
                         });
-                }
+                });
 
                 return;
             }
@@ -873,22 +892,22 @@ if(
         controlEventFeed.close();
         scheduleRoutes.close();
         effectiveOutput.close();
-        offAutoLiveCatalog();offExecutionConfig();offScheduledLiveOwnership();scheduledLiveOwnership.close();scheduledLiveExecution.close();scheduledLivePersistence.close();
+        offAutoLiveCatalog();offExecutionConfig();offScheduledLiveOwnership();scheduledEntry.close();scheduledLiveOwnership.close();scheduledLiveExecution.close();scheduledLivePersistence.close();
         programCommits.closed=true;
-        const drained = programReady.then(()=>assetMutations.run(()=>{})).then(()=>Promise.all([Promise.resolve(liveAutomationReady).then(()=>liveAutomation.close()),scheduler.close(),autoLive.close(),executionOwnership.close(),scheduledLiveExecutionRepository.close()]));
+        const drained = programReady.then(()=>scheduledEntry.idle()).then(()=>assetMutations.run(()=>{})).then(()=>Promise.all([scheduledEntryReady.then(ledger=>ledger.close()),Promise.resolve(liveAutomationReady).then(()=>liveAutomation.close()),scheduler.close(),autoLive.close(),executionOwnership.close(),scheduledLiveExecutionRepository.close()]));
         const callback = args[0];
         return close(error => { void drained.then(() => callback?.(error)); });
     };
     server.on("close", () => {
         scheduleRoutes.close();
         void scheduler.close();
-        offAutoLiveCatalog();offScheduledLiveOwnership();scheduledLiveOwnership.close();scheduledLiveExecution.close();scheduledLivePersistence.close();liveAutomation.close();void autoLive.close();
+        offAutoLiveCatalog();offScheduledLiveOwnership();scheduledEntry.close();scheduledLiveOwnership.close();scheduledLiveExecution.close();scheduledLivePersistence.close();liveAutomation.close();void autoLive.close();
         unsubscribe();
         studioStateRoutes.close();
         clients.forEach((response) => response.end());
         clients.clear();
     });
-    return { server, store, clients, durableProgram,programCommits,programReady,programValidation, studioStateCoordinator, scheduler, effectiveOutput, autoLive, liveAutomation, scheduledLiveOwnership, scheduledLivePersistence, scheduledLiveExecution, scheduledLiveExecutionRepository, scheduledLiveExecutionReady, scheduledLiveHydrationReady, executionOwnership,
+    return { scheduledEntry, scheduledEntryReady, server, store, clients, durableProgram,programCommits,programReady,programValidation, studioStateCoordinator, scheduler, effectiveOutput, autoLive, liveAutomation, scheduledLiveOwnership, scheduledLivePersistence, scheduledLiveExecution, scheduledLiveExecutionRepository, scheduledLiveExecutionReady, scheduledLiveHydrationReady, executionOwnership,
         assetReferences, assetMutations, previewOwnership,referenceClients,assetDiagnostics };
 }
 

@@ -33,6 +33,7 @@ export default class LiveAutomationCoordinator {
         });
 
         this.listeners = new Set();
+        this.evaluations = new Set();
         this.currentEvent = null;
         this.healthLease = null;
         this.health = null;
@@ -215,6 +216,7 @@ export default class LiveAutomationCoordinator {
     }
 
     publish(runtime){
+        for(const listener of this.evaluations){try{listener(runtime);}catch{/* observer isolation */}}
         const key = JSON.stringify(runtime);
 
         if(key === this.runtimeKey) return;
@@ -239,6 +241,11 @@ export default class LiveAutomationCoordinator {
         return () => this.listeners.delete(listener);
     }
 
+    subscribeEvaluation(listener){
+        this.evaluations.add(listener);
+        return ()=>this.evaluations.delete(listener);
+    }
+
     close(){
         if(this.closed) return;
 
@@ -247,5 +254,6 @@ export default class LiveAutomationCoordinator {
         this.offEvaluation = null;
         this.releaseHealth();
         this.listeners.clear();
+        this.evaluations.clear();
     }
 }

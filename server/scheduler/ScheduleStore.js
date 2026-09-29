@@ -3,6 +3,7 @@ import {dirname,resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {normalizeSchedule,normalizeEvent} from './ScheduleContract.js';
 import ScheduleDiagnostics from './ScheduleDiagnostics.js';
+import {ENTRY_METADATA,newEntryMetadata,migrateLiveIdentities} from './ScheduledEventIdentity.js';
 const error = code => Object.assign(new Error(code),{code});
 // Internal single-owner store. No default operator path and no HTTP exposure in A1.
 export default class ScheduleStore {
@@ -19,7 +20,13 @@ export default class ScheduleStore {
     async hydrate(){
         try {
             const raw=await this.fs.readFile(this.path,'utf8');
-            this.state=normalizeSchedule(JSON.parse(raw));this.status='READY';
+            const legacy=normalizeSchedule(JSON.parse(raw));
+            const migrated=migrateLiveIdentities(legacy,new Date(this.clock()).toISOString());
+            const next=normalizeSchedule(migrated);
+            // No in-memory schedule (and thus no scheduler evaluation) exists
+            // until the entire classification and identity snapshot is durable.
+            if(migrated!==legacy)await this.persist(next);
+            this.state=next;this.status='READY';
         }catch(e){
             if(e.code==='ENOENT'){this.state=normalizeSchedule({version:1,revision:0,events:[]});this.status='READY';}
             else {this.state=null;this.status='UNAVAILABLE';this.diagnostics.record('persistence-error');}
@@ -57,12 +64,30 @@ export default class ScheduleStore {
                 if(action==='import-plan'&&(this.state.revision!==0||this.state.events.length||this.state.programPlan?.items.length))throw error('SERVER_NOT_EMPTY');
                 if(planAction){}
                 else if(action==='delete')events.splice(index,1);
-                else if(action==='insert')events.push(normalizeEvent({...input,createdAt:now,updatedAt:now}));
-                else {
-                    if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(k=>!['type','name','enabled','startAt','endAt','priority','payload'].includes(k)))throw error('INVALID_PATCH');
-                    events[index]=normalizeEvent({...events[index],...input,updatedAt:now});
+                else if(action==='insert'){
+                    if(ENTRY_METADATA.some(key=>Object.hasOwn(input||{},key)))throw error('SERVER_OWNED_IDENTITY');
+                    const event=normalizeEvent({...input,createdAt:now,updatedAt:now});
+                    events.push(normalizeEvent({...event,...(event.type==='source.live'?newEntryMetadata():{})}));
                 }
-                const next=normalizeSchedule({...this.state,revision:this.state.revision+1,events,...(planAction?{version:2,programPlan:input}:{})});
+                else {
+                    if(ENTRY_METADATA.some(key=>Object.hasOwn(input||{},key)))throw error('SERVER_OWNED_IDENTITY');
+                    if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(k=>!['type','name','enabled','startAt','endAt','priority','payload'].includes(k)))throw error('INVALID_PATCH');
+                    const previous=events[index];
+                    const candidate={...previous,...input,updatedAt:now};
+                    if(candidate.type!=='source.live')ENTRY_METADATA.forEach(key=>delete candidate[key]);
+                    else if(previous.type!=='source.live')Object.assign(candidate,newEntryMetadata());
+                    else if(candidate.startAt!==previous.startAt || candidate.endAt!==previous.endAt || candidate.payload?.sourceId!==previous.payload.sourceId){
+                        if(!Number.isSafeInteger(previous.entryRevision+1))throw error('ENTRY_REVISION_EXHAUSTED');
+                        candidate.entryRevision=previous.entryRevision+1;
+                    }
+                    events[index]=normalizeEvent(candidate);
+                    if(previous.type==='source.live' && candidate.type==='source.live' && candidate.entryRevision!==previous.entryRevision){
+                        await this.validateEntryEdit?.(previous,events[index]);
+                    }
+                }
+                const identified=this.state.version===3 || events.some(e=>e.type==='source.live');
+                const next=normalizeSchedule({...this.state,revision:this.state.revision+1,events,...(planAction?{version:2,programPlan:input}:{}),
+                    ...(identified?{version:3,liveIdentityMigration:this.state.liveIdentityMigration??null}:{})});
                 // Validate only the changed event. Invalid historical entries remain protective
                 // and must not prevent an operator from removing or repairing them.
                 if (action === 'insert' || action === 'update') await this.referenceValidator?.(next.events.find(e => e.id === id));
@@ -77,18 +102,22 @@ export default class ScheduleStore {
         const result=this.queue.then(coordinated,coordinated);this.queue=result.then(()=>{},()=>{});return result;
     }
     async persist(next){
-        const temp=resolve(dirname(this.path),`.schedule-${randomUUID()}.tmp`);let handle;
+        const temp=resolve(dirname(this.path),`.schedule-${randomUUID()}.tmp`);let handle;let replacing=false;
         try{
             await this.fs.mkdir(dirname(this.path),{recursive:true});
             handle=await this.fs.open(temp,'wx');
             await handle.writeFile(JSON.stringify(next)+'\n','utf8');await handle.sync();
             await handle.close();handle=null;
-            await this.fs.rename(temp,this.path);
+            replacing=true;await this.fs.rename(temp,this.path);
+            if(next.version===3){
+                handle=await this.fs.open(this.path,'r+');await handle.sync();await handle.close();handle=null;
+            }
         }catch{
+            if(next.version===3 && replacing){this.state=null;this.status='UNAVAILABLE';}
             if(handle)await handle.close().catch(()=>{});
             await this.fs.unlink(temp).catch(()=>{});
             this.diagnostics.record('persistence-error',{revision:this.state?.revision});throw error('PERSISTENCE_FAILED');
         }
     }
-    async destroy(){this.closed=true;await this.queue;this.listeners.clear();}
+    async destroy(){this.closed=true;await this.initializing;await this.queue;this.listeners.clear();}
 }

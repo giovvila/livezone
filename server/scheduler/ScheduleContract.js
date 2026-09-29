@@ -1,5 +1,6 @@
 import {validateSchedule as validateProgramSchedule} from '../../public/js/scheduler/ScheduleContract.js';
 import {normalizeProgramPlan} from '../../public/js/scheduler/ProgramScheduleAdapter.js';
+import {ENTRY_METADATA,identityForScheduledEvent} from './ScheduledEventIdentity.js';
 const fail = code => { throw Object.assign(new Error(code), { code }); };
 const object = v => v && typeof v === 'object' && !Array.isArray(v);
 const exact = (v, keys) => object(v) && Object.keys(v).every(k => keys.includes(k)) && keys.every(k => Object.hasOwn(v, k));
@@ -13,7 +14,8 @@ export function timestamp(value) {
     return value;
 }
 export function normalizeEvent(v) {
-    if (!exact(v, ['id','version','type','enabled','startAt','endAt','priority','payload','createdAt','updatedAt',...(Object.hasOwn(v||{},'name')?['name']:[])])) fail('INVALID_EVENT');
+    const hasIdentity=ENTRY_METADATA.some(key=>Object.hasOwn(v||{},key));
+    if (!exact(v, ['id','version','type','enabled','startAt','endAt','priority','payload','createdAt','updatedAt',...(Object.hasOwn(v||{},'name')?['name']:[]),...(hasIdentity?ENTRY_METADATA:[])])) fail('INVALID_EVENT');
     if (Object.hasOwn(v,'name')&&!text(v.name,120)) fail('INVALID_NAME');
     if (!text(v.id,120) || !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(v.id)) fail('INVALID_ID');
     if (v.version !== 1 || !['overlay.crawl','overlay.sponsor','source.live'].includes(v.type)) fail('UNSUPPORTED_EVENT');
@@ -100,16 +102,45 @@ export function normalizeEvent(v) {
             endSceneId
         };
     }
+    let metadata={};
+    if(hasIdentity){
+        if(v.type!=='source.live')fail('INVALID_EVENT_IDENTITY');
+        try { identityForScheduledEvent(v); } catch { fail('INVALID_EVENT_IDENTITY'); }
+        if(v.incarnationId!==v.incarnationId.toLowerCase())fail('INVALID_EVENT_IDENTITY');
+        let migration=null;
+        if(v.entryMigration!==null){
+            const m=v.entryMigration;
+            if(!exact(m,['cutoffAt','originalStartAt','originalEndAt','disposition']))fail('INVALID_ENTRY_MIGRATION');
+            ['cutoffAt','originalStartAt','originalEndAt'].forEach(k=>timestamp(m[k]));
+            if(m.originalEndAt<=m.originalStartAt || m.disposition!==(m.originalStartAt<=m.cutoffAt?'EXCLUDED':'FUTURE'))fail('INVALID_ENTRY_MIGRATION');
+            migration={...m};
+        }
+        metadata={incarnationId:v.incarnationId,entryRevision:v.entryRevision,entryMigration:migration};
+    }
     return freeze({id:v.id,...(v.name?{name:v.name.trim()}:{}),version:1,type:v.type,enabled:v.enabled,startAt:v.startAt,endAt:v.endAt,
-        priority:v.priority,payload,createdAt:v.createdAt,updatedAt:v.updatedAt});
+        priority:v.priority,payload,createdAt:v.createdAt,updatedAt:v.updatedAt,...metadata});
 }
 export const compareIds = (a,b) => a < b ? -1 : a > b ? 1 : 0;
 export function normalizeSchedule(v) {
-    if (!exact(v,v?.version===2?['version','revision','events','programPlan']:['version','revision','events']) || ![1,2].includes(v.version) ||
+    const keys=v?.version===3?['version','revision','events','liveIdentityMigration',...(Object.hasOwn(v,'programPlan')?['programPlan']:[])]:v?.version===2?['version','revision','events','programPlan']:['version','revision','events'];
+    if (!exact(v,keys) || ![1,2,3].includes(v.version) ||
         !Number.isSafeInteger(v.revision) || v.revision < 0 || !Array.isArray(v.events) || v.events.length > MAX_EVENTS) fail('INVALID_SCHEDULE');
     const events = v.events.map(normalizeEvent).sort((a,b) => compareIds(a.id,b.id));
     if (new Set(events.map(e=>e.id)).size !== events.length) fail('DUPLICATE_ID');
-    return freeze({version:v.version,revision:v.revision,events,...(v.version===2?{programPlan:normalizeProgramPlan(v.programPlan)}:{})});
+    let liveIdentityMigration;
+    if(v.version===3){
+        if(v.liveIdentityMigration!==null){
+            const m=v.liveIdentityMigration;
+            if(!exact(m,['version','cutoffAt']) || m.version!==1)fail('INVALID_ENTRY_MIGRATION');
+            timestamp(m.cutoffAt);liveIdentityMigration={...m};
+        }else liveIdentityMigration=null;
+        for(const e of events){
+            if(e.type==='source.live' && !e.incarnationId)fail('MISSING_EVENT_IDENTITY');
+            if(e.entryMigration && e.entryMigration.cutoffAt!==liveIdentityMigration?.cutoffAt)fail('INVALID_ENTRY_MIGRATION');
+        }
+    }else if(events.some(e=>e.incarnationId))fail('UNSUPPORTED_EVENT_IDENTITY');
+    return freeze({version:v.version,revision:v.revision,events,...(Object.hasOwn(v,'programPlan')?{programPlan:normalizeProgramPlan(v.programPlan)}:{}),
+        ...(v.version===3?{liveIdentityMigration}:{})});
 }
 export function resolveSchedule(schedule, now) {
     if (!Number.isFinite(now)) fail('INVALID_CLOCK');

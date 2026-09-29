@@ -1,3 +1,4 @@
+import {identityForScheduledEvent} from '../server/scheduler/ScheduledEventIdentity.js';
 import test from 'node:test';
 import {
     createProgramOutputEnvelope
@@ -336,6 +337,10 @@ test('real server scheduled TAKE installs canonical LIVE PROGRAM',async t=>{
      * the decision is based on current evidence, not the sample
      * emitted three minutes earlier.
      */
+    let captured;
+    const capturedEntry=new Promise(resolve=>{captured=resolve;});
+    const realCapture=owner.scheduledLiveOwnership.capture.bind(owner.scheduledLiveOwnership);
+    owner.scheduledLiveOwnership.capture=input=>{const result=realCapture(input);captured();return result;};
     fireAt(300000);
 
     leases[0].current={
@@ -384,6 +389,7 @@ test('real server scheduled TAKE installs canonical LIVE PROGRAM',async t=>{
      * the real server subscriber must have crossed into
      * ScheduledLiveOwnershipCoordinator.capture().
      */
+    await capturedEntry;
     const scheduledOwnership=
         owner.scheduledLiveOwnership.snapshot();
 
@@ -566,6 +572,7 @@ test('real server scheduled TAKE installs canonical LIVE PROGRAM',async t=>{
     const identity=
         scheduledLiveProgramIdentity({
             eventId:persisted.eventId,
+            entryKey:identityForScheduledEvent(owner.scheduler.store.getEvent(persisted.eventId)).entryKey,
             revision:1
         });
 

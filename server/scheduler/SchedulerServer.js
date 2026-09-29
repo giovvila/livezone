@@ -44,7 +44,8 @@ export default class SchedulerServer {
             status:this.available()?'READY':'UNAVAILABLE',programPlan:this.programSummary(),scheduleRevision:this.store.getSnapshot()?.revision??null,
             serverTime:this.clock(),evaluatedAt:state?.evaluatedAt??null,nextDeadline:state?.nextDeadline??null,
             events:this.store.listEvents().map(e=>({id:e.id,type:e.type,status:!e.enabled?'DISABLED':this.clock()<Date.parse(e.startAt)?'UPCOMING':this.clock()>=Date.parse(e.endAt)?'EXPIRED':state?.activeEvents.some(a=>a.id===e.id)?'ACTIVE':'SUPPRESSED'})),
-            activeEvents:(state?.activeEvents??[]).map(e=>({id:e.id,type:e.type}))});
+            activeEvents:(state?.activeEvents??[]).map(e=>({id:e.id,type:e.type})),
+            ...(this.entryDiagnostics?{scheduledEntry:this.entryDiagnostics()}: {})});
     }
     current(){this.runtime.reconcile();this.refresh();return this.summary();}
     subscribe(fn){this.listeners.add(fn);return()=>this.listeners.delete(fn);}

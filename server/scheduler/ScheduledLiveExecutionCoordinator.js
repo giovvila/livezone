@@ -13,7 +13,8 @@ export default class ScheduledLiveExecutionCoordinator {
         reconciliation,
         scheduledOwnership,
         mutations,
-        commits
+        commits,
+        entryCheck=()=>true
     }={}){
         if(
             !ownership ||
@@ -35,7 +36,8 @@ export default class ScheduledLiveExecutionCoordinator {
             reconciliation,
             scheduledOwnership,
             mutations,
-            commits
+            commits,
+            entryCheck
         });
 
         this.closed=false;
@@ -112,6 +114,7 @@ export default class ScheduledLiveExecutionCoordinator {
     }){
         if(this.closed)
             return false;
+        if(!this.entryCheck({eventId,sourceId,expectedState}))return false;
 
         const transaction=
             this.scheduledOwnership.transaction();
