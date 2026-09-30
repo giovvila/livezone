@@ -18,6 +18,9 @@ import ScheduledRepository from '../server/scheduler/ScheduledLiveExecutionRepos
 import {initializeEntryLedger} from '../server/scheduler/ScheduledEntryRuntime.js';
 import {ledgerSnapshot} from '../server/scheduler/ScheduledEntryLedgerContract.js';
 import {evaluateWindowsAuthorityCensus} from '../server/autolive/WindowsAuthorityProcessProof.js';
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
+import {fileURLToPath} from 'node:url';
 
 const HEAD='b63c03d94a7f932d6c4052e9f1bed407819ae12b';
 const save=(path,value)=>writeFile(path,JSON.stringify(value));
@@ -62,6 +65,22 @@ async function fixture(t,{legacy=true,adopt=true}={}){
     return {root,p,w,host,service,media,original,prepare,auto,disarm,launch,owners,setOffline:()=>{online=false;},counts:()=>({reserves,restores})};
 }
 async function tree(root){const values=[];async function visit(dir){for(const name of await readdir(dir)){const path=join(dir,name),s=await stat(path);if(s.isDirectory())await visit(path);else values.push([relative(root,path),digest(await readFile(path)),s.mtimeMs]);}}await visit(root);return values.sort();}
+
+test('post-bootstrap Prepare returns PREPARED and exits despite persistent TCP probes',async t=>{
+    const h=await fixture(t,{legacy:false});await unlink(h.p.authorityLock);
+    await save(h.p.authority,{epoch:21});
+    await save(h.p.auto,{...(await artifact(h.p.auto)).value,revision:27,armed:false});
+    const store=new ScheduleStore({path:h.p.schedule});await store.initialize();await store.destroy();
+    await save(h.p.ledger,ledgerSnapshot());await save(h.p.marker,{version:1,authorityEpoch:21});
+    const before=await capture(h.p);
+    const child=fileURLToPath(new URL('../test-support/post-bootstrap-prepare-child.mjs',import.meta.url));
+    let result;
+    try{result=await promisify(execFile)(process.execPath,[child,h.root,HEAD],{timeout:5000,windowsHide:true});}
+    catch(error){assert.fail('Fixture did not complete/exit: '+error.message+'\n'+error.stdout+'\n'+error.stderr);}
+    assert.match(result.stdout,/AUDIT_DURABLE_ADOPTED/);assert.match(result.stdout,/RELEASE_RETURN/);
+    assert.match(result.stdout,/PREPARED_UNCHANGED/);assert.equal(result.stderr,'');
+    assert.deepEqual(await capture(h.p),before);assert.ok(await artifact(h.w.audit+'.prepared'));
+});
 
 test('DryRun inventory is zero mutation, including timestamps and no port reservation',async t=>{
     const h=await fixture(t),before=await tree(h.root),result=await h.w.inspect();

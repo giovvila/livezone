@@ -14,7 +14,9 @@ async function ps(script){
 }
 export async function reserve8080(){
     const sockets=[];
-    try{for(const host of ['0.0.0.0','::']){const socket=createServer();sockets.push(socket);
+    // This is an exclusivity gate, not an application server. A probe must not
+    // retain an accepted connection and make close() wait indefinitely.
+    try{for(const host of ['0.0.0.0','::']){const socket=createServer(peer=>peer.destroy());sockets.push(socket);
         await new Promise((ok,no)=>{socket.once('error',no);socket.listen({host,port:8080,exclusive:true,ipv6Only:host==='::'},ok);});}
     }catch(error){for(const s of sockets)if(s.listening)s.close();throw error;}
     return async()=>{for(const s of sockets)await new Promise(ok=>s.close(ok));};
