@@ -16,12 +16,13 @@ export function resolveHealthSource(source,resolveConfigRef=()=>null,managed=nul
         const ingestId=managed&&equivalent(endpoint)===equivalent(managed.playbackHlsUrl)?managed.ingestId:null;
         return Object.freeze({sourceId:source.id,endpoint,ingestId,
             endpointFingerprint:hashIdentity(endpoint),
-            fingerprint:hashIdentity(JSON.stringify([source.id,source.revision??null,source.configRef??null,endpoint,ingestId])),
+            fingerprint:hashIdentity(JSON.stringify([source.id,source.revision??null,source.configRef??null,endpoint,ingestId,
+                ...(ingestId?[managed.apiOrigin,managed.mediaPath,managed.playbackHlsUrl,managed.timeoutMs]:[])])),
             authority:ingestId?'managed-ingest':'external-hls-http'});
     }catch{return null;}
 }
-export const capabilities=authority=>Object.freeze({presenceEvidence:true,playlistProgressEvidence:authority==='external-hls-http',
-    segmentReachabilityEvidence:authority==='external-hls-http',decoderProgressEvidence:false});
+export const capabilities=authority=>Object.freeze({presenceEvidence:true,playlistProgressEvidence:['external-hls-http','managed-ingest'].includes(authority),
+    segmentReachabilityEvidence:['external-hls-http','managed-ingest'].includes(authority),decoderProgressEvidence:false});
 export function observation(value){
     const keys=['version','sourceId','sourceFingerprint','endpointFingerprint','authority','sessionId','generation','sequence','observedAt','validUntil',
         'state','reason','publisherPresent','playbackAvailable','playbackProgressing','playlistProgressing','segmentReachable','readiness','freshness','uncertain','capabilities'];

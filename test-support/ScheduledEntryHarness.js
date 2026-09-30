@@ -20,8 +20,8 @@ export const event = {
         endAction:'RETURN', endSceneId:null},
     createdAt:stamp(0), updatedAt:stamp(0)
 };
-const program = publisherSessionId => createScheduledLiveProgram({
-    eventId:event.id, sourceId:'source', sourceUrl:'https://example.test/live.m3u8',
+const program = (publisherSessionId,sourceUrl='https://example.test/live.m3u8') => createScheduledLiveProgram({
+    eventId:event.id, sourceId:'source', sourceUrl,
     publisherSessionId, revision:1, now:epoch
 });
 const deferred = () => {
@@ -30,7 +30,7 @@ const deferred = () => {
     return {promise, resolve};
 };
 
-export async function harness(t, {enabled=true, ready=true, serverOptions={}, beforeBoot=async()=>{}} = {}) {
+export async function harness(t, {enabled=true, ready=true, sourceUrl='https://example.test/live.m3u8', serverOptions={}, beforeBoot=async()=>{}} = {}) {
     const tempRoot = resolve(tmpdir());
     const dir = await mkdtemp(join(tempRoot, 'lz-c6a-late-entry-'));
     const studioStatePath = join(dir, 'studio.json');
@@ -72,7 +72,7 @@ export async function harness(t, {enabled=true, ready=true, serverOptions={}, be
     });
     const studio = createInitializedState({
         sources:[{id:'source', name:'Live', kind:'hls', enabled:true,
-            url:'https://example.test/live.m3u8'}], scenes:[],
+            url:sourceUrl}], scenes:[],
         scheduler:{version:1, timezone:'Europe/Rome', items:[], enabled:false},
         globalOverlays:{textCrawl:null}, dominantLive:{armed:false, authorizedSourceId:null}
     }, {stateId:'late-entry-studio', updatedAt:stamp(0)});
@@ -132,7 +132,7 @@ export async function harness(t, {enabled=true, ready=true, serverOptions={}, be
     await boot();
     assert.equal(owner.executionOwnership.available, true);
     // Bootstrap/restart-fence tests may intentionally seed an earlier epoch.
-    const retained = program('manual-retained');
+    const retained = program('manual-retained',sourceUrl);
     assert.equal((await owner.programCommits.accept(retained, {check:()=>true})).accepted, true);
     if(!owner.scheduler.store.getEvent(event.id))assert.equal((await owner.scheduler.store.insert({...event, enabled}, owner.scheduler.store.getSnapshot().revision)).ok, true);
 
@@ -176,7 +176,7 @@ export async function harness(t, {enabled=true, ready=true, serverOptions={}, be
         },
         async manual() {
             const finish = owner.scheduledLiveExecution.reconciliation.beginManualIntent();
-            const payload = program('manual-newer');
+            const payload = program('manual-newer',sourceUrl);
             try {
                 const result = await owner.assetMutations.run(()=>owner.programCommits.accept(payload,
                     {check:()=>true, afterInstall:()=>owner.executionOwnership.revokeForManual('manual-newer')}));

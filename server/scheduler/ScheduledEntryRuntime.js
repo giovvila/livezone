@@ -50,6 +50,16 @@ export default class ScheduledEntryRuntime {
         };
     }
     record(event,decision,fields={}){
+        if(decision==='HEALTH_BLOCKED'){
+            const health=this.automation.health;
+            const scheduled=this.scheduler.store.getEvent(event?.id??event?.eventId);
+            const descriptor=scheduled&&this.automation.resolveSource(scheduled)?.descriptor;
+            const healthStatus=!health?'NO_EVIDENCE':health.sourceFingerprint!==descriptor?.fingerprint?'FINGERPRINT_MISMATCH':
+                evaluateLiveAutomation({event:scheduled,health,now:this.clock()}).healthStatus;
+            // Only bounded enum-like values; never include endpoints or query strings.
+            const safe=value=>typeof value==='string'&&/^[A-Z0-9_]{1,80}$/.test(value)?value:null;
+            fields={...fields,healthStatus:safe(healthStatus),healthState:safe(health?.state),healthReason:safe(health?.reason)};
+        }
         const eventId=event?.id??event?.eventId??null;
         const key=eventId??'startup';
         const signature=JSON.stringify([decision,fields]);

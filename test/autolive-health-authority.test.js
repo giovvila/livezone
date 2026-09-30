@@ -6,6 +6,7 @@ import SafeHttp from '../server/autolive/AutoLiveSafeHttp.js';import Authority f
 import Feed from '../server/program-output/ControlEventFeed.js';import Inventory from '../server/media-library/AssetReferenceInventory.js';
 import IngestClient from '../server/media-ingest/MediaIngestStatusClient.js';import IngestConfig from '../server/media-ingest/MediaIngestConfig.js';
 import compareHealth from '../public/js/studio/AutoLiveShadowComparison.js';
+import {managedFixture} from '../test-support/ManagedHealthFixture.js';
 const flush=()=>new Promise(setImmediate);
 const sample={state:'ONLINE',reason:'PUBLISHER_TRACKS_PRESENT',publisherPresent:true,readiness:'publisher-present'};
 const source=()=>resolveHealthSource({id:'live',kind:'hls',url:'https://public.example.com/live.m3u8'});
@@ -43,11 +44,12 @@ test('A2 freshness expires during stalled request; source switch aborts and fenc
     const changed=resolveHealthSource({id:'live',kind:'hls',url:'https://other.example.com/live'});const next=[];const nextLease=registry.acquire(changed,v=>next.push(v));await flush();
     oldFinish(sample);await flush();assert.equal(next.length,1);assert.equal(next[0].state,'CHECKING');assert.ok(next[0].generation>oldGeneration);assert.equal(next[0].sourceFingerprint,changed.fingerprint);nextLease.release();registry.close();
 });
-for(const state of ['offline','connecting','error','live'])test('A2 managed '+state+' evidence has no playback claim',async()=>{
-    const config=new IngestConfig();const client={config,getStatus:async options=>{assert.equal(options.sourceOnly,true);return {...config.toPublic(),state,health:{publisherPresent:state==='live'}};}};
+for(const state of ['offline','connecting','error','live'])test('A2 managed '+state+' first sample never claims progression',async()=>{
+    const {config,http}=managedFixture();const client={config,getStatus:async options=>{assert.equal(options.sourceOnly,true);return {...config.toPublic(),state,health:{publisherPresent:state==='live'}};}};
     const desc=resolveHealthSource({id:'live',kind:'hls',url:config.playbackHlsUrl},()=>null,config);
-    const value=await new ManagedIngestHealthProducer(client).sample(desc,new AbortController().signal);
-    assert.equal(value.state,{offline:'OFFLINE',connecting:'UNCERTAIN',error:'ERROR',live:'ONLINE'}[state]);assert.equal(value.playbackAvailable,null);
+    const value=await new ManagedIngestHealthProducer(client,{http}).sample(desc,new AbortController().signal);
+    assert.equal(value.state,{offline:'OFFLINE',connecting:'UNCERTAIN',error:'ERROR',live:'UNCERTAIN'}[state]);
+    assert.equal(value.playbackAvailable,state==='live'?true:null);assert.equal(value.playlistProgressing,null);
 });
 test('A2 managed descriptor requires exact mapping and rejects changed ingest ID',async()=>{
     const config=new IngestConfig(),desc=resolveHealthSource({id:'live',kind:'hls',url:config.playbackHlsUrl},()=>null,config);
@@ -69,8 +71,13 @@ for(const mode of ['managed','external'])test('A2 Control CLOSED '+mode+' health
     const root=await mkdtemp(join(tmpdir(),'lz-a2-authority-'));let server,owner,registry;let sequence=1;
     let config=new IngestConfig();let url=config.playbackHlsUrl;
     if(mode==='managed'){
-        server=createServer((req,res)=>{assert.equal(req.url,'/v3/paths/list');res.setHeader('Content-Type','application/json');res.end(JSON.stringify({items:[{name:config.mediaPath,online:true,source:{type:'rtmpSession'},tracks2:['H264']}]}));});
-        await new Promise(r=>server.listen(0,'127.0.0.1',r));config=new IngestConfig({apiOrigin:`http://127.0.0.1:${server.address().port}`});
+        server=createServer((req,res)=>{
+            if(req.url==='/v3/paths/list'){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify({items:[{name:config.mediaPath,online:true,source:{type:'rtmpSession'},tracks2:['H264']}]}));}
+            res.end(req.url.endsWith('.mp4')?'x':`#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXT-X-MEDIA-SEQUENCE:${sequence++}\n#EXTINF:1,\nx-${sequence}.mp4`);
+        });
+        await new Promise(r=>server.listen(0,'127.0.0.1',r));
+        config=new IngestConfig({apiOrigin:`http://127.0.0.1:${server.address().port}`,mediaPath:'fixture',playbackHlsUrl:`http://127.0.0.1:${server.address().port}/fixture/index.m3u8`});
+        url=config.playbackHlsUrl;
     }
     if(mode==='external'){
         server=createServer((req,res)=>res.end(req.url.endsWith('.ts')?'x':`#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXT-X-MEDIA-SEQUENCE:${sequence++}\n#EXTINF:1,\nx-${sequence}.ts`));await new Promise(r=>server.listen(0,'127.0.0.1',r));url=`http://127.0.0.1:${server.address().port}/live.m3u8`;

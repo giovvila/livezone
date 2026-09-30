@@ -1,19 +1,42 @@
 import {randomUUID} from 'node:crypto';
-import {observation,capabilities,freshObservation} from './AutoLiveHealthContract.js';
+import {observation,capabilities,freshObservation,resolveHealthSource} from './AutoLiveHealthContract.js';
 import {error} from './AutoLiveContract.js';
 import {abortable} from './AutoLiveSafeHttp.js';
 import AutoLiveHlsObserver from './AutoLiveHlsObserver.js';
+import ManagedIngestTransport from './ManagedIngestTransport.js';
 
 export class ManagedIngestHealthProducer {
-    constructor(client){this.client=client;}
+    constructor(client,{http,clock=()=>Date.now(),historyMaxAgeMs=10000}={}){
+        Object.assign(this,{client,http,clock,historyMaxAgeMs});
+    }
     async sample(source,signal){
+        const key=JSON.stringify([source.sourceId,source.fingerprint,source.endpoint,source.ingestId,this.client.config]);
+        if(key!==this.key){
+            this.key=key;this.lastSeenAt=null;this.lastSample=null;
+            this.transport=new ManagedIngestTransport(this.client.config,{http:this.http});
+        }
         const status=await this.client.getStatus({sourceOnly:true,signal});
-        if(status.ingestId!==source.ingestId||status.playbackHlsUrl!==this.client.config?.playbackHlsUrl)throw error('MAPPING_MISMATCH');
+        const mapped=resolveHealthSource({id:source.sourceId,kind:'hls',url:source.endpoint},()=>null,this.client.config);
+        if(mapped?.ingestId!==source.ingestId||status.ingestId!==source.ingestId||status.playbackHlsUrl!==this.client.config?.playbackHlsUrl){
+            this.transport.reset();this.lastSample=null;throw error('MAPPING_MISMATCH');
+        }
         const present=status.health?.publisherPresent;
-        return {state:status.state==='error'?'ERROR':present?'ONLINE':status.state==='offline'?'OFFLINE':'UNCERTAIN',
-            reason:status.state==='error'?'MANAGED_API_ERROR':present?'PUBLISHER_TRACKS_PRESENT':status.state==='offline'?'PUBLISHER_ABSENT':'TRACKS_UNCERTAIN',
-            publisherPresent:status.state==='error'?null:present===true,playbackAvailable:null,playlistProgressing:null,segmentReachable:null,
-            readiness:present?'publisher-present':'unavailable'};
+        if(status.state==='error'||present!==true){
+            this.transport.reset();this.lastSample=null;
+            return {state:status.state==='error'?'ERROR':status.state==='offline'?'OFFLINE':'UNCERTAIN',
+                reason:status.state==='error'?'MANAGED_API_ERROR':status.state==='offline'?'PUBLISHER_ABSENT':'TRACKS_UNCERTAIN',
+                publisherPresent:status.state==='error'?null:false,playbackAvailable:null,playlistProgressing:null,segmentReachable:null,
+                readiness:'unavailable'};
+        }
+        const now=this.clock();
+        if(this.lastSeenAt!==status.lastSeenAt||this.lastSample===null||now-this.lastSample>=this.historyMaxAgeMs)
+            this.transport.reset();
+        this.lastSeenAt=status.lastSeenAt;
+        const transport=await this.transport.sample(signal);
+        this.lastSample=this.clock();
+        const ready=transport.playlistProgressing===true&&transport.segmentReachable===true;
+        return {...transport,state:ready?'ONLINE':'UNCERTAIN',publisherPresent:true,
+            readiness:ready?'transport-only':'publisher-present'};
     }
 }
 function safeDiagnostics(value){
@@ -26,10 +49,11 @@ function safeDiagnostics(value){
 // Server-owned demand, never one instance per API/SSE client. One sample in flight
 // per entry; abort and generation fencing precede every release/source replacement.
 export default class AutoLiveHealthRegistry {
-    constructor({managedClient,http,clock=()=>Date.now(),setTimer=setTimeout,clearTimer=clearTimeout,
+    constructor({managedClient,http,managedTransportHttp,clock=()=>Date.now(),setTimer=setTimeout,clearTimer=clearTimeout,
         intervalMs=3000,ttlMs=10000,timeoutMs=7000,producerFactory}={}){
         Object.assign(this,{clock,setTimer,clearTimer,intervalMs,ttlMs,timeoutMs});
-        this.factory=producerFactory||((source)=>source.ingestId?new ManagedIngestHealthProducer(managedClient):new AutoLiveHlsObserver({http,clock}));
+        this.factory=producerFactory||((source)=>source.ingestId?new ManagedIngestHealthProducer(managedClient,
+            {http:managedTransportHttp,clock,historyMaxAgeMs:ttlMs}):new AutoLiveHlsObserver({http,clock}));
         this.entries=new Map();this.generation=0;this.sessionId=randomUUID();
     }
     acquire(source,listener){
