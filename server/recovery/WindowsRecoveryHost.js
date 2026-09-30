@@ -6,6 +6,7 @@ import {join} from 'node:path';
 import {proveWindowsOffline} from '../autolive/ReconcileAuthorityLock.js';
 import {evaluateWindowsAuthorityCensus} from '../autolive/WindowsAuthorityProcessProof.js';
 import {assertRepository,fail} from './RecoveryContract.js';
+import {discoverMediaMtx} from './MediaMtxIdentity.js';
 const execute=promisify(execFile);
 async function ps(script){
     const {stdout}=await execute('powershell.exe',['-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')],{windowsHide:true,timeout:20000,maxBuffer:4*1024*1024});
@@ -32,16 +33,19 @@ function ServiceState($name) {
  $d=$key.PSObject.Properties['DelayedAutoStart']
  [pscustomobject]@{Name=$s.Name;State=$s.State;StartMode=$s.StartMode;PathName=$s.PathName;StartName=$s.StartName;DelayedPresent=($null -ne $d);DelayedValue=$(if($d){[int]$d.Value}else{0})}
 }
-$s=ServiceState 'LivezoneNode'; $m=ServiceState 'MediaMTX'
+$s=ServiceState 'LivezoneNode'; $m=@(Get-CimInstance Win32_Service -Filter "Name='LivezoneMediaMtx'" | Select-Object Name,State,StartMode,PathName,ProcessId)
+$mediaProcesses=@(Get-CimInstance Win32_Process -Filter "Name='mediamtx.exe' OR Name='LivezoneMediaMtx.exe' OR Name='pwsh.exe' OR Name='powershell.exe'" | Select-Object ProcessId,ParentProcessId,Name,ExecutablePath,CommandLine,@{Name='CreationDate';Expression={$_.CreationDate.ToUniversalTime().ToString('o')}})
 $nodes=@(Get-CimInstance Win32_Process -Filter "Name='node.exe' OR Name='LivezoneNode.exe'" | Select-Object ProcessId,Name,ExecutablePath,CommandLine)
-$ports=@(Get-NetTCPConnection -State Listen -ErrorAction Stop | Where-Object LocalPort -EQ 8080 | Select-Object LocalAddress,LocalPort,OwningProcess)
+$ports=@(Get-NetTCPConnection -State Listen -ErrorAction Stop | Where-Object LocalPort -in 8080,1935,8888,9997 | Select-Object LocalAddress,LocalPort,OwningProcess)
 $principal=New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 $globalBootstrap=([bool][Environment]::GetEnvironmentVariable('LIVEZONE_SCHEDULED_ENTRY_BOOTSTRAP','Machine') -or [bool][Environment]::GetEnvironmentVariable('LIVEZONE_SCHEDULED_ENTRY_BOOTSTRAP','User'))
-[pscustomobject]@{service=$s;media=$m;nodes=$nodes;ports=$ports;administrator=$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator);globalBootstrap=$globalBootstrap} | ConvertTo-Json -Depth 7 -Compress`;
+[pscustomobject]@{service=$s;mediaServices=$m;mediaProcesses=$mediaProcesses;nodes=$nodes;ports=$ports;administrator=$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator);globalBootstrap=$globalBootstrap} | ConvertTo-Json -Depth 7 -Compress`;
         const [os,branch,head,root]=await Promise.all([ps(script),...['branch --show-current','rev-parse HEAD','rev-parse --show-toplevel'].map(args=>execute('git',args.split(' '),{cwd:this.root,windowsHide:true}))]);
         const proof=evaluateWindowsAuthorityCensus({services:os.service?[os.service]:[],nodes:os.nodes});
         let env='';try{env=await readFile(join(this.root,'.env'),'utf8');}catch(e){if(e.code!=='ENOENT')throw e;}
-        return {...os,proof,branch:branch.stdout.trim(),head:head.stdout.trim(),root:root.stdout.trim(),
+        const media=discoverMediaMtx(this.root,{services:os.mediaServices,processes:os.mediaProcesses});
+        const {mediaServices,mediaProcesses,...observed}=os;
+        return {...observed,media,ports:os.ports.filter(p=>p.LocalPort===8080),mediaPorts:os.ports.filter(p=>p.LocalPort!==8080),proof,branch:branch.stdout.trim(),head:head.stdout.trim(),root:root.stdout.trim(),
             bootstrapPermission:os.globalBootstrap||Boolean(process.env.LIVEZONE_SCHEDULED_ENTRY_BOOTSTRAP)||/^\s*(?:export\s+)?LIVEZONE_SCHEDULED_ENTRY_BOOTSTRAP\s*=/m.test(env)};
     }
     async restore(original){
@@ -62,7 +66,7 @@ export function assertHost(h,root,{online=false,expected}={}){
     assertRepository(h,root,expected);
     if(!h.administrator)fail('ADMINISTRATOR_REQUIRED');
     if(h.service?.Name!=='LivezoneNode'||h.service.State!=='Stopped'||h.service.StartMode!=='Disabled')fail('SERVICE_MUST_BE_STOPPED_DISABLED');
-    if(h.media?.Name?.toLowerCase()!=='mediamtx'||!h.media.PathName)fail('MEDIAMTX_IDENTITY_REQUIRED');
+    if(h.media?.status!=='VERIFIED'||h.media.Name!=='LivezoneMediaMtx')fail('MEDIAMTX_IDENTITY_REQUIRED');
     if(h.bootstrapPermission)fail('PERSISTENT_BOOTSTRAP_PERMISSION_FORBIDDEN');
     if(!online&&(h.proof?.absent!==true||h.ports?.length!==0))fail('CANONICAL_OFFLINE_PROOF_REQUIRED');
 }

@@ -30,7 +30,7 @@ async function fixture(t,{legacy=true,adopt=true}={}){
         const child=relative(tmpdir(),root);assert.ok(child&&!child.startsWith('..')&&!isAbsolute(child));await rm(root,{recursive:true,force:true});});
     await mkdir(dirname(p.auto),{recursive:true});await mkdir(dirname(p.schedule),{recursive:true});
     const service={Name:'LivezoneNode',State:'Stopped',StartMode:'Disabled',PathName:join(root,'ops/LivezoneNode.exe'),StartName:'LocalSystem',DelayedPresent:true,DelayedValue:1};
-    const media={Name:'MediaMTX',State:'Running',StartMode:'Auto',PathName:'fixture-mediamtx'};
+    const media={status:'VERIFIED',Name:'LivezoneMediaMtx',State:'Running',StartMode:'Auto',PathName:'fixture-mediamtx'};
     const original={...service,StartMode:'Auto'};
     let online=false,reserves=0,restores=0;
     const host={inspect:async()=>({root,head:HEAD,branch:BRANCH,administrator:true,service:{...service},media:{...media},
@@ -293,4 +293,18 @@ test('audit recovery HEAD cannot be reused under a different approved version',a
     const other=new RecoveryWorkflow({root:h.root,host:h.host,runId:h.w.runId,expectedHead:'f'.repeat(40)});
     await assert.rejects(other.load(),/RECOVERY_AUDIT_REQUIRED/);
     assert.equal((await h.w.load()).head,HEAD);
+});
+
+for(const status of ['VERIFIED','UNVERIFIED'])test('DryRun and Prepare share media identity: '+status,async t=>{
+    const h=await fixture(t),before=await tree(h.root);h.media.status=status;
+    const dry=await h.w.inspect();assert.equal(dry.host.media.status,status);
+    if(status==='UNVERIFIED'){
+        await assert.rejects(h.w.begin({authorizeLegacy:true}),/MEDIAMTX_IDENTITY_REQUIRED/);
+        assert.deepEqual(h.counts(),{reserves:0,restores:0});
+    }else{
+        h.host.reserve=async()=>{throw Error('FIXTURE_PRE_MUTATION_BOUNDARY');};
+        const pre=await h.w.preflight();assert.deepEqual(pre.media,dry.host.media);
+        await assert.rejects(h.w.begin({authorizeLegacy:true}),/FIXTURE_PRE_MUTATION_BOUNDARY/);
+    }
+    assert.deepEqual(await tree(h.root),before);
 });
