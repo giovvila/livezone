@@ -5,6 +5,7 @@ param(
     [switch]$RestoreService,
     [ValidateSet('Prepare','Disarm','Start')][string]$Mode='Prepare',
     [string]$RunId,
+    [Parameter(Mandatory=$true)][ValidatePattern('^[a-fA-F0-9]{40}$')][string]$ExpectedHead,
     [switch]$AuthorizeLegacyQuarantine,
     [switch]$AuthorizeDisarm,
     [switch]$AuthorizeStart,
@@ -20,7 +21,7 @@ $node=(Get-Command node.exe -CommandType Application).Source
 $cli=Join-Path $PSScriptRoot 'recovery-maintenance.mjs'
 function Invoke-Recovery([string]$Action,[string[]]$Options=@()) {
     $id=if($RunId){$RunId}else{'-'}
-    $raw=& $node $cli $Action $id @Options
+    $raw=& $node $cli $Action $id --expected-head $ExpectedHead @Options
     if($LASTEXITCODE -ne 0){throw "RECOVERY_PHASE_FAILED: $Action"}
     if($raw){($raw -join "`n") | ConvertFrom-Json}
 }
@@ -52,7 +53,7 @@ switch($Mode){
         if(!$AuthorizeStart){throw 'EXPLICIT_START_AUTHORIZATION_REQUIRED'}
         $options=@('--authorize-start');if($AuthorizeBootstrap){$options+='--authorize-bootstrap'}
         # One foreground server, visible logs and Ctrl+C. No service startup.
-        & $node $cli 'Start' $RunId @options
+        & $node $cli 'Start' $RunId --expected-head $ExpectedHead @options
         if($LASTEXITCODE -ne 0){throw 'CONTROLLED_START_OR_READINESS_FAILED; PRESERVE EVIDENCE'}
     }
 }

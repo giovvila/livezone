@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,rm,readFile,writeFile,readdir,unlink,rename,stat} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,dirname,relative,isAbsolute} from 'node:path';
-import {paths,capture,artifact,classifyMaintenance,bootstrapPlan,verifyMigration,verifyReadiness,runtimeStatus,assertRestore,HEAD,BRANCH} from '../server/recovery/RecoveryContract.js';
+import {paths,capture,artifact,classifyMaintenance,bootstrapPlan,verifyMigration,verifyReadiness,runtimeStatus,assertRestore,BRANCH} from '../server/recovery/RecoveryContract.js';
 import {RecoveryWorkflow} from '../server/recovery/RecoveryWorkflow.js';
 import {controlledStart} from '../server/recovery/ControlledStart.js';
 import {offlineDisarm} from '../server/recovery/OfflineDisarm.js';
@@ -19,6 +19,7 @@ import {initializeEntryLedger} from '../server/scheduler/ScheduledEntryRuntime.j
 import {ledgerSnapshot} from '../server/scheduler/ScheduledEntryLedgerContract.js';
 import {evaluateWindowsAuthorityCensus} from '../server/autolive/WindowsAuthorityProcessProof.js';
 
+const HEAD='b63c03d94a7f932d6c4052e9f1bed407819ae12b';
 const save=(path,value)=>writeFile(path,JSON.stringify(value));
 const stamp='2026-09-01T00:00:00.000Z';
 const event={id:'historical-fixture',version:1,type:'source.live',enabled:true,startAt:stamp,endAt:'2026-09-01T01:00:00.000Z',priority:1,
@@ -36,7 +37,7 @@ async function fixture(t,{legacy=true,adopt=true}={}){
         bootstrapPermission:false,proof:{absent:true,processes:[{pid:process.pid,kind:'MAINTENANCE_SELF'}]},ports:online?[{OwningProcess:process.pid,LocalPort:8080}]:[]}),
         proveOffline:async()=>({absent:!online}),reserve:async()=>{assert.equal(online,false);reserves++;return ()=>{};},fixtureAlive:()=>false,
         restore:async value=>{restores++;Object.assign(service,value);}};
-    if(adopt)await save(p.maintenance,{Version:1,Repository:root,Head:'a'.repeat(40),CapturedAt:stamp,Original:original});
+    if(adopt)await save(p.maintenance,{Version:1,Repository:root,Head:'44816ca167b1042c8670c169f401ae7e961727ae',CapturedAt:stamp,Original:original});
     await save(p.auto,{version:1,revision:7,enabled:true,armed:true,sourceId:'primecast',updatedAt:stamp,migration:null});
     await save(p.authority,{epoch:20});await save(p.authorityLock,{pid:50780,authorityProcessSession:'previous-authority'});
     await save(p.schedule,{version:2,revision:50,events:[event],programPlan:{version:1,timezone:'Europe/Rome',items:[]}});
@@ -48,7 +49,7 @@ async function fixture(t,{legacy=true,adopt=true}={}){
         scheduler:{version:1,timezone:'Europe/Rome',items:[],enabled:false},globalOverlays:{textCrawl:null},dominantLive:{armed:false,authorizedSourceId:null}},{stateId:'fixture',updatedAt:stamp});
     await save(p.studio,studio);
     if(legacy)await save(p.scheduledLock,{version:1,processSession:'legacy-session'});
-    const w=new RecoveryWorkflow({root,runId:'fixture-run',host});
+    const w=new RecoveryWorkflow({root,runId:'fixture-run',host,expectedHead:HEAD});
     async function auto(){const plan=await w.autoPlan();if(!plan.args.length)return;
         const [path,epoch,pid,session,epochHash,lockHash]=plan.args;
         return reconcileAuthorityLock({path,expectedEpoch:Number(epoch),expectedPid:Number(pid),expectedSession:session,expectedEpochHash:epochHash,expectedLockHash:lockHash,
@@ -235,7 +236,7 @@ test('next controlled startup uses existing ledger without bootstrap permission;
     const ledger=await artifact(h.p.ledger),marker=await artifact(h.p.marker);
     await assert.rejects(h.w.restore(),/CANONICAL_OFFLINE/);
     await new Promise(done=>first.owner.server.close(()=>done()));h.setOffline();
-    const next=new RecoveryWorkflow({root:h.root,runId:'second-run',host:h.host});await next.begin();await next.prepared();
+    const next=new RecoveryWorkflow({root:h.root,runId:'second-run',host:h.host,expectedHead:HEAD});await next.begin();await next.prepared();
     const run=await next.load();await next.disarm({authorize:true,expectedRevision:run.before.auto.value.revision,expectedHash:run.before.auto.hash});
     let permission;
     const second=await controlledStart({workflow:next,authorizeStart:true,launch:options=>{permission=options.scheduledEntryLedgerBootstrap;return h.launch(options);}});
@@ -252,4 +253,44 @@ test('disarm retry rejects changed bytes even when the planned after-values matc
     await assert.rejects(h.disarm(),/crash/);h.w.hook=()=>{};
     await save(h.p.auto,(await artifact(h.p.auto)).value); // removes canonical trailing newline
     await assert.rejects(h.disarm(),/STALE_AUTOLIVE_EVIDENCE/);
+});
+
+
+test('approved newer recovery HEAD passes DryRun and Prepare up to the next pre-mutation boundary',async t=>{
+    const h=await fixture(t),before=await tree(h.root);
+    const result=await h.w.inspect();
+    assert.deepEqual(result.expected,{branch:BRANCH,head:HEAD});
+    assert.equal(result.evidence.maintenance.value.Head,'44816ca167b1042c8670c169f401ae7e961727ae');
+    let reached=false;
+    h.host.reserve=async()=>{reached=true;throw Error('FIXTURE_PRE_MUTATION_BOUNDARY');};
+    await assert.rejects(h.w.begin({authorizeLegacy:true}),/FIXTURE_PRE_MUTATION_BOUNDARY/);
+    assert.equal(reached,true);assert.deepEqual(await tree(h.root),before);
+    assert.equal(await artifact(h.w.audit),null);
+});
+for(const field of ['branch','head','root'])test('DryRun and Prepare share repository rejection without mutations: '+field,async t=>{
+    const h=await fixture(t),inspect=h.host.inspect,before=await tree(h.root);
+    h.host.inspect=async()=>({...await inspect(),[field]:field==='head'?'06a0962e481c2f35a8c00b53a674a445383acb22':'wrong'});
+    await assert.rejects(h.w.inspect(),/REPOSITORY_BRANCH_HEAD_MISMATCH/);
+    await assert.rejects(h.w.begin({authorizeLegacy:true}),/REPOSITORY_BRANCH_HEAD_MISMATCH/);
+    assert.deepEqual(await tree(h.root),before);assert.deepEqual(h.counts(),{reserves:0,restores:0});
+});
+test('maintenance repository mismatch blocks both paths before mutation',async t=>{
+    const h=await fixture(t),r=(await artifact(h.p.maintenance)).value;
+    await save(h.p.maintenance,{...r,Repository:join(h.root,'other')});const before=await tree(h.root);
+    await assert.rejects(h.w.inspect(),/MAINTENANCE_CONFLICT/);
+    await assert.rejects(h.w.begin({authorizeLegacy:true}),/MAINTENANCE_CONFLICT/);
+    assert.deepEqual(await tree(h.root),before);assert.deepEqual(h.counts(),{reserves:0,restores:0});
+});
+test('expected recovery HEAD is mandatory, full length and explicitly normalized',async t=>{
+    const h=await fixture(t);
+    for(const expectedHead of [undefined,'','HEAD',HEAD.slice(0,7),' '+HEAD, 'g'.repeat(40)])
+        assert.throws(()=>new RecoveryWorkflow({root:h.root,host:h.host,expectedHead}),/EXPLICIT_RECOVERY_HEAD_REQUIRED/);
+    const w=new RecoveryWorkflow({root:h.root,host:h.host,expectedHead:HEAD.toUpperCase()});
+    assert.equal((await w.inspect()).expected.head,HEAD);
+});
+test('audit recovery HEAD cannot be reused under a different approved version',async t=>{
+    const h=await fixture(t);await h.w.begin({authorizeLegacy:true});
+    const other=new RecoveryWorkflow({root:h.root,host:h.host,runId:h.w.runId,expectedHead:'f'.repeat(40)});
+    await assert.rejects(other.load(),/RECOVERY_AUDIT_REQUIRED/);
+    assert.equal((await h.w.load()).head,HEAD);
 });

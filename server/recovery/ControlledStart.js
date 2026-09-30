@@ -27,7 +27,7 @@ export async function controlledStart({workflow,authorizeStart=false,authorizeBo
             owner.scheduledEntryReady,owner.programReady,owner.autoLive.ready]),new Promise((_,reject)=>{
                 timer=setTimeout(()=>reject(Error('CONTROLLED_START_READINESS_TIMEOUT')),timeoutMs);
             })]);
-        const h=await workflow.host.inspect();assertHost(h,p.root,{online:true});
+        const h=await workflow.host.inspect();assertHost(h,p.root,{online:true,expected:workflow.expected});
         const after=await capture(p);
         const result=verifyReadiness({before:start.before,after,runtime:runtimeStatus(owner),processes:h.proof.processes,
             ports:h.ports,service:h.service,startedAt:start.at,bootstrap:start.bootstrap});

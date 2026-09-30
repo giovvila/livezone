@@ -9,14 +9,15 @@ import {fail} from '../server/recovery/RecoveryContract.js';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const [mode,runId,...flags]=process.argv.slice(2);
 const allowed=new Set(['--authorize-legacy','--authorize-disarm','--authorize-start','--authorize-bootstrap']);
-let revision,hash;
+let revision,hash,expectedHead;
 for(let i=0;i<flags.length;i++){
+    if(flags[i]==='--expected-head'){if(expectedHead!==undefined)fail('DUPLICATE_RECOVERY_HEAD');expectedHead=flags[++i];continue;}
     if(flags[i]==='--expected-revision'){revision=Number(flags[++i]);continue;}
     if(flags[i]==='--expected-hash'){hash=flags[++i];continue;}
     if(!allowed.has(flags[i]))fail('UNKNOWN_RECOVERY_OPTION');
 }
-const workflow=new RecoveryWorkflow({root,runId:runId==='-'?undefined:runId,host:new WindowsRecoveryHost(root)});
 try{
+    const workflow=new RecoveryWorkflow({root,runId:runId==='-'?undefined:runId,host:new WindowsRecoveryHost(root),expectedHead});
     if(resolve(process.cwd()).toLowerCase()!==root.toLowerCase())fail('RUN_FROM_REPOSITORY_ROOT');
     let result;
     if(mode==='DryRun')result=await workflow.inspect();

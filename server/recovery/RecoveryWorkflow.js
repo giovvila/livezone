@@ -7,18 +7,20 @@ import {normalizeConfig} from '../autolive/AutoLiveContract.js';
 import {normalizeSchedule} from '../scheduler/ScheduleContract.js';
 import {validateRecord} from '../program-output/DurableProgramContract.js';
 import {offlineDisarm} from './OfflineDisarm.js';
-import {paths,capture,artifact,exclusive,writeOnce,classifyMaintenance,scheduledClassification,bootstrapPlan,assertRestore,HEAD,BRANCH,fail,same} from './RecoveryContract.js';
+import {paths,capture,artifact,exclusive,writeOnce,classifyMaintenance,scheduledClassification,bootstrapPlan,assertRestore,recoveryIdentity,assertRepository,fail,same} from './RecoveryContract.js';
 import {assertHost} from './WindowsRecoveryHost.js';
 
 export class RecoveryWorkflow {
-    constructor({root,runId,host,hook=()=>{}}){
-        this.p=paths(root);this.host=host;this.hook=hook;
+    constructor({root,runId,host,expectedHead,hook=()=>{}}){
+        this.p=paths(root);this.host=host;this.hook=hook;this.expected=recoveryIdentity(expectedHead);
         if(runId!==undefined&&!/^[a-zA-Z0-9_-]{1,80}$/.test(runId))fail('INVALID_RECOVERY_RUN_ID');
         this.runId=runId;this.audit=join(this.p.root,'var','recovery-'+(runId||'UNSPECIFIED')+'.json');
     }
     async inspect(){
         const [host,evidence]=await Promise.all([this.host.inspect(),capture(this.p)]);
-        return {host,evidence,maintenance:classifyMaintenance(evidence.maintenance?.value,host.service,this.p.root),
+        assertRepository(host,this.p.root,this.expected);
+        if(classifyMaintenance(evidence.maintenance?.value,host.service,this.p.root)==='CONFLICT')fail('MAINTENANCE_CONFLICT');
+        return {expected:this.expected,host,evidence,maintenance:classifyMaintenance(evidence.maintenance?.value,host.service,this.p.root),
             scheduled:scheduledClassification(evidence,this.p),proposed:[
                 'STOP unless administrator, expected branch/HEAD, canonical census, Stopped/Disabled service and port 8080 free',
                 'Adopt/preserve maintenance record; create separate current-HEAD audit',
@@ -31,7 +33,7 @@ export class RecoveryWorkflow {
                 'Ctrl+C/drain manual process; separate configuration-only service restore']};
     }
     async preflight(){
-        const h=await this.host.inspect();assertHost(h,this.p.root);
+        const h=await this.host.inspect();assertHost(h,this.p.root,{expected:this.expected});
         if((await this.host.proveOffline()).absent!==true)fail('CANONICAL_OFFLINE_PROOF_REQUIRED');
         for(const path of [this.p.root,dirname(this.p.authority),dirname(this.p.schedule),dirname(this.audit)])
             if(repositoryIdentity(await realpath(path))!==repositoryIdentity(path))fail('ALIASED_RECOVERY_DIRECTORY');
@@ -53,7 +55,7 @@ export class RecoveryWorkflow {
     async load(){
         if(!this.runId)fail('RECOVERY_RUN_ID_REQUIRED');
         const r=(await artifact(this.audit))?.value;
-        if(!r||r.version!==1||r.root!==this.p.root||r.head!==HEAD||r.branch!==BRANCH||r.runId!==this.runId)fail('RECOVERY_AUDIT_REQUIRED');
+        if(!r||r.version!==1||r.root!==this.p.root||r.head!==this.expected.head||r.branch!==this.expected.branch||r.runId!==this.runId)fail('RECOVERY_AUDIT_REQUIRED');
         return r;
     }
     assertStable(e,r,keys=['auto','schedule','program','ledger','ledgerLock','marker','scheduled']){
@@ -146,7 +148,7 @@ export class RecoveryWorkflow {
             const r=await this.load(),e=await capture(this.p);this.assertStable(e,r);
             if(e.authority?.hash!==r.before.authority.hash)fail('AUTHORITY_EPOCH_CHANGED');
             if(!(await this.autoEvidence(r)).done)fail('AUTOLIVE_COMPLETION_REQUIRED');await this.verifyScheduled(r);
-            await writeOnce(this.audit+'.prepared',{state:'PREPARED_FOR_EXPLICIT_DISARM',head:HEAD});
+            await writeOnce(this.audit+'.prepared',{state:'PREPARED_FOR_EXPLICIT_DISARM',head:this.expected.head});
             return {prepared:true,autoliveDisarmStillRequired:true};
         });
     }
@@ -168,7 +170,7 @@ export class RecoveryWorkflow {
             if(e.authorityLock||e.scheduledLock)fail('LOCK_RECONCILIATION_REQUIRED');
             if(classifyMaintenance(e.maintenance?.value,h.service,this.p.root)!=='ADOPTED_MAINTENANCE')fail('MAINTENANCE_CONFLICT');
             const bootstrap=bootstrapPlan(e,authorizeBootstrap);
-            const start={version:1,state:'START_RESERVED',pid:process.pid,at:new Date().toISOString(),head:HEAD,bootstrap,before:{...e,gate:null}};
+            const start={version:1,state:'START_RESERVED',pid:process.pid,at:new Date().toISOString(),head:this.expected.head,bootstrap,before:{...e,gate:null}};
             // Never reuse a start reservation after crash, even if no migration ran.
             await exclusive(this.audit+'.start',start);await this.hook('start-reserved');return start;
         });

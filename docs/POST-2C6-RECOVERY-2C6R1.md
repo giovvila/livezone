@@ -38,7 +38,7 @@ is introduced. Healthz and a listening port do not prove readiness.
 ## Preconditions and paths
 
 Mutating phases require Administrator, repository root, branch `build/1003.9A1`,
-HEAD `06a0962e481c2f35a8c00b53a674a445383acb22`, clean canonical offline census,
+an explicit full `-ExpectedHead` copied from the reviewed recovery commit, clean canonical offline census,
 LivezoneNode Stopped/Disabled, identified MediaMTX, port 8080 free/reservable,
 ordinary evidence files and a nonconflicting maintenance record. Directory aliases
 are refused. A remaining canonical maintenance gate requires separate review.
@@ -170,7 +170,8 @@ LivezoneNode Stopped/Disabled and never stops MediaMTX.
 ```powershell
 Set-Location -LiteralPath 'C:\Projects\livezone-broadcast-engine-x'
 $runId = 'post2c6-20260930-01' # new reviewed operation identifier; reuse only for supported phase retries
-$review = .\tools\livezone-authority-maintenance.ps1 -DryRun | ConvertFrom-Json
+$expectedHead = '<FULL_40_HEX_SHA_OF_REVIEWED_FIX_COMMIT>' # literal from review; never auto-approve git rev-parse HEAD
+$review = .\tools\livezone-authority-maintenance.ps1 -DryRun -ExpectedHead $expectedHead -RunId $runId | ConvertFrom-Json
 $review | ConvertTo-Json -Depth 40
 ```
 
@@ -183,14 +184,14 @@ After reviewing those exact observations, explicitly authorize only the required
 legacy quarantine and lock preparation:
 
 ```powershell
-.\tools\livezone-authority-maintenance.ps1 -Mode Prepare -RunId $runId -AuthorizeLegacyQuarantine
+.\tools\livezone-authority-maintenance.ps1 -Mode Prepare -ExpectedHead $expectedHead -RunId $runId -AuthorizeLegacyQuarantine
 ```
 
 This does not disarm or start. Then explicitly authorize the armed-state change
 using the reviewed revision/hash; any intervening AutoLive change must fail:
 
 ```powershell
-.\tools\livezone-authority-maintenance.ps1 -Mode Disarm -RunId $runId -AuthorizeDisarm `
+.\tools\livezone-authority-maintenance.ps1 -Mode Disarm -ExpectedHead $expectedHead -RunId $runId -AuthorizeDisarm `
   -ExpectedAutoLiveRevision $review.evidence.auto.value.revision `
   -ExpectedAutoLiveHash $review.evidence.auto.hash
 ```
@@ -198,7 +199,7 @@ using the reviewed revision/hash; any intervening AutoLive change must fail:
 Then authorize exactly one foreground startup and its first ledger bootstrap:
 
 ```powershell
-.\tools\livezone-authority-maintenance.ps1 -Mode Start -RunId $runId -AuthorizeStart -AuthorizeBootstrap
+.\tools\livezone-authority-maintenance.ps1 -Mode Start -ExpectedHead $expectedHead -RunId $runId -AuthorizeStart -AuthorizeBootstrap
 ```
 
 Keep this terminal open. Success requires `CONTROLLED START VERIFIED` and the
@@ -211,8 +212,8 @@ For later service configuration restoration: Ctrl+C in that terminal, wait for
 the Node process to exit and locks to drain, then run:
 
 ```powershell
-.\tools\livezone-authority-maintenance.ps1 -DryRun
-.\tools\livezone-authority-maintenance.ps1 -RestoreService -RunId $runId
+.\tools\livezone-authority-maintenance.ps1 -DryRun -ExpectedHead $expectedHead
+.\tools\livezone-authority-maintenance.ps1 -RestoreService -ExpectedHead $expectedHead -RunId $runId
 ```
 
 Restoration requires canonical absence, port 8080 free, no authority/Scheduled/
@@ -285,3 +286,106 @@ new `tools/recovery-maintenance.mjs`; replaced existing untracked
 `server/scheduler/ScheduledEntryLedgerRepository.js`; new
 `test/recovery-tooling.test.js` and this document. All other R0 modifications
 are retained. Preexisting unrelated media/assets/playlist changes are untouched.
+
+
+## 2C6R1 repository gate defect review — 2026-09-30
+
+Confirmed on branch `build/1003.9A1`, HEAD
+`b63c03d94a7f932d6c4052e9f1bed407819ae12b`. No real recovery command was run
+in this investigation. Runtime files were read only; services were not changed.
+
+### Exact root cause and paths
+
+Before this fix, RecoveryContract exported the hardcoded expected HEAD
+`06a0962e481c2f35a8c00b53a674a445383acb22` and branch `build/1003.9A1`.
+Neither the wrapper nor CLI accepted an expected recovery version.
+
+DryRun: wrapper -> CLI DryRun -> RecoveryWorkflow.inspect ->
+WindowsRecoveryHost.inspect + capture. Git branch/head/stdout were trimmed and
+returned as observations. No assertHost or repository comparison ran. Thus the
+successful inventory was not a successful repository validation.
+
+Prepare: wrapper -> CLI Prepare -> begin -> offline -> preflight -> host.inspect
+-> assertHost. Exact branch/HEAD comparisons rejected the observed b63c03d...
+against 06a0962..., before canonical proof refresh, maintenance adoption, port
+reservation, gate acquisition or any file write. Root comparison normalized
+backslashes to slashes and lowercased; branch/head comparisons were case-sensitive.
+The maintenance Head 44816ca... was never the expected current HEAD. Audit load
+also used the stale constant, but was never reached by the failed Prepare.
+
+The fix requires -ExpectedHead / --expected-head for every phase. RecoveryContract
+builds one immutable expected identity: fixed branch plus explicitly supplied
+full 40-hex HEAD (hex case normalized to lowercase; whitespace and abbreviations
+refused). Observed Git output is still trimmed. Both DryRun and Prepare call the
+same assertRepository; root uses canonical repositoryIdentity path normalization.
+DryRun additionally refuses conflicting maintenance identity while remaining an
+inventory of the other blockers; proof.absent must still be checked. All mutating
+host gates, audit loads, prepared/start sidecars and online readiness use that same
+expected identity. There is no default to observed Git, historical HEAD or audit.
+Existing audits remain bound to their original approved version. The operator
+must pin the reviewed fix commit after committing; embedding that commit's own
+hash in its source would recreate the self-reference defect.
+
+### Real mutation boundary and read-only evidence
+
+**PREPARE FAILED BEFORE FIRST MUTATION.** The first persistent mutation would be
+acquireMaintenanceGate, after preflight, port reservation and fresh proof/evidence.
+The reported exception occurs at preflight's first host gate. The wrapper throws
+on that CLI exit before AutoPlan, Scheduled or canonical AutoLive reconciliation.
+
+Observed evidence matches the supplied pre-Prepare values:
+
+| Artifact | Read-only observation |
+| --- | --- |
+| recovery-post2c6-20260930-01.json and phase sidecars | absent; no recovery run audits found |
+| AutoLive maintenance gate | absent |
+| AutoLive | revision 26, enabled true, armed true; mtime 2026-09-28T22:06:06.459Z |
+| Authority | epoch 20; original lock remains for PID 50780, process absent |
+| AutoLive reconciliation | only historical PREPARED + COMPLETED pairs for epoch 13/PID 14284 and epoch 19/PID 30808; no epoch 20/PID 50780 audit |
+| Scheduled | journal absent; original version 1 lock present; no reconciliation/quarantine artifacts |
+| Schedule | version 2, revision 50; mtime 2026-09-28T22:05:21.095Z |
+| Ledger / ledger lock / bootstrap marker | all absent |
+| PROGRAM | generation 47; mtime 2026-09-28T22:16:42.166Z |
+| Maintenance record | original Head 44816ca167b1042c8670c169f401ae7e961727ae; mtime 2026-09-28T20:01:47.551Z |
+
+Observed SHA-256 values (pre-Prepare hashes were not provided; byte equality to
+that earlier snapshot cannot independently be claimed):
+
+- AutoLive: 64f68091f7db1f3346df3a6cf6d33d28581450d8c6709dd5bc20621d07c4754b
+- Authority: 039b74c57f2fbd105c65fe3c88af57871ec2e8fb469f7b6f975cb73dccd8334a
+- Authority lock: 0cac0ae826efb27c225f2571bb1d8f5886613ad1eb901916311f4202be0bd906
+- Scheduled lock: c3b791f5a249c2dab68ccc6178aa897cb562fb3d8415fba7a4a2c231fc35d110
+- Schedule: f06518291c5af07eb023712a6c713f4cdef148a3e4463cd3c342e4cd376761be
+- PROGRAM: dab83c76a69304a1a361f8e16e3f02d4d77a1d2a40e85814cde256913db7b2e5
+- Maintenance: 52fecb8d7c325dddea620cd1fd8128141178b6b379db739c56114c749d6b182e
+
+### Regression and retry
+
+The fixture uses historical maintenance HEAD 44816ca... and approved recovery
+HEAD b63c03d.... DryRun passes and Prepare reaches a throwing fixture port-reserve
+stub before any gate/write. The entire fixture tree, hashes and mtimes remain
+identical. Additional tests cover wrong branch/HEAD/root on both paths, maintenance
+repository mismatch, missing/malformed expected HEAD, hex normalization and audit
+version binding. The existing adoption test verifies byte-preserved maintenance
+and separately recorded recovery HEAD. No new regression performs reconciliation.
+
+The failed RunId `post2c6-20260930-01` is reusable: it has no audit, phase sidecar,
+reservation or reconciliation from the failed attempt. After review/commit and
+closing Codex, run the updated DryRun with that RunId and the literal approved fix
+commit SHA, verify proof.absent=true plus the full baseline, then Prepare with the
+same RunId and exact same ExpectedHead. The b63c03d... SHA is the investigation
+baseline, not the future fix commit. Never derive approval automatically from the
+current Git HEAD. No commit, push or real Prepare retry was performed here.
+
+Validation of this fix: focused recovery tooling **74 PASS / 0 FAIL**; broader
+provenance/reconciliation selection **91 PASS / 0 FAIL** (scheduled-execution-provenance,
+browser-execution-lifecycle including canonical AutoLive reconciliation,
+restart-reconciliation, durable-program-reconciliation). PowerShell AST and CLI
+JavaScript syntax: PASS. git diff --check: PASS. No full 1289-test rerun required.
+
+Changed files: RecoveryContract.js, RecoveryWorkflow.js, WindowsRecoveryHost.js,
+ControlledStart.js, tools/recovery-maintenance.mjs,
+tools/livezone-authority-maintenance.ps1, test/recovery-tooling.test.js and this
+runbook. Preexisting media/assets/playlist changes are untouched.
+
+**PREPARE GATE FIX READY FOR REVIEW**

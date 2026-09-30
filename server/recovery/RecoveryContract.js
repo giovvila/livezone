@@ -7,9 +7,18 @@ import {identityForScheduledEvent} from '../scheduler/ScheduledEventIdentity.js'
 import {validateLedgerSnapshot} from '../scheduler/ScheduledEntryLedgerContract.js';
 import {validateRecord,canonical} from '../program-output/DurableProgramContract.js';
 
-export const HEAD='06a0962e481c2f35a8c00b53a674a445383acb22';
 export const BRANCH='build/1003.9A1';
 export const fail=code=>{throw Object.assign(Error(code),{code});};
+// Explicit operator approval, never inferred from observed Git or maintenance history.
+export function recoveryIdentity(expectedHead){
+    if(typeof expectedHead!=='string'||!/^[a-f0-9]{40}$/i.test(expectedHead))fail('EXPLICIT_RECOVERY_HEAD_REQUIRED');
+    return Object.freeze({branch:BRANCH,head:expectedHead.toLowerCase()});
+}
+export function assertRepository(h,root,expected){
+    if(!expected||expected.branch!==BRANCH||!/^[a-f0-9]{40}$/.test(expected.head||''))fail('EXPLICIT_RECOVERY_HEAD_REQUIRED');
+    if(h.branch!==expected.branch||h.head!==expected.head||
+        typeof h.root!=='string'||!isAbsolute(h.root)||repositoryIdentity(h.root)!==repositoryIdentity(root))fail('REPOSITORY_BRANCH_HEAD_MISMATCH');
+}
 export const same=(a,b)=>canonical(a)===canonical(b);
 export function paths(root){
     root=resolve(root);const studio=join(root,'var/studio-state/state.json');

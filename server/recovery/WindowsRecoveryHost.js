@@ -5,7 +5,7 @@ import {readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {proveWindowsOffline} from '../autolive/ReconcileAuthorityLock.js';
 import {evaluateWindowsAuthorityCensus} from '../autolive/WindowsAuthorityProcessProof.js';
-import {HEAD,BRANCH,fail} from './RecoveryContract.js';
+import {assertRepository,fail} from './RecoveryContract.js';
 const execute=promisify(execFile);
 async function ps(script){
     const {stdout}=await execute('powershell.exe',['-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')],{windowsHide:true,timeout:20000,maxBuffer:4*1024*1024});
@@ -58,8 +58,8 @@ elseif((Get-ItemProperty -LiteralPath $key).PSObject.Properties['DelayedAutoStar
 '{"restored":true,"started":false}'`);
     }
 }
-export function assertHost(h,root,{online=false}={}){
-    if(h.branch!==BRANCH||h.head!==HEAD||h.root.replaceAll('\\','/').toLowerCase()!==root.replaceAll('\\','/').toLowerCase())fail('REPOSITORY_BRANCH_HEAD_MISMATCH');
+export function assertHost(h,root,{online=false,expected}={}){
+    assertRepository(h,root,expected);
     if(!h.administrator)fail('ADMINISTRATOR_REQUIRED');
     if(h.service?.Name!=='LivezoneNode'||h.service.State!=='Stopped'||h.service.StartMode!=='Disabled')fail('SERVICE_MUST_BE_STOPPED_DISABLED');
     if(h.media?.Name?.toLowerCase()!=='mediamtx'||!h.media.PathName)fail('MEDIAMTX_IDENTITY_REQUIRED');
