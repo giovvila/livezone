@@ -38,7 +38,8 @@ export default class ScheduledEntryLedgerRepository {
             if (inside(publicPath,directory)) throw Error('PRIVATE_SCHEDULED_ENTRY_PATH_REQUIRED');
             try { this.lock = await this.fs.open(this.path+'.lock','wx',0o600); }
             catch (error) { if (error.code === 'EEXIST') { this.status='CONFLICT'; return; } throw error; }
-            await this.lock.writeFile(JSON.stringify({version:1,pid:process.pid,processSession:randomUUID()}));
+            this.lockOwner=Object.freeze({version:1,pid:process.pid,processSession:randomUUID()});
+            await this.lock.writeFile(JSON.stringify(this.lockOwner));
             await this.lock.sync();
             try { this.snapshot = await this.readSnapshot(); }
             catch (error) {

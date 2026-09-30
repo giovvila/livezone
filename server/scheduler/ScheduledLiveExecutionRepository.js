@@ -3,7 +3,8 @@
     mkdir,
     unlink,
     realpath,
-    lstat
+    lstat,
+    readFile
 } from 'node:fs/promises';
 
 import {
@@ -17,15 +18,14 @@ import {
     dirname,
     resolve,
     relative,
-    isAbsolute
+    isAbsolute,
+    basename,
+    join
 } from 'node:path';
 
 import {randomUUID} from 'node:crypto';
-
-import {
-    scheduledLiveTransactionEnvelope,
-    validateScheduledLiveTransactionEnvelope
-} from './ScheduledLiveExecutionTransaction.js';
+import {digest, repositoryIdentity, validateLock, journalEnvelope, validateJournal, refuse}
+    from './ScheduledExecutionProvenance.js';
 
 const MAX_BYTES=256*1024;
 
@@ -46,6 +46,7 @@ export default class ScheduledLiveExecutionRepository {
     constructor({
         path,
         publicRoot=resolve('public'),
+        authority,
         hook=()=>{}
     }={}){
         if(
@@ -59,11 +60,24 @@ export default class ScheduledLiveExecutionRepository {
         this.path=resolve(path);
         this.publicRoot=resolve(publicRoot);
         this.hook=hook;
+        this.authority=authority;
 
         this.status='UNAVAILABLE';
         this.record=null;
         this.queue=Promise.resolve();
         this.closed=false;
+    }
+
+    assertAuthority(){
+        const a=this.authority;
+        if (!a || a.available!==true || a.closed || !isAbsolute(a.path || '') ||
+            !Number.isSafeInteger(a.authorityEpoch) || a.authorityEpoch<1 ||
+            typeof a.authorityProcessSession!=='string' || !/^[a-zA-Z0-9_-]{1,120}$/.test(a.authorityProcessSession))
+            refuse('SCHEDULED_AUTHORITY_UNAVAILABLE');
+        if (this.owner && (this.owner.authorityEpoch!==a.authorityEpoch ||
+            this.owner.authorityProcessSession!==a.authorityProcessSession ||
+            this.owner.authorityId!==repositoryIdentity(a.path)))
+            refuse('SCHEDULED_AUTHORITY_CHANGED');
     }
 
     async initialize(){
@@ -79,6 +93,9 @@ export default class ScheduledLiveExecutionRepository {
         let file;
 
         try{
+            await this.authority?.ready;
+            this.assertAuthority();
+            if(this.closed) return;
             await mkdir(
                 dirname(this.path),
                 {recursive:true}
@@ -94,20 +111,21 @@ export default class ScheduledLiveExecutionRepository {
             if(inside(publicPath,directory))
                 fail('PRIVATE_SCHEDULED_LIVE_PATH_REQUIRED');
 
+            this.repositoryId=repositoryIdentity(join(directory,basename(this.path)));
+
             this.lock=await open(
                 this.path+'.lock',
                 'wx',
                 0o600
             );
 
-            await this.lock.writeFile(
-                JSON.stringify({
-                    version:1,
-                    processSession:randomUUID()
-                })
-            );
-
-            await this.lock.sync();
+            this.assertAuthority();
+            this.owner={schemaVersion:2,repositoryId:this.repositoryId,
+                processSession:randomUUID(),processId:process.pid,
+                authorityEpoch:this.authority.authorityEpoch,
+                authorityProcessSession:this.authority.authorityProcessSession,
+                authorityId:repositoryIdentity(this.authority.path),
+                createdAt:new Date().toISOString(),initialJournalHash:null};
 
             try{
                 if((await lstat(this.path)).isSymbolicLink())
@@ -117,6 +135,7 @@ export default class ScheduledLiveExecutionRepository {
             }
             catch(error){
                 if(error.code==='ENOENT'){
+                    await this.installLock();
                     this.status='READY';
                     return;
                 }
@@ -151,20 +170,24 @@ export default class ScheduledLiveExecutionRepository {
             if(size>MAX_BYTES)
                 fail('SCHEDULED_LIVE_TRANSACTION_CORRUPT');
 
-            const envelope=
-                validateScheduledLiveTransactionEnvelope(
-                    JSON.parse(
-                        buffer
-                            .subarray(0,size)
-                            .toString('utf8')
-                    )
-                );
+            const bytes=buffer.subarray(0,size);
+            const journal=JSON.parse(bytes.toString('utf8'));
+            const envelope=validateJournal(journal,this.repositoryId);
+            const previous=journal.provenance;
+            if(previous.authorityId!==this.owner.authorityId ||
+                previous.authorityEpoch>this.owner.authorityEpoch ||
+                (previous.authorityEpoch===this.owner.authorityEpoch &&
+                 previous.authorityProcessSession!==this.owner.authorityProcessSession))
+                refuse('SCHEDULED_JOURNAL_AUTHORITY_MISMATCH');
+            this.owner.initialJournalHash=digest(bytes);
+            await this.installLock();
 
             this.record=envelope.record;
             this.status='READY';
         }
         catch(error){
             this.record=null;
+            this.error=error.code || error.message;
 
             this.status=
                 error.code==='EEXIST'
@@ -175,6 +198,15 @@ export default class ScheduledLiveExecutionRepository {
             if(file)
                 await file.close().catch(()=>{});
         }
+    }
+
+    async installLock(){
+        this.assertAuthority();
+        validateLock(this.owner,this.repositoryId);
+        this.lockBytes=JSON.stringify(this.owner);
+        await this.lock.writeFile(this.lockBytes);
+        await this.lock.sync();
+        this.assertAuthority();
     }
 
     write(record){
@@ -189,6 +221,7 @@ export default class ScheduledLiveExecutionRepository {
     }
 
     async writeOnce(record){
+        this.assertAuthority();
         if(
             this.closed ||
             this.status!=='READY' ||
@@ -198,7 +231,7 @@ export default class ScheduledLiveExecutionRepository {
         }
 
         const envelope=
-            scheduledLiveTransactionEnvelope(record);
+            journalEnvelope(record,this.owner);
 
         const bytes=Buffer.from(
             JSON.stringify(envelope)+'\n'
@@ -250,6 +283,10 @@ export default class ScheduledLiveExecutionRepository {
                 fail('SCHEDULED_LIVE_TRANSACTION_UNAVAILABLE');
 
             this.hook('before-replace');
+            this.assertAuthority();
+            if(await readFile(this.path+'.lock','utf8')!==this.lockBytes)
+                refuse('SCHEDULED_LOCK_CHANGED');
+            this.assertAuthority();
 
             replacing=true;
 
@@ -266,7 +303,7 @@ export default class ScheduledLiveExecutionRepository {
                 closeSync(fd);
             }
 
-            this.record=envelope.record;
+            this.record=envelope.transaction.record;
 
             this.hook('installed');
 
@@ -298,10 +335,10 @@ export default class ScheduledLiveExecutionRepository {
         if(this.lock){
             await this.lock.close();
             this.lock=null;
-
-            await unlink(
-                this.path+'.lock'
-            ).catch(()=>{});
+            // Never remove a replacement lock belonging to another session.
+            const bytes=await readFile(this.path+'.lock','utf8').catch(()=>null);
+            if(bytes===(this.lockBytes ?? ''))
+                await unlink(this.path+'.lock').catch(()=>{});
         }
     }
 }

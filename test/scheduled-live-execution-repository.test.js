@@ -11,17 +11,25 @@ import {
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 
-import Repository
+import {journalEnvelope} from '../server/scheduler/ScheduledExecutionProvenance.js';
+import BaseRepository
     from '../server/scheduler/ScheduledLiveExecutionRepository.js';
 
 import {
-    createScheduledLiveTransaction,
-    scheduledLiveTransactionEnvelope
+    createScheduledLiveTransaction
 } from '../server/scheduler/ScheduledLiveExecutionTransaction.js';
 
 import {
     createProgramOutputEnvelope
 } from '../public/js/program-output/ProgramOutputEnvelope.js';
+
+// Explicit fixture authority; production has no fallback identity.
+class Repository extends BaseRepository {
+    constructor(options) {
+        super({...options,authority:{available:true,path:options.path+'.authority',
+            authorityEpoch:1,authorityProcessSession:'fixture-authority'}});
+    }
+}
 
 function program(){
     const at='2026-09-25T06:00:00.000Z';
@@ -144,7 +152,7 @@ test('transaction persists atomically and hydrates after clean restart',async t=
 
     assert.deepEqual(
         disk,
-        scheduledLiveTransactionEnvelope(tx)
+        journalEnvelope(tx,first.owner)
     );
 
     await first.close();
@@ -217,7 +225,7 @@ test('tampered persisted transaction fails closed as CORRUPT',async t=>{
             await readFile(h.path,'utf8')
         );
 
-    disk.record.capturedProgram.snapshot.scene.name=
+    disk.transaction.record.capturedProgram.snapshot.scene.name=
         'TAMPERED';
 
     await writeFile(

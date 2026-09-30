@@ -196,6 +196,7 @@ export function createProgramOutputServer({
     const scheduledLiveExecutionRepository =
         new ScheduledLiveExecutionRepository({
             path:scheduledLiveExecutionPath,
+            authority:executionOwnership,
             publicRoot:PUBLIC_ROOT
         });
 

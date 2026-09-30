@@ -500,38 +500,42 @@ test('real server durably preserves captured PROGRAM through scheduled LIVE life
 
     assert.equal(
         journalDisk.schemaVersion,
-        1
+        2
     );
 
     assert.equal(
-        journalDisk.mode,
+        journalDisk.transaction.mode,
         'NON_EXECUTING_SCHEDULED_LIVE'
     );
 
     assert.equal(
-        journalDisk.record.eventId,
+        journalDisk.transaction.record.eventId,
         'scheduled-live-a'
     );
 
     assert.equal(
-        journalDisk.record.sourceId,
+        journalDisk.transaction.record.sourceId,
         'live-a'
     );
 
     assert.deepEqual(
-        journalDisk.record.capturedProgram,
+        journalDisk.transaction.record.capturedProgram,
         programBefore
     );
 
     assert.equal(
-        journalDisk.record.executionAllowed,
+        journalDisk.transaction.record.executionAllowed,
         false
     );
 
     assert.equal(
-        journalDisk.record.serverTake,
+        journalDisk.transaction.record.serverTake,
         false
     );
+
+    assert.equal(journalDisk.provenance.authorityEpoch,owner.executionOwnership.authorityEpoch);
+    assert.equal(journalDisk.provenance.authorityProcessSession,owner.executionOwnership.authorityProcessSession);
+    assert.equal(journalDisk.provenance.processSession,owner.scheduledLiveExecutionRepository.owner.processSession);
 
     assert.match(
         journalDisk.checksum,

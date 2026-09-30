@@ -24,7 +24,7 @@ export function classifyAuthorityProcess(row,{selfPid=process.pid}={}){
 export function evaluateWindowsAuthorityCensus(value,options={}){
  if(!Array.isArray(value?.services)||!Array.isArray(value?.nodes))return {absent:false,reason:'incomplete OS census'};
  const processes=value.nodes.map(row=>classifyAuthorityProcess(row,options));
- const serviceSafe=value.services.every(s=>s.State==='Stopped'&&s.StartMode==='Disabled');
+ const serviceSafe=value.services.length===1&&value.services.every(s=>s.State==='Stopped'&&s.StartMode==='Disabled');
  const absent=serviceSafe&&!processes.some(row=>row.blocks);
  return {absent,reason:!serviceSafe?'LivezoneNode must be stopped and maintenance-disabled':
   absent?'LIVEZONE absent; unrelated application entry points verified':'LIVEZONE or ambiguous authority process present',services:value.services,processes};
