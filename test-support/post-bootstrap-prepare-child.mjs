@@ -47,7 +47,7 @@ const w=new RecoveryWorkflow({root,runId:'fixture-run',host,expectedHead:head,
 assert.equal((await w.begin()).scheduled,'ABSENT');
 const auditHash=(await artifact(w.audit)).hash;
 // Cleanup also returns when work throws after the durable audit/adoption.
-w.hook=()=>{throw Error('FIXTURE_AFTER_ADOPTION');};
+w.hook=stage=>{if(stage==='adopted')throw Error('FIXTURE_AFTER_ADOPTION');};
 await assert.rejects(w.begin(),/FIXTURE_AFTER_ADOPTION/);
 w.hook=()=>{};
 // Same-HEAD begin retry preserves the durable audit and adopted maintenance.
@@ -55,7 +55,9 @@ await w.begin();assert.equal((await artifact(w.audit)).hash,auditHash);
 assert.deepEqual(await w.autoPlan(),{args:[]});
 await w.scheduled();assert.equal((await w.prepared()).prepared,true);
 assert.ok(await artifact(w.audit+'.prepared'));
-assert.deepEqual(await capture(p),before);
+const preparedEvidence=await capture(p);
+for(const key of Object.keys(before).filter(k=>!k.startsWith('migration')))assert.deepEqual(preparedEvidence[key],before[key]);
+assert.equal(preparedEvidence.migrationIntent.value.state,'INTENT');
 assert.equal(await artifact(w.audit+'.disarm'),null);
 assert.equal(await artifact(w.audit+'.start'),null);
 console.log('PREPARED_UNCHANGED');

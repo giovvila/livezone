@@ -36,6 +36,9 @@ import {
 } from './scheduler/ScheduledLiveProgramFactory.js';
 import ScheduledLiveExecutionRepository from './scheduler/ScheduledLiveExecutionRepository.js';
 import ScheduledLivePersistenceCoordinator from './scheduler/ScheduledLivePersistenceCoordinator.js';
+import {completedScheduledHistory,assertScheduledTerminalNamespace,journalMatchesLock}
+    from './scheduler/ScheduledExecutionProvenance.js';
+import {ordinary as ledgerOrdinary} from './scheduler/ScheduledEntryLedgerV2Protocol.js';
 import ScheduledEntryRuntime,{initializeEntryLedger} from './scheduler/ScheduledEntryRuntime.js';
 import EffectiveProgramOutput from "./program-output/EffectiveProgramOutput.js";
 import ControlEventFeed from "./program-output/ControlEventFeed.js";
@@ -895,9 +898,40 @@ if(
         effectiveOutput.close();
         offAutoLiveCatalog();offExecutionConfig();offScheduledLiveOwnership();scheduledEntry.close();scheduledLiveOwnership.close();scheduledLiveExecution.close();scheduledLivePersistence.close();
         programCommits.closed=true;
-        const drained = programReady.then(()=>scheduledEntry.idle()).then(()=>assetMutations.run(()=>{})).then(()=>Promise.all([scheduledEntryReady.then(ledger=>ledger.close()),Promise.resolve(liveAutomationReady).then(()=>liveAutomation.close()),scheduler.close(),autoLive.close(),executionOwnership.close(),scheduledLiveExecutionRepository.close()]));
+        const drained = programReady.then(()=>scheduledEntry.idle()).then(()=>assetMutations.run(()=>{})).then(async()=>{
+            const ledger=await scheduledEntryReady;
+            const independent=()=>Promise.all([Promise.resolve(liveAutomationReady).then(()=>liveAutomation.close()),scheduler.close(),autoLive.close()]);
+            if(ledger.protocolVersion===2){
+                // No ownership witness is released before native terminal
+                // durability. The ledger lock remains the final reservation.
+                if(ledger.lock&&ledger.status!=='READY')await ledger.finalize();
+                await scheduledLiveExecutionReady;
+                await scheduledLiveExecutionRepository.drainForShutdown();
+                const scheduledPath=scheduledLiveExecutionRepository.path;
+                await assertScheduledTerminalNamespace(scheduledPath);
+                const journal=await ledgerOrdinary(scheduledPath,{optional:true});
+                const scheduledLock=scheduledLiveExecutionRepository.lockBytes;
+                if(await ledgerOrdinary(scheduledPath+'.lock')!==scheduledLock)
+                    throw Object.assign(Error('LEDGER_V2_SCHEDULED_SHUTDOWN_CHANGED'),{code:'LEDGER_V2_SCHEDULED_SHUTDOWN_CHANGED'});
+                journalMatchesLock(journal,scheduledLiveExecutionRepository.owner);
+                completedScheduledHistory(journal,{scheduledPath,authorityPath:executionOwnership.path,ledgerLock:ledger.lockOwner});
+                if(journal!==null)await ledger.durability.syncFile(scheduledPath);
+                await ledger.finalize();
+                await assertScheduledTerminalNamespace(scheduledPath);
+                if(await ledgerOrdinary(scheduledPath,{optional:true})!==journal||
+                    await ledgerOrdinary(scheduledPath+'.lock')!==scheduledLock)
+                    throw Object.assign(Error('LEDGER_V2_SCHEDULED_SHUTDOWN_CHANGED'),{code:'LEDGER_V2_SCHEDULED_SHUTDOWN_CHANGED'});
+                await Promise.all([independent(),scheduledLiveExecutionRepository.close()]);
+                await executionOwnership.close();
+                await ledger.close();
+            }else await Promise.all([ledger.close(),independent(),executionOwnership.close(),scheduledLiveExecutionRepository.close()]);
+        });
+        // Attach rejection handling before HTTP close can finish. A failed
+        // terminal barrier keeps ownership witnesses and reaches shutdown's
+        // existing error/timeout contract instead of an unhandled rejection.
+        const outcome=drained.then(()=>null,error=>error);
         const callback = args[0];
-        return close(error => { void drained.then(() => callback?.(error)); });
+        return close(error => { void outcome.then(drainError => callback?.(drainError??error)); });
     };
     server.on("close", () => {
         scheduleRoutes.close();

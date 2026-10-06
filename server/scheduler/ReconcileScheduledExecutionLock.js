@@ -1,17 +1,16 @@
 // Module only: no CLI or real-runtime invocation. Proof injection is for fixtures.
-import {readFile, lstat, realpath, open, rename} from 'node:fs/promises';
+import {realpath, open, rename} from 'node:fs/promises';
 import {resolve, dirname, basename, join, isAbsolute} from 'node:path';
 import {createServer} from 'node:net';
 import {proveWindowsOffline} from '../autolive/ReconcileAuthorityLock.js';
 import {acquireMaintenanceGate} from '../autolive/AuthorityMaintenanceGate.js';
-import {digest, repositoryIdentity, validateLock, journalMatchesLock, refuse} from './ScheduledExecutionProvenance.js';
+import {repositoryIdentity, validateLock, journalMatchesLock, refuse} from './ScheduledExecutionProvenance.js';
+import {readEvidence} from '../recovery/PersistentEvidence.js';
 
+const capture=path=>readEvidence(path,{optional:true,maxBytes:1024*1024});
 async function ordinary(path) {
-    try {
-        const stat=await lstat(path);
-        if (!stat.isFile() || stat.isSymbolicLink() || stat.size>1024*1024) refuse('ORDINARY_EVIDENCE_REQUIRED');
-        return await readFile(path,'utf8');
-    } catch(error) { if(error.code==='ENOENT') return null; throw error; }
+    const evidence=await capture(path);
+    return evidence?.text??null;
 }
 async function exclusive(path,value) {
     const file=await open(path,'wx',0o600);
@@ -23,7 +22,6 @@ async function reservePort() {
     return ()=>new Promise(ok=>socket.close(ok));
 }
 const alive=pid=>{try {process.kill(pid,0);return true;} catch(error) {if(error.code==='ESRCH')return false;throw error;}};
-const sha=bytes=>bytes===null ? null : digest(bytes);
 
 export function classifyScheduledLock(lock,journalPresent,repositoryId) {
     const classification=validateLock(lock,repositoryId);
@@ -52,18 +50,20 @@ export async function reconcileScheduledExecutionLock({path,authorityPath,operat
     let releasePort;
     try {
         releasePort=await reserve();
-        const lockBytes=await ordinary(path+'.lock');
-        const archived=await ordinary(archive);
+        const lockEvidence=await capture(path+'.lock'),archiveEvidence=await capture(archive);
+        const lockBytes=lockEvidence?.text??null;
+        const archived=archiveEvidence?.text??null;
         if((lockBytes===null)===(archived===null)) refuse('LOCK_ARCHIVE_STATE_AMBIGUOUS');
         const bytes=lockBytes ?? archived;
         const lock=JSON.parse(bytes);
-        const journal=await ordinary(path);
-        const epochBytes=await ordinary(authorityPath);
-        const authorityLockBytes=await ordinary(authorityPath+'.lock');
+        const journalEvidence=await capture(path),epochEvidence=await capture(authorityPath),authorityLockEvidence=await capture(authorityPath+'.lock');
+        const journal=journalEvidence?.text??null;
+        const epochBytes=epochEvidence?.text??null;
+        const authorityLockBytes=authorityLockEvidence?.text??null;
         const classification=classifyScheduledLock(lock,journal!==null,repositoryId);
         if(classification==='LEGACY_JOURNAL_REVIEW_REQUIRED') refuse(classification);
-        const evidence={lockHash:digest(bytes),repositoryId,processSession:lock.processSession,
-            journalHash:sha(journal),authorityHash:sha(epochBytes),authorityLockHash:sha(authorityLockBytes)};
+        const evidence={lockHash:(lockEvidence??archiveEvidence).sha256,repositoryId,processSession:lock.processSession,
+            journalHash:journalEvidence?.sha256??null,authorityHash:epochEvidence?.sha256??null,authorityLockHash:authorityLockEvidence?.sha256??null};
         if(!expected || Object.keys(evidence).some(k=>expected[k]!==evidence[k])) refuse('EXPECTED_EVIDENCE_MISMATCH');
         if(epochBytes===null || !Number.isSafeInteger(JSON.parse(epochBytes).epoch) || JSON.parse(epochBytes).epoch<1)
             refuse('AUTHORITY_EVIDENCE_REQUIRED');
@@ -111,7 +111,7 @@ export async function reconcileScheduledExecutionLock({path,authorityPath,operat
             await ordinary(path)!==journal || await ordinary(authorityPath)!==epochBytes ||
             await ordinary(authorityPath+'.lock')!==authorityLockBytes) refuse('POST_ARCHIVE_EVIDENCE_CHANGED');
         const completion={state:'COMPLETED',operationId,archive,lockHash:evidence.lockHash,
-            auditHash:digest(await ordinary(audit)),reason:classification};
+            auditHash:(await capture(audit)).sha256,reason:classification};
         const completed=await ordinary(audit+'.completed');
         if(completed===null) await exclusive(audit+'.completed',completion);
         else if(JSON.stringify(JSON.parse(completed))!==JSON.stringify(completion)) refuse('COMPLETION_MISMATCH');

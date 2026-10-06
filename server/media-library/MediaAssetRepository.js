@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, unlink, stat, open, lstat } from "node:fs/promises";
+import {capturedEvidence} from '../recovery/PersistentEvidence.js';
 import { basename, extname, join, relative, resolve } from "node:path";
 
 const VERSION = 1;
@@ -31,7 +32,7 @@ export default class MediaAssetRepository {
     async initialize() {
         await Promise.all([mkdir(this.tempRoot, { recursive: true }), ...["video", "audio", "image"].map((kind) => mkdir(join(this.filesRoot, kind), { recursive: true }))]);
         try {
-            const parsed = JSON.parse(await readFile(this.manifestPath, "utf8"));
+            const parsed = capturedEvidence(await readFile(this.manifestPath),{json:true}).value;
             if (parsed?.version !== VERSION || !Array.isArray(parsed.assets)) throw this.error("MANIFEST_INVALID", "Media manifest is invalid.");
             for (const candidate of parsed.assets) {
                 const asset = this.validateAsset(candidate);
@@ -162,7 +163,7 @@ export default class MediaAssetRepository {
 
     async recoverDelete() {
         let journal;
-        try { journal = JSON.parse(await readFile(this.deleteJournalPath, 'utf8')); }
+        try { journal = capturedEvidence(await readFile(this.deleteJournalPath),{json:true}).value; }
         catch (error) { if (error.code === 'ENOENT') return;
             this.deleteRecoveryRequired = true;
             throw this.error('DELETE_RECOVERY_REQUIRED', 'Invalid deletion journal.'); }

@@ -1,5 +1,8 @@
 import {createHash} from 'node:crypto';
-import {resolve} from 'node:path';
+import {resolve,basename,dirname} from 'node:path';
+import {readdir} from 'node:fs/promises';
+import {capturedEvidence} from '../recovery/PersistentEvidence.js';
+import {namespaceKey,assertCanonicalNames} from '../recovery/RecoveryNamespace.js';
 import {scheduledLiveTransactionEnvelope, validateScheduledLiveTransactionEnvelope}
     from './ScheduledLiveExecutionTransaction.js';
 
@@ -59,15 +62,55 @@ export function journalMatchesLock(bytes, lock) {
         if (lock.initialJournalHash !== null) refuse('SCHEDULED_JOURNAL_DISAPPEARED');
         return;
     }
-    const journal=JSON.parse(bytes);
+    const evidence=capturedEvidence(Buffer.isBuffer(bytes)?bytes:Buffer.from(bytes),{json:true});
+    const journal=evidence.value;
     validateJournal(journal,lock.repositoryId);
     const p=journal.provenance;
     if (p.authorityId !== lock.authorityId) refuse('SCHEDULED_JOURNAL_AUTHORITY_MISMATCH');
     const current=p.processSession === lock.processSession &&
         p.authorityEpoch === lock.authorityEpoch &&
         p.authorityProcessSession === lock.authorityProcessSession;
-    const historical=digest(bytes) === lock.initialJournalHash &&
+    const historical=evidence.sha256 === lock.initialJournalHash &&
         (p.authorityEpoch < lock.authorityEpoch ||
          (p.authorityEpoch === lock.authorityEpoch && p.authorityProcessSession === lock.authorityProcessSession));
     if (!current && !historical) refuse('SCHEDULED_JOURNAL_PROVENANCE_MISMATCH');
+}
+
+// Ledger and Scheduled sessions are independent. Their common authority epoch
+// and session identify the runtime; capturedProgram is advisory D10 history,
+// not a final PROGRAM/RETURN receipt. Never infer completion from another state.
+export function completedScheduledHistory(bytes,{scheduledPath,authorityPath,ledgerLock}) {
+    if(bytes===null)return null;
+    const evidence=capturedEvidence(Buffer.isBuffer(bytes)?bytes:Buffer.from(bytes),{json:true});
+    const value=evidence.value,validated=validateJournal(value,repositoryIdentity(scheduledPath));
+    const p=value.provenance;
+    if(p.authorityId!==repositoryIdentity(authorityPath)||p.authorityEpoch!==ledgerLock.authorityEpoch||
+        p.authorityProcessSession!==ledgerLock.authorityProcessSession)
+        refuse('LEDGER_V2_TERMINAL_SCHEDULED_PROVENANCE_MISMATCH');
+    if(validated.record.state!=='COMPLETED')refuse('LEDGER_V2_TERMINAL_SCHEDULED_UNRESOLVED');
+    return {state:'COMPLETED',journalHash:evidence.sha256,processSession:p.processSession,
+        transactionId:p.transactionId};
+}
+
+export async function assertScheduledTerminalNamespace(path) {
+    const key=namespaceKey;
+    const prefix=key(basename(path)+'.');
+    const names=await readdir(dirname(path));
+    assertCanonicalNames(names,[basename(path),basename(path)+'.lock'],{code:'LEDGER_V2_TERMINAL_SCHEDULED_AMBIGUOUS'});
+    const seen=new Set();
+    for(const name of names) {
+        const normalized=key(name);
+        if(!normalized.startsWith(prefix))continue;
+        if(seen.has(normalized))refuse('LEDGER_V2_TERMINAL_SCHEDULED_AMBIGUOUS');
+        seen.add(normalized);
+        const tail=normalized.slice(prefix.length);
+        const originalTail=name.slice(prefix.length);
+        if(!name.startsWith(basename(path)+'.')||
+            !(originalTail==='lock'||/^lock\.quarantine-[a-zA-Z0-9_-]{1,80}$/.test(originalTail)||
+                /^reconciliation-[a-zA-Z0-9_-]{1,80}\.json(?:\.completed)?$/.test(originalTail)))
+            refuse('LEDGER_V2_TERMINAL_SCHEDULED_AMBIGUOUS');
+        if(tail==='lock'||/^lock\.quarantine-[a-zA-Z0-9_-]{1,80}$/.test(tail)||
+            /^reconciliation-[a-zA-Z0-9_-]{1,80}\.json(?:\.completed)?$/.test(tail))continue;
+        refuse('LEDGER_V2_TERMINAL_SCHEDULED_AMBIGUOUS');
+    }
 }

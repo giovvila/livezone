@@ -1,0 +1,81 @@
+Ledger-v2 terminal shutdown and orphan reconciliation (R17)
+
+Runtime shutdown freezes Scheduled admission, drains entry jobs and mutations,
+and calls ledger.finalize(). That method freezes ledger admission synchronously,
+drains its existing queue, verifies the writer snapshot and appends END using
+the approved WAL fsync plus native namespace barrier. It verifies the resulting
+closed WAL/snapshot and original lock before returning TERMINAL. Only then may
+the server close Scheduled repository ownership, then authority ownership.
+ledger.close() finally verifies the same terminal state and removes the ledger
+lock with the approved native abstraction. Independent non-owner resources may
+close together. The v1 lifecycle is unchanged.
+
+END's existing processSession and snapshotHash are sufficient when the entire
+checksum chain is parsed. The matching BEGIN already binds the complete lock:
+repositoryId, ledgerId, PID/processSession, authority epoch/session and initial
+generation/hash. INTENT/COMMIT validate all successor consumptions; END requires
+no pending transaction, binds the final snapshot and clears the owner. No new
+terminal field, second lineage or fabricated authority is introduced. A later
+writer may append a new BEGIN only through its own normal exclusive startup;
+the original closed writer cannot admit consume or append another transaction.
+
+END bytes alone do not establish that the producer's fsync or namespace ACK
+returned. New shutdown releases no ownership before those operations succeed.
+Offline terminal reconciliation independently establishes current native
+durability for the exact closed ledger, WAL and retained owner lock/archive,
+and repeats offline/process/evidence checks before archival. A complete END
+surviving an interruption before ACK can therefore be reconciled only after
+the present closed state is validated and those barriers succeed. Missing,
+torn or inconsistent evidence, or unavailable native capability, fails closed.
+This is not a claim to infer a historical ACK or physical power-loss completion.
+
+terminalShutdown(state, lock) is shared by writer and reconciler. It requires:
+last record END with recovered=false; no pending transaction or WAL owner;
+BASE DIRECTORY_SYNCED; the last BEGIN exactly equal to the original lock;
+matching ledgerId and canonical/current snapshots; END session and final hash
+matching that owner and snapshot. ParseWal validates schemas, checksum chain,
+repository and all earlier transactions. END produced by recovery is not a
+runtime terminal-shutdown witness.
+
+Orphan classifications:
+* Live/ambiguous PID: block regardless of END.
+* Dead owner with pending intent or unclosed BEGIN: existing conservative
+  recovery, with both canonical companion-owner witnesses still required.
+* Dead owner, exact writer terminal END and current durable evidence:
+  TERMINAL_SHUTDOWN_ORPHAN. Missing companion locks may be accepted only here.
+* Present authority/Scheduled lock: it must still match canonical provenance.
+* Missing Scheduled lock with retained Scheduled journal: separate Scheduled
+  review is required; the ledger owner session cannot substitute for its owner.
+* Missing, recovered, malformed, truncated or conflicting END: no inferred clean
+  runtime shutdown. A recovered END may still use the existing fully witnessed
+  recovery-retry contract.
+* Unavailable durability, changed evidence, wrong identity or changed terminal
+  ledger/WAL: block, without archival or runtime launch.
+
+Terminal recovery archives only the original ledger lock under the existing
+durable PREPARED/completion audit. It preserves ledger and WAL bytes/history;
+it does not append another END, capture events, fabricate authority, clear
+companion owners or run a service operation. Exact terminal retries pin both
+ledger and WAL hashes, not just a prefix. Other retained owners still require
+their own canonical reconciliation. Restore still requires all locks resolved,
+current authoritative state and valid recovery lineage. READY retry remains
+read-only; historical completion does not bypass current validation.
+
+Interruption boundaries:
+Before admission close / during drain / before END: full owner witnesses stay
+present; normal offline reconciliation remains necessary. During END write:
+torn bytes block; a complete parsed closed chain needs current native barriers.
+After END fsync but before namespace completion: owners remain present; current
+durability must be established, never inferred from fsync alone. After terminal
+barrier: terminal ledger lock stays reserved. Before/after Scheduled release:
+any retained compatible witnesses are validated. Before/after authority release:
+same terminal proof applies, including the original R16 missing-lock state.
+Before ledger-lock release: audited terminal orphan reconciliation. After native
+lock release: closed WAL permits normal exclusive startup; no orphan adoption.
+
+A failed finalization propagates through server.close's callback and keeps
+Scheduled/authority witnesses. The existing CLI shutdown error/timeout policy
+exits fail-closed. No unresolved ledger is silently finalized or rolled back.
+
+This applies only to v2. LEGACY_LEDGER_LOCK_UNVERIFIABLE is unchanged. No real
+v1 lock, service, runtime or NEW EXECUTION ERA action is authorized by R17.

@@ -1,0 +1,100 @@
+R18 — terminal Ledger-v2 with retained COMPLETED Scheduled history
+
+Scope: offline ownership cleanup only. No execution, capture, consumption,
+PROGRAM mutation, authority synthesis, v1 recovery, or helper trust redesign.
+
+Scheduled lifecycle
+The outer journal is schemaVersion 2, checksummed over canonical content, with
+repositoryId, independent Scheduled processSession, authorityEpoch/session,
+authorityId and transactionId. The inner schemaVersion 1 envelope is explicitly
+NON_EXECUTING_SCHEDULED_LIVE and checksummed independently. Its immutable capture
+contains event/source, capture time/manual revision and capturedProgram. States
+are CAPTURED, PREROLL, LIVE, POSTROLL, RETURN_PENDING, COMPLETED, ABORTED and
+RECOVERY_BLOCKED. The latter three are terminal for transaction transitions.
+Only COMPLETED is admitted as clean retained history by the missing-lock rule.
+
+complete transitions RETURN_PENDING to COMPLETED with SEQUENCE_COMPLETED;
+executionAllowed/serverTake remain false. The coordinator accepts execution
+only for the exact currently owned LIVE/POSTROLL transaction, under the shared
+mutation serializer and repeated ownership fences. Terminal hydration is
+diagnostic and cannot replay a command. Runtime D10 release does not invent a
+durable COMPLETED or RETURN_PENDING record. Existing terminal tests explicitly
+preserve the latest black/live/manual PROGRAM at release/restart.
+
+COMPLETED is not a receipt for a successful RETURN, a final PROGRAM generation,
+or a replayable TAKE/BLACK/RETURN. It proves a valid closed non-executing journal
+record. It does not contain a per-phase WAL or final commit receipt. The record
+is deliberately retained after clean repository close; close drains queued
+writes, verifies its original lock bytes and removes the Scheduled lock.
+The ordinary writer fsyncs staging, renames, then fsyncs the canonical journal;
+this historical Node path has no approved native directory ACK. R18 establishes
+current native file/namespace durability before releasing shutdown ownership
+and again in offline reconciliation, without inferring a historical ACK.
+
+Strict correlation
+First require the entire R17 terminal Ledger-v2 proof: valid canonical snapshot
+and chained WAL, exact last BEGIN == retained ledger lock, final non-recovery
+END, resolved transactions, ledger identity/session/generation/hash, dead owner,
+canonical offline proof, maintenance/port reservations and native capability.
+For a missing Scheduled lock and retained journal, validate both complete journal
+schemas/checksums and transactionId derivation; require COMPLETED; require its
+repositoryId == canonical Scheduled repository and authorityId == canonical
+authority repository; require authorityEpoch/session == the ledger BEGIN/lock.
+No filename is accepted as provenance. Ledger and Scheduled processSession are
+different independent identities; equality would be incorrect. The shared
+authority identifies the runtime. An old/foreign epoch or session is rejected.
+No absent Scheduled lock or owner is reconstructed from the ledger session.
+The journal does not encode a Ledger entryKey, executable identity, consumption
+or final PROGRAM receipt. Adding one retrospectively would fabricate evidence.
+
+PROGRAM relation
+D10 does not impose capturedProgram == current PROGRAM, publisher equality, or
+captured revision == durable PROGRAM generation. Those represent independent
+captures/publishers/generations. A later manual or black/live PROGRAM is allowed.
+Validate the embedded captured envelope as part of full journal validation;
+reject contradictory/corrupt embedded content or invalid publisher data. Do not
+invent a final-outcome check on current PROGRAM. Cleanup preserves PROGRAM bytes
+and executes no transition. Restore separately validates its full authoritative
+current-state/recovery-lineage contract, irrespective of terminal history.
+
+Classifications
+A. Terminal ledger, no Scheduled journal/lock: R17 TERMINAL_SHUTDOWN_ORPHAN.
+B. Terminal ledger, exact valid COMPLETED journal, no Scheduled lock:
+   TERMINAL_LEDGER_WITH_COMPLETED_SCHEDULED_HISTORY.
+C. Missing lock with nonterminal journal: reject; do not borrow ledger ownership.
+   ABORTED/RECOVERY_BLOCKED also remain outside the clean COMPLETED exception.
+D/E. Corrupt journal or foreign provenance: reject.
+F. Retained Scheduled lock: validate its complete original ownership/journal
+   witness under existing rules; ledger cleanup never removes that other lock.
+   Normal Scheduled/authority reconciliation remains an independent obligation.
+G. Unexpected sibling journal/staging evidence: reject. Only canonical lock and
+   recognized Scheduled audit/archive namespaces are permitted next to history.
+H. Journal/ledger/WAL/provenance or namespace changed during recovery: reject.
+   A post-archive failure leaves conservative audit/archive, no completion.
+
+Shutdown contract
+Freeze runtime admission, capture, execution and persistence; drain entry jobs
+and shared PROGRAM mutations. Freeze Scheduled repository write admission and
+drain already admitted writes. Validate original lock, journal/history and
+namespace, and native-sync the retained journal. An unresolved Scheduled journal
+fails here, retaining authority/Scheduled/ledger witnesses for normal recovery;
+no automatic completion is fabricated. Finalize ledger through durable END.
+Recheck exact journal/lock/namespace. Release Scheduled ownership; then authority;
+then the ledger reservation. No new Scheduled write or ledger transaction may
+start after the corresponding admission freeze.
+
+Reachable subsets: before the terminal barrier all witnesses remain. After
+durable END, all remain; after Scheduled release ledger+authority remain; after
+authority release ledger alone remains; after ledger release no orphan remains.
+For COMPLETED history all these terminal subsets have the canonical cleanup
+path. Retained compatible witnesses are verified and left for their own recovery.
+An unsafe unresolved/corrupt/history-race case never gets clean classification.
+
+Offline cleanup native-syncs exact ledger/WAL/retained lock or audit archive and
+the retained COMPLETED journal, pins evidence hashes, repeatedly proves offline
+and dead owner, checks namespace/evidence before mutation and after archival,
+and archives only the ledger lock under PREPARED/COMPLETED audit. Ledger/WAL,
+journal, PROGRAM and companion ownership are preserved. Retry must keep the
+exact terminal ledger/WAL/journal hashes; prefix adoption is insufficient.
+
+No v1 lock gains recoverability: LEGACY_LEDGER_LOCK_UNVERIFIABLE is unchanged.

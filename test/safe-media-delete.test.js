@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,readFile,writeFile,rm,readdir,stat} from 'node:fs/promises';
-import {join} from 'node:path';
+import {join,relative,isAbsolute} from 'node:path';
 import {tmpdir} from 'node:os';
 import {JSDOM} from 'jsdom';
 import MediaAssetRepository from '../server/media-library/MediaAssetRepository.js';
@@ -11,7 +11,16 @@ import OperatorAuth from '../server/auth/OperatorAuth.js';
 import MediaLibraryUI from '../public/js/ui/MediaLibraryUI.js';
 const id='asset-00000000-0000-4000-8000-000000000001',asset={id,url:'/media-library/files/image/00000000-0000-4000-8000-000000000001.png'};
 const fixtures=[['png','image/png',Buffer.from([137,80,78,71,13,10,26,10,0])],['jpg','image/jpeg',Buffer.from([255,216,255,224,0,0])],['mp4','video/mp4',Buffer.from([0,0,0,0,102,116,121,112,105,115,111,109])],['mp3','audio/mpeg',Buffer.from('ID3audio')]];
-async function repository(t,options={}){const root=await mkdtemp(join(tmpdir(),'lz-delete-'));t.after(()=>rm(root,{recursive:true,force:true}));const repo=new MediaAssetRepository({root,...options});await repo.initialize();return {root,repo,async upload(fixture=fixtures[0]){const path=join(repo.tempRoot,'test-upload');await writeFile(path,fixture[2]);return repo.importTempFile({tempPath:path,originalName:'test.'+fixture[0],mimeType:fixture[1],size:fixture[2].length});}};}
+async function repository(t,options={}){
+ const root=await mkdtemp(join(tmpdir(),'lz-delete-')),servers=[];
+ t.after(async()=>{
+  for(const server of servers)await new Promise((resolve,reject)=>{server.closeAllConnections();server.close(error=>error?reject(error):resolve());});
+  const rel=relative(tmpdir(),root);assert.ok(rel.startsWith('lz-delete-')&&!rel.startsWith('..')&&!isAbsolute(rel));
+  await rm(root,{recursive:true,force:true});
+ });
+ const repo=new MediaAssetRepository({root,...options});await repo.initialize();
+ return {root,repo,servers,async upload(fixture=fixtures[0]){const path=join(repo.tempRoot,'test-upload');await writeFile(path,fixture[2]);return repo.importTempFile({tempPath:path,originalName:'test.'+fixture[0],mimeType:fixture[1],size:fixture[2].length});}};
+}
 for(const fixture of fixtures)test('complete unused audit permits '+fixture[0]+' removal of only owned file and metadata',async t=>{
  const h=await repository(t),a=await h.upload(fixture);await writeFile(join(h.root,'unrelated.txt'),'retain');const audit=new MediaReferenceAudit({inventories:()=>[{name:'Complete isolated fixture',complete:true,data:[]} ]});assert.equal((await audit.inspect(a)).eligible,true);
  await h.repo.delete(a.id,{isReferenced:async value=>!(await audit.inspect(value)).eligible});assert.equal(h.repo.get(a.id),null);assert.deepEqual(JSON.parse(await readFile(h.repo.manifestPath)).assets,[]);await assert.rejects(stat(h.repo.safeFilePath(a.kind,a.storedName)),{code:'ENOENT'});assert.equal(await readFile(join(h.root,'unrelated.txt'),'utf8'),'retain');assert.deepEqual(await readdir(h.repo.tempRoot),[]);
@@ -50,7 +59,7 @@ for(const failure of ['rename','metadata','unlink'])test(failure+' failure prese
 });
 test('link/junction in managed delete path is rejected',async t=>{const h=await repository(t),a=await h.upload();h.repo.deleteFs.lstat=async()=>({isSymbolicLink:()=>true});await assert.rejects(h.repo.delete(a.id,{isReferenced:()=>false}),{code:'PATH_INVALID'});assert.ok(h.repo.get(a.id));});
 async function serverHarness(t,{protectedApi=false}={}){
- const h=await repository(t);const owner=createProgramOutputServer({publisherToken:'test-safe-media-delete',mediaAssetRepository:h.repo,schedulePath:join(h.root,'schedule.json'),studioStatePath:join(h.root,'state.json'),operatorAuth:new OperatorAuth(protectedApi?{username:'operator',password:'test-only-password'}:{disabled:true})});await new Promise(r=>owner.server.listen(0,'127.0.0.1',r));await owner.scheduler.ready;t.after(()=>new Promise(r=>owner.server.close(r)));const origin='http://127.0.0.1:'+owner.server.address().port;return {...h,owner,origin};
+ const h=await repository(t);const owner=createProgramOutputServer({publisherToken:'test-safe-media-delete',mediaAssetRepository:h.repo,schedulePath:join(h.root,'schedule.json'),studioStatePath:join(h.root,'state.json'),operatorAuth:new OperatorAuth(protectedApi?{username:'operator',password:'test-only-password'}:{disabled:true})});await new Promise(r=>owner.server.listen(0,'127.0.0.1',r));h.servers.push(owner.server);await owner.scheduler.ready;const origin='http://127.0.0.1:'+owner.server.address().port;return {...h,owner,origin};
 }
 test('production backend rejects deletion when browser catalog/Preview inventory is incomplete',async t=>{
  const h=await serverHarness(t),a=await h.upload();const response=await fetch(h.origin+'/api/media-library/assets/'+a.id+'/references');assert.equal(response.status,200);const {audit}=await response.json();assert.equal(audit.eligible,false);assert.ok(audit.unavailable.includes('CLIENT_CENSUS_RECONNECT_REQUIRED'));

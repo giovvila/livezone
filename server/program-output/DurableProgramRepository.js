@@ -1,3 +1,4 @@
+import {capturedEvidence} from '../recovery/PersistentEvidence.js';
 import {open,mkdir,unlink} from 'node:fs/promises';
 import {renameSync,openSync,fsyncSync,closeSync} from 'node:fs';
 import {dirname} from 'node:path';
@@ -15,7 +16,7 @@ export default class DurableProgramRepository {
    const bytes=Buffer.alloc(MAX_DURABLE_BYTES+1);let size=0;
    while(size<bytes.length){const r=await file.read(bytes,size,bytes.length-size,null);if(!r.bytesRead)break;size+=r.bytesRead;}
    if(size>MAX_DURABLE_BYTES)throw Error('DURABLE_CORRUPT');
-   this.record=validateRecord(JSON.parse(bytes.subarray(0,size).toString('utf8')));this.status=this.record.programState;
+   this.record=validateRecord(capturedEvidence(bytes.subarray(0,size),{json:true}).value);this.status=this.record.programState;
   }catch(error){this.record=null;this.status=error.code==='ENOENT'||['EACCES','EPERM','EIO'].includes(error.code)?'UNAVAILABLE':'CORRUPT';this.error=error.code==='ENOENT'?'DURABLE_MISSING':'DURABLE_READ_FAILED';}
   finally{if(file)await file.close().catch(()=>{});}return this.record;
  }

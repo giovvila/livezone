@@ -16,7 +16,8 @@ import {createProgramOutputServer} from '../server/program-output-server.js';
 import ScheduleStore from '../server/scheduler/ScheduleStore.js';
 import ScheduledRepository from '../server/scheduler/ScheduledLiveExecutionRepository.js';
 import {initializeEntryLedger} from '../server/scheduler/ScheduledEntryRuntime.js';
-import {ledgerSnapshot} from '../server/scheduler/ScheduledEntryLedgerContract.js';
+import {ledgerSnapshot,entryConsumption} from '../server/scheduler/ScheduledEntryLedgerContract.js';
+import {identity as migrationIdentity} from '../test-support/CleanLedgerMigrationFixture.mjs';
 import {evaluateWindowsAuthorityCensus} from '../server/autolive/WindowsAuthorityProcessProof.js';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
@@ -75,11 +76,15 @@ test('post-bootstrap Prepare returns PREPARED and exits despite persistent TCP p
     const before=await capture(h.p);
     const child=fileURLToPath(new URL('../test-support/post-bootstrap-prepare-child.mjs',import.meta.url));
     let result;
-    try{result=await promisify(execFile)(process.execPath,[child,h.root,HEAD],{timeout:5000,windowsHide:true});}
+    // Repeated Prepare now performs native preflight and final evidence fences.
+    // Keep the natural-exit/socket-leak proof bounded by the native child budget.
+    try{result=await promisify(execFile)(process.execPath,[child,h.root,HEAD],{timeout:90000,windowsHide:true});}
     catch(error){assert.fail('Fixture did not complete/exit: '+error.message+'\n'+error.stdout+'\n'+error.stderr);}
     assert.match(result.stdout,/AUDIT_DURABLE_ADOPTED/);assert.match(result.stdout,/RELEASE_RETURN/);
     assert.match(result.stdout,/PREPARED_UNCHANGED/);assert.equal(result.stderr,'');
-    assert.deepEqual(await capture(h.p),before);assert.ok(await artifact(h.w.audit+'.prepared'));
+    const preparedEvidence=await capture(h.p);
+    for(const key of Object.keys(before).filter(k=>!k.startsWith('migration')))assert.deepEqual(preparedEvidence[key],before[key]);
+    assert.equal(preparedEvidence.migrationIntent.value.state,'INTENT');assert.ok(await artifact(h.w.audit+'.prepared'));
 });
 
 test('DryRun inventory is zero mutation, including timestamps and no port reservation',async t=>{
@@ -154,12 +159,17 @@ test('existing valid ledger never requests bootstrap and retains consumption kno
     const h=await fixture(t);await save(h.p.ledger,ledgerSnapshot());await save(h.p.marker,{version:1,authorityEpoch:19});
     assert.equal(bootstrapPlan(await capture(h.p),true),false);
 });
-test('start authorization and bootstrap are distinct; reservation cannot be reused',async t=>{
+test('start authorization and bootstrap remain distinct on validated reservation reuse',async t=>{
     const h=await fixture(t);await h.prepare();await h.disarm();
     await assert.rejects(h.w.reserveStart(),/EXPLICIT_START/);
     await assert.rejects(h.w.reserveStart({authorizeStart:true}),/EXPLICIT_BOOTSTRAP/);
     const start=await h.w.reserveStart({authorizeStart:true,authorizeBootstrap:true});assert.equal(start.bootstrap,true);
-    await assert.rejects(h.w.reserveStart({authorizeStart:true,authorizeBootstrap:true}),{code:'EEXIST'});
+    const before=await tree(h.root);
+    await assert.rejects(h.w.reserveStart({authorizeBootstrap:true}),/EXPLICIT_START/);
+    await assert.rejects(h.w.reserveStart({authorizeStart:true}),/EXPLICIT_BOOTSTRAP/);
+    assert.deepEqual(await h.w.reserveStart({authorizeStart:true,authorizeBootstrap:true}),start);
+    assert.deepEqual(await tree(h.root),before);
+    assert.equal(h.owners.length,0);
 });
 test('canonical ScheduleStore v2/50 -> v3/51 observation verifies EXCLUDED and FUTURE without eventId special cases',async t=>{
     const h=await fixture(t);const before=(await artifact(h.p.schedule)).value;
@@ -259,8 +269,53 @@ test('next controlled startup uses existing ledger without bootstrap permission;
     const run=await next.load();await next.disarm({authorize:true,expectedRevision:run.before.auto.value.revision,expectedHash:run.before.auto.hash});
     let permission;
     const second=await controlledStart({workflow:next,authorizeStart:true,launch:options=>{permission=options.scheduledEntryLedgerBootstrap;return h.launch(options);}});
-    assert.equal(permission,false);assert.equal(second.result.epoch,22);assert.equal((await artifact(h.p.ledger)).hash,ledger.hash);assert.equal((await artifact(h.p.marker)).hash,marker.hash);
+    assert.equal(permission,false);assert.equal(second.result.epoch,22);
+    const migrated=await artifact(h.p.ledger);assert.deepEqual(migrated.value.snapshot,ledger.value);
+    assert.equal(migrated.value.schemaVersion,2);assert.equal((await artifact(h.p.marker)).hash,marker.hash);
     await new Promise(done=>second.owner.server.close(()=>done()));h.setOffline();await next.restore();assert.equal(h.service.StartMode,'Auto');
+});
+test('controlled clean history migration is audited before launch without bootstrap permission',async t=>{
+    const h=await fixture(t,{legacy:false});
+    const snapshot=ledgerSnapshot({generation:3,entries:[0,1,2].map(n=>entryConsumption(migrationIdentity(n),
+        {authorityEpoch:20,authorityProcessSession:'old-history',consumedAt:'2026-10-02T12:01:00.000Z'}))});
+    await save(h.p.ledger,snapshot);await save(h.p.marker,{version:1,authorityEpoch:20});
+    await h.prepare();assert.equal((await h.w.migration.inspect()).migrationState,'INTENT_DURABLE');
+    assert.equal((await artifact(h.p.ledger)).value.schemaVersion,1);await h.disarm();
+    await assert.rejects(h.w.reserveStart({authorizeStart:true,authorizeBootstrap:true}),/BOOTSTRAP_FORBIDDEN/);
+    const first=await h.w.reserveStart({authorizeStart:true}),retry=await h.w.reserveStart({authorizeStart:true});
+    assert.deepEqual(retry,first);assert.equal(first.bootstrap,false);assert.equal(first.ledgerProtocolVersion,2);
+    const started=await controlledStart({workflow:h.w,authorizeStart:true,launch:options=>{
+        assert.equal(options.scheduledEntryLedgerOptions.protocolVersion,2);
+        assert.equal(options.scheduledEntryLedgerBootstrap,false);return h.launch(options);
+    }});
+    assert.equal(started.result.ready,true);assert.deepEqual(started.owner.scheduledEntry.ledger.snapshot,snapshot);
+    assert.equal((await artifact(h.w.audit+'.ready')).value.migrationTransactionId,first.migrationTransactionId);
+    await new Promise(done=>started.owner.server.close(()=>done()));h.setOffline();
+    const next=new RecoveryWorkflow({root:h.root,runId:'migrated-restart',host:h.host,expectedHead:HEAD});
+    const before=await artifact(h.p.migrationCompleted);await next.begin();await next.prepared();
+    assert.equal((await artifact(h.p.migrationCompleted)).hash,before.hash);
+});
+test('Prepare never authorizes the real orphan-v1-lock shape in TEMP',async t=>{
+    const h=await fixture(t);await save(h.p.ledger,ledgerSnapshot());await save(h.p.marker,{version:1,authorityEpoch:20});
+    await save(h.p.ledgerLock,{version:1,pid:999999,processSession:'orphan-v1'});
+    const before=await tree(h.root);const dry=await h.w.inspect();
+    assert.equal(dry.blockingReason,'LEGACY_LEDGER_LOCK_UNVERIFIABLE');
+    await assert.rejects(h.w.begin({authorizeLegacy:true}),{code:'LEGACY_LEDGER_LOCK_UNVERIFIABLE'});
+    assert.deepEqual(await tree(h.root),before);
+});
+test('operator Prepare and Start resume installed v2 after a migration interruption without rollback',async t=>{
+    const h=await fixture(t,{legacy:false});
+    const snapshot=ledgerSnapshot({generation:2,entries:[0,1].map(n=>entryConsumption(migrationIdentity(n),
+        {authorityEpoch:20,authorityProcessSession:'original-history',consumedAt:'2026-10-02T12:01:00.000Z'}))});
+    await save(h.p.ledger,snapshot);await save(h.p.marker,{version:1,authorityEpoch:20});await h.prepare();await h.disarm();
+    let trip=true;h.w.hook=stage=>{if(stage==='migration-snapshot-installed'&&trip){trip=false;throw Error('MIGRATION_INTERRUPTED');}};
+    await assert.rejects(h.w.reserveStart({authorizeStart:true}),/MIGRATION_INTERRUPTED/);
+    assert.equal((await h.w.inspect()).ledgerMode,'V2_PENDING');assert.equal((await artifact(h.p.ledger)).value.schemaVersion,2);
+    assert.equal(await artifact(h.w.audit+'.start'),null);await assert.rejects(h.w.restore(),/MIGRATION_COMPLETION_REQUIRED/);
+    const prepared=await h.w.begin();assert.equal(prepared.migrationResumable,true);await h.w.prepared();
+    const started=await controlledStart({workflow:h.w,authorizeStart:true,launch:h.launch});
+    assert.equal(started.result.ready,true);assert.deepEqual(started.owner.scheduledEntry.ledger.snapshot,snapshot);
+    await new Promise(done=>started.owner.server.close(()=>done()));h.setOffline();
 });
 test('controlled startup refuses an unrelated pending media delete recovery',async t=>{
     const h=await fixture(t);await h.prepare();await h.disarm();await mkdir(h.p.mediaRoot,{recursive:true});await save(h.p.mediaDelete,{pending:true});
@@ -326,4 +381,40 @@ for(const status of ['VERIFIED','UNVERIFIED'])test('DryRun and Prepare share med
         await assert.rejects(h.w.begin({authorizeLegacy:true}),/FIXTURE_PRE_MUTATION_BOUNDARY/);
     }
     assert.deepEqual(await tree(h.root),before);
+});
+
+for(const content of ['empty','crawl','sponsor'])test('R14 controlled empty-live v2 reaches READY without schedule mutation: '+content,async t=>{
+    const h=await fixture(t);
+    const events=content==='empty'?[]:[{...event,id:'overlay',type:'overlay.'+content,
+        payload:content==='crawl'?{text:'News',position:'bottom',direction:'rtl',speed:'medium',repeat:'continuous',styleId:'broadcast-default',background:true}:
+            {assetId:'logo',layout:'CORNER',position:'top-left',sizePercent:10,opacity:1}}];
+    await save(h.p.schedule,{version:2,revision:50,events,programPlan:{version:1,timezone:'Europe/Rome',items:[]}});
+    const bytes=await readFile(h.p.schedule);
+    await h.prepare();await h.disarm();
+    const {result,owner}=await controlledStart({workflow:h.w,authorizeStart:true,authorizeBootstrap:true,launch:h.launch});
+    assert.equal(result.ready,true);assert.ok(await artifact(h.w.audit+'.ready'));
+    assert.deepEqual(await readFile(h.p.schedule),bytes);
+    assert.equal(owner.scheduler.store.getSnapshot().version,2);
+});
+
+test('R14 exact R11-BIS empty-live v2 with clean ledger v1 migration reaches READY',async t=>{
+    const h=await fixture(t,{legacy:false});
+    await save(h.p.schedule,{version:2,revision:50,events:[],programPlan:{version:1,timezone:'Europe/Rome',items:[]}});
+    await save(h.p.ledger,ledgerSnapshot());await save(h.p.marker,{version:1,authorityEpoch:20});
+    const bytes=await readFile(h.p.schedule);
+    await h.prepare();await h.disarm();
+    let started;
+    try{started=await controlledStart({workflow:h.w,authorizeStart:true,launch:h.launch});}
+    catch(error){
+        assert.equal(h.owners.length,1,'the RED probe reached runtime launch');
+        assert.equal(await artifact(h.w.audit+'.ready'),null,'failed readiness must not persist READY');
+        throw error;
+    }
+    const {result,owner}=started;
+    assert.equal(result.ready,true);assert.ok(await artifact(h.w.audit+'.ready'));
+    assert.equal((await artifact(h.p.ledger)).value.schemaVersion,2);
+    assert.deepEqual(await readFile(h.p.schedule),bytes);
+    await new Promise(done=>owner.server.close(()=>done()));h.setOffline();
+    assert.deepEqual(await h.w.restore(),{restored:true,started:false});
+    assert.deepEqual(await readFile(h.p.schedule),bytes);
 });

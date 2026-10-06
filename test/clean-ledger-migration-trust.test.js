@@ -1,0 +1,31 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,mkdir,copyFile,readFile,writeFile,rm,open} from 'node:fs/promises';
+import {join,relative,resolve,isAbsolute} from 'node:path';
+import {tmpdir} from 'node:os';
+import {pathToFileURL} from 'node:url';
+import {helperPath,gatePath} from '../server/scheduler/WindowsLedgerDurability.js';
+import {seedMigration} from '../test-support/CleanLedgerMigrationFixture.mjs';
+import {migrationPath} from '../server/recovery/CleanLedgerV1Migration.js';
+const windows={skip:process.platform!=='win32',timeout:180000};
+for(const failure of ['missing-helper','corrupt-gate','helper-after-intent'])test('migration real TEMP deployment trust failure: '+failure,windows,async t=>{
+    const root=await mkdtemp(join(tmpdir(),'lz-r8-helper-'));
+    t.after(async()=>{const rel=relative(resolve(tmpdir()),root);assert.ok(rel.startsWith('lz-r8-helper-')&&!rel.startsWith('..')&&!isAbsolute(rel));await rm(root,{recursive:true,force:true});});
+    const moduleDir=join(root,'deployment/server/scheduler'),generated=join(root,'deployment/tools/native/windows-ledger-durability/generated');
+    await mkdir(moduleDir,{recursive:true});await mkdir(generated,{recursive:true});
+    const modulePath=join(moduleDir,'WindowsLedgerDurability.mjs'),image=join(generated,'windows-ledger-durability.exe'),gate=join(generated,'LedgerExecutionGate.dll');
+    await writeFile(modulePath,await readFile(new URL('../server/scheduler/WindowsLedgerDurability.js',import.meta.url)));
+    await copyFile(helperPath,image);await copyFile(gatePath,gate);
+    const {windowsLedgerDurability:native}=await import(pathToFileURL(modulePath));
+    const durability={sync:p=>native.syncDirectory(p),replace:(a,b)=>native.replace(a,b),
+        syncFile:async p=>{const f=await open(p,'r+');try{await f.sync();}finally{await f.close();}native.syncDirectory(p);}};
+    const {migration:m}=await seedMigration(root,{native,durability});const original=await readFile(m.path,'utf8');
+    if(failure==='missing-helper')await rm(image);
+    if(failure==='corrupt-gate')await writeFile(gate,'untrusted assembly');
+    if(failure==='helper-after-intent')m.hook=async stage=>{if(stage==='after-intent')await writeFile(image,'untrusted executable');};
+    await assert.rejects(m.start(),{code:'LEDGER_V2_NAMESPACE_DURABILITY_UNPROVEN'});
+    assert.equal(await readFile(m.path,'utf8'),original);
+    if(failure==='helper-after-intent')assert.ok(await readFile(migrationPath(m.path,'intent')));
+    else await assert.rejects(readFile(migrationPath(m.path,'intent')),{code:'ENOENT'});
+    await assert.rejects(readFile(m.path+'.wal'),{code:'ENOENT'});
+});

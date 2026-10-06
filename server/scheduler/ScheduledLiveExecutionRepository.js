@@ -1,3 +1,4 @@
+import {capturedEvidence} from '../recovery/PersistentEvidence.js';
 ﻿import {
     open,
     mkdir,
@@ -24,7 +25,7 @@ import {
 } from 'node:path';
 
 import {randomUUID} from 'node:crypto';
-import {digest, repositoryIdentity, validateLock, journalEnvelope, validateJournal, refuse}
+import {repositoryIdentity, validateLock, journalEnvelope, validateJournal, refuse}
     from './ScheduledExecutionProvenance.js';
 
 const MAX_BYTES=256*1024;
@@ -171,7 +172,8 @@ export default class ScheduledLiveExecutionRepository {
                 fail('SCHEDULED_LIVE_TRANSACTION_CORRUPT');
 
             const bytes=buffer.subarray(0,size);
-            const journal=JSON.parse(bytes.toString('utf8'));
+            const evidence=capturedEvidence(bytes,{json:true});
+            const journal=evidence.value;
             const envelope=validateJournal(journal,this.repositoryId);
             const previous=journal.provenance;
             if(previous.authorityId!==this.owner.authorityId ||
@@ -179,7 +181,7 @@ export default class ScheduledLiveExecutionRepository {
                 (previous.authorityEpoch===this.owner.authorityEpoch &&
                  previous.authorityProcessSession!==this.owner.authorityProcessSession))
                 refuse('SCHEDULED_JOURNAL_AUTHORITY_MISMATCH');
-            this.owner.initialJournalHash=digest(bytes);
+            this.owner.initialJournalHash=evidence.sha256;
             await this.installLock();
 
             this.record=envelope.record;
@@ -210,6 +212,8 @@ export default class ScheduledLiveExecutionRepository {
     }
 
     write(record){
+        if(this.shutdownAdmission||this.closed)
+            return Promise.reject(Object.assign(new Error('SCHEDULED_LIVE_TRANSACTION_UNAVAILABLE'),{code:'SCHEDULED_LIVE_TRANSACTION_UNAVAILABLE'}));
         const run=
             this.queue.then(
                 ()=>this.writeOnce(record)
@@ -284,7 +288,7 @@ export default class ScheduledLiveExecutionRepository {
 
             this.hook('before-replace');
             this.assertAuthority();
-            if(await readFile(this.path+'.lock','utf8')!==this.lockBytes)
+            if(capturedEvidence(await readFile(this.path+'.lock')).text!==this.lockBytes)
                 refuse('SCHEDULED_LOCK_CHANGED');
             this.assertAuthority();
 
@@ -323,6 +327,13 @@ export default class ScheduledLiveExecutionRepository {
         }
     }
 
+    async drainForShutdown(){
+        // Already admitted writes may finish; no new journal mutation is queued.
+        this.shutdownAdmission=true;
+        await this.initializing;
+        await this.queue;
+    }
+
     async close(){
         if(this.closed)
             return;
@@ -336,7 +347,7 @@ export default class ScheduledLiveExecutionRepository {
             await this.lock.close();
             this.lock=null;
             // Never remove a replacement lock belonging to another session.
-            const bytes=await readFile(this.path+'.lock','utf8').catch(()=>null);
+            const bytes=await readFile(this.path+'.lock').then(bytes=>capturedEvidence(bytes).text).catch(()=>null);
             if(bytes===(this.lockBytes ?? ''))
                 await unlink(this.path+'.lock').catch(()=>{});
         }

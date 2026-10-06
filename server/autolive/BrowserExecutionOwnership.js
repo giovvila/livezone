@@ -1,3 +1,4 @@
+import {capturedEvidence} from '../recovery/PersistentEvidence.js';
 import {randomUUID,timingSafeEqual} from 'node:crypto';
 import {mkdir,open,readFile,rename,unlink} from 'node:fs/promises';
 import {dirname} from 'node:path';
@@ -15,7 +16,7 @@ export default class BrowserExecutionOwnership {
   try{
    await mkdir(dirname(this.path),{recursive:true});releaseGate=await acquireMaintenanceGate(this.path);this.lock=await open(this.path+'.lock','wx');
    await this.lock.writeFile(JSON.stringify({pid:process.pid,authorityProcessSession:this.authorityProcessSession}));await this.lock.sync();
-   let epoch=0;try{epoch=JSON.parse(await readFile(this.path,'utf8')).epoch;if(!Number.isSafeInteger(epoch)||epoch<0)throw Error('INVALID_EPOCH');}catch(e){if(e.code!=='ENOENT')throw e;}
+   let epoch=0;try{epoch=capturedEvidence(await readFile(this.path),{json:true}).value.epoch;if(!Number.isSafeInteger(epoch)||epoch<0)throw Error('INVALID_EPOCH');}catch(e){if(e.code!=='ENOENT')throw e;}
    if(!Number.isSafeInteger(epoch+1))throw Error('INVALID_EPOCH');
    const temp=this.path+'.'+this.authorityProcessSession+'.tmp';const file=await open(temp,'wx');
    try{await file.writeFile(JSON.stringify({epoch:epoch+1}));await file.sync();}finally{await file.close();}

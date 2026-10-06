@@ -6,3 +6,4 @@
 .env
 .env.local
 .env.*.local
+/tools/native/windows-ledger-durability/generated/

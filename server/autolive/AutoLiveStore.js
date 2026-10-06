@@ -1,3 +1,4 @@
+import {capturedEvidence} from '../recovery/PersistentEvidence.js';
 import {readFile,mkdir,open,rename,unlink} from 'node:fs/promises';
 import {dirname,resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
@@ -14,7 +15,7 @@ export class AtomicAutoLiveStore {
     initialize() { return this.initializing ??= this.hydrate(); }
     async hydrate() {
         let parsed;
-        try { parsed=JSON.parse(await this.fs.readFile(this.path,'utf8'));this.state=this.normalize(parsed);this.status='READY'; }
+        try { parsed=capturedEvidence(await this.fs.readFile(this.path),{json:true}).value;this.state=this.normalize(parsed);this.status='READY'; }
         catch(e) { if(e.code==='ENOENT'){this.state=this.defaults();this.status='READY';}else{this.state=null;this.status='UNAVAILABLE';this.captureInvalidScope?.(parsed);} }
         return this.state;
     }

@@ -1,15 +1,29 @@
-import {open,lstat,mkdir} from 'node:fs/promises';
+import {open,lstat,mkdir,readFile} from 'node:fs/promises';
 import {dirname} from 'node:path';
 import ScheduledEntryLedgerRepository from './ScheduledEntryLedgerRepository.js';
+import ScheduledEntryLedgerV2Repository from './ScheduledEntryLedgerV2Repository.js';
+import {createLedgerV2Durability} from './LedgerV2Durability.js';
 import {identityForScheduledEvent} from './ScheduledEventIdentity.js';
 import {resolveSchedule} from './ScheduleContract.js';
 import {evaluateLiveAutomation} from './LiveAutomationShadow.js';
+import {migrationArtifacts} from '../recovery/CleanLedgerV1Migration.js';
+import {capturedEvidence} from '../recovery/PersistentEvidence.js';
 
 // Marker is a bootstrap reservation, never a recovery authorization. A crash
 // between marker and ledger creation deliberately requires explicit maintenance.
 export async function initializeEntryLedger({path,ownership,startupSchedule,executionRepository,bootstrap=false,options={}}){
     let create=false;
+    // V2 rollout is explicit; once a WAL exists, downgrade is forbidden even
+    // when a caller omits the rollout option after a clean restart.
+    let v2=options.protocolVersion===2,migration=false,walPresent=false,selectorError;
+    try{if(capturedEvidence(await readFile(path),{json:true}).value?.schemaVersion===2)v2=true;}
+    catch(error){if(error.code!=='ENOENT'&&!(error instanceof SyntaxError))throw error;}
+    try{if(Object.values(await migrationArtifacts(path)).some(v=>v!==null)){v2=true;migration=true;}}
+    catch(error){if(error.code!=='ENOENT'){v2=true;migration=true;selectorError=error;}}
+    try{await lstat(path+'.wal');v2=true;walPresent=true;}catch(error){if(error.code!=='ENOENT')throw error;}
+    const Repository=v2?ScheduledEntryLedgerV2Repository:ScheduledEntryLedgerRepository;
     try{
+        if(selectorError)throw selectorError;
         if(!ownership.available)throw Error('AUTHORITY_UNAVAILABLE');
         if(executionRepository.status!=='READY')throw Error('EXECUTION_JOURNAL_UNAVAILABLE');
         if(!startupSchedule)throw Error('MIGRATION_INCOMPLETE');
@@ -18,22 +32,26 @@ export async function initializeEntryLedger({path,ownership,startupSchedule,exec
         }
         try{await lstat(path);}catch(error){
             if(error.code!=='ENOENT')throw error;
+            if(migration||walPresent)throw Error(migration?'LEDGER_MIGRATION_CANONICAL_MISSING':'LEDGER_V2_CANONICAL_MISSING');
             const safeSchedule=startupSchedule.events.every(e=>e.type!=='source.live' || Boolean(e.entryMigration));
             if(!safeSchedule || executionRepository.record || !(ownership.authorityEpoch===1 || bootstrap))throw Error('LEDGER_BOOTSTRAP_REQUIRED');
-            await mkdir(dirname(path),{recursive:true});
+            const durability=v2?createLedgerV2Durability(options):null;
+            if(durability)await durability.ensureDirectory(dirname(path));
+            else await mkdir(dirname(path),{recursive:true});
             const marker=await open(path+'.bootstrap','wx',0o600);
             try{await marker.writeFile(JSON.stringify({version:1,authorityEpoch:ownership.authorityEpoch}));await marker.sync();}
             finally{await marker.close();}
+            if(durability)durability.sync(path+'.bootstrap');
             create=true;
         }
     }catch(error){
-        const ledger=new ScheduledEntryLedgerRepository({...options,path,create:false});
+        const ledger=new Repository({...options,path,create:false,authority:ownership});
         // Do not let a missing path be treated as an initial installation.
         ledger.error=error.code||error.message;
         ledger.initializing=Promise.resolve();
         return ledger;
     }
-    const ledger=new ScheduledEntryLedgerRepository({...options,path,create});
+    const ledger=new Repository({...options,path,create,authority:ownership});
     await ledger.initialize();return ledger;
 }
 

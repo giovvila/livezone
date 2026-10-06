@@ -262,3 +262,14 @@ test('2C6F contract: consumed active version cannot be rearmed; future revision 
     assert.equal(future.ok,true);
     assert.equal(store.getEvent(event.id).entryRevision,previous.entryRevision+1);
 });
+
+for(const action of ['insert','update'])test('R14 first LIVE after empty-live v2 promotes durably: '+action,async t=>{
+    const legacy={version:2,revision:7,events:action==='update'?[overlay]:[],programPlan:{version:1,timezone:'Europe/Rome',items:[]}};
+    const f=await fixture(t,{legacy}),store=f.make();await store.initialize();
+    assert.equal(store.getSnapshot().version,2);
+    const result=action==='insert'?await store.insert(live(),7):await store.update('overlay',{type:'source.live',payload:live().payload,startAt:live().startAt,endAt:live().endAt},7);
+    assert.equal(result.ok,true);assert.equal(result.schedule.version,3);assert.equal(result.schedule.revision,8);
+    const event=result.schedule.events[0];assert.equal(event.entryRevision,1);assert.equal(event.entryMigration,null);
+    assert.equal(result.schedule.liveIdentityMigration,null);const identity=key(event);
+    const reopened=f.make();await reopened.initialize();assert.equal(key(reopened.getSnapshot().events[0]),identity);
+});

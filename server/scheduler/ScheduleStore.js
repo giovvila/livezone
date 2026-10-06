@@ -1,7 +1,8 @@
+import {capturedEvidence} from '../recovery/PersistentEvidence.js';
 import {readFile,mkdir,open,rename,unlink} from 'node:fs/promises';
 import {dirname,resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {normalizeSchedule,normalizeEvent} from './ScheduleContract.js';
+import {normalizeSchedule,normalizeEvent,controlledSchedule} from './ScheduleContract.js';
 import ScheduleDiagnostics from './ScheduleDiagnostics.js';
 import {ENTRY_METADATA,newEntryMetadata,migrateLiveIdentities} from './ScheduledEventIdentity.js';
 const error = code => Object.assign(new Error(code),{code});
@@ -19,10 +20,10 @@ export default class ScheduleStore {
     }
     async hydrate(){
         try {
-            const raw=await this.fs.readFile(this.path,'utf8');
-            const legacy=normalizeSchedule(JSON.parse(raw));
+            const raw=capturedEvidence(await this.fs.readFile(this.path),{json:true});
+            const legacy=normalizeSchedule(raw.value);
             const migrated=migrateLiveIdentities(legacy,new Date(this.clock()).toISOString());
-            const next=normalizeSchedule(migrated);
+            const next=controlledSchedule(migrated,{ready:true}).schedule;
             // No in-memory schedule (and thus no scheduler evaluation) exists
             // until the entire classification and identity snapshot is durable.
             if(migrated!==legacy)await this.persist(next);

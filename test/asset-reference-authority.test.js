@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile, readFile, rename, unlink, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join,relative,isAbsolute } from 'node:path';
 import MediaAssetRepository from '../server/media-library/MediaAssetRepository.js';
 import AssetMutationCoordinator from '../server/media-library/AssetMutationCoordinator.js';
 import AssetReferenceInventory from '../server/media-library/AssetReferenceInventory.js';
@@ -31,8 +31,14 @@ const media = {
     audio: ['mp3', 'audio/mpeg', Buffer.from('ID3audio')]
 };
 async function harness(t) {
-    const root = await mkdtemp(join(tmpdir(), 'lz-reference-authority-'));
-    t.after(() => rm(root, { recursive: true, force: true }));
+    const root = await mkdtemp(join(tmpdir(), 'lz-reference-authority-')),servers=[];
+    t.after(async()=>{
+        for(const server of servers)await new Promise((resolve,reject)=>{
+            server.closeAllConnections();server.close(error=>error?reject(error):resolve());
+        });
+        const rel=relative(tmpdir(),root);assert.ok(rel.startsWith('lz-reference-authority-')&&!rel.startsWith('..')&&!isAbsolute(rel));
+        await rm(root, {recursive:true,force:true});
+    });
     const repo = new MediaAssetRepository({ root: join(root, 'media') }); await repo.initialize();
     const mutations = new AssetMutationCoordinator(); repo.mutationCoordinator = mutations;
     const studio = new StudioStateCoordinator({ repository: new AuthoritativeStateRepository({ path: join(root, 'studio.json') }) });
@@ -60,7 +66,7 @@ async function harness(t) {
         return false;
     } });
     const catalog = (sources, scenes = []) => studio.updateCatalog({ sources, scenes, revision: studio.getSnapshot().revision });
-    return { root, repo, mutations, studio, schedule, runtime, preview, inventory, upload, remove, catalog };
+    return { root, servers, repo, mutations, studio, schedule, runtime, preview, inventory, upload, remove, catalog };
 }
 
 for (const kind of ['image','video','audio']) test(`complete inventory permits unused ${kind} file and metadata removal`, async t => {
@@ -361,7 +367,7 @@ async function httpHarness(t) {
     const owner=createProgramOutputServer({publisherToken:'reference-test-publisher',operatorAuth:auth,
         mediaAssetRepository:h.repo,studioStatePath:join(h.root,'http-studio.json'),schedulePath:join(h.root,'http-schedule.json')});
     await new Promise(resolve=>owner.server.listen(0,'127.0.0.1',resolve));await Promise.all([owner.scheduler.ready,owner.executionOwnership.ready]);
-    t.after(()=>new Promise(resolve=>owner.server.close(resolve)));
+    h.servers.push(owner.server);
     const base='http://127.0.0.1:'+owner.server.address().port;
     const headers={Cookie:auth.createCookie(session).split(';')[0],Origin:base,'Content-Type':'application/json',
         'X-Livezone-Operator-Request':'1','X-Livezone-CSRF':session.csrfToken};

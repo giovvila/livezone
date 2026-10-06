@@ -14,8 +14,11 @@ export function newEntryMetadata() {
 
 // Classification belongs to the original legacy incarnation, not the mutable
 // current timestamps. Edits cannot erase legacy exclusion. No ledger access.
+export function requiresLiveIdentityMigration(schedule) {
+    return schedule.version !== 3 && schedule.events.some(e=>e.type === 'source.live');
+}
 export function migrateLiveIdentities(schedule, cutoffAt) {
-    if (schedule.version === 3 || !schedule.events.some(e=>e.type === 'source.live')) return schedule;
+    if (!requiresLiveIdentityMigration(schedule)) return schedule;
     if (!Number.isSafeInteger(schedule.revision+1)) throw Error('REVISION_EXHAUSTED');
     return {...schedule, version:3, revision:schedule.revision+1,
         liveIdentityMigration:{version:1,cutoffAt},

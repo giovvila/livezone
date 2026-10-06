@@ -1,6 +1,6 @@
 import {validateSchedule as validateProgramSchedule} from '../../public/js/scheduler/ScheduleContract.js';
 import {normalizeProgramPlan} from '../../public/js/scheduler/ProgramScheduleAdapter.js';
-import {ENTRY_METADATA,identityForScheduledEvent} from './ScheduledEventIdentity.js';
+import {ENTRY_METADATA,identityForScheduledEvent,requiresLiveIdentityMigration} from './ScheduledEventIdentity.js';
 const fail = code => { throw Object.assign(new Error(code), { code }); };
 const object = v => v && typeof v === 'object' && !Array.isArray(v);
 const exact = (v, keys) => object(v) && Object.keys(v).every(k => keys.includes(k)) && keys.every(k => Object.hasOwn(v, k));
@@ -121,6 +121,15 @@ export function normalizeEvent(v) {
         priority:v.priority,payload,createdAt:v.createdAt,updatedAt:v.updatedAt,...metadata});
 }
 export const compareIds = (a,b) => a < b ? -1 : a > b ? 1 : 0;
+// Presence, not current executability, requires durable LIVE identities.
+// Legacy snapshots are admissible before hydration, which migrates them before
+// exposing state. Ready snapshots must already satisfy the identity contract.
+export function controlledSchedule(value,{ready=false}={}) {
+    const schedule=normalizeSchedule(value);
+    const migrationRequired=requiresLiveIdentityMigration(schedule);
+    if(ready && migrationRequired)fail('SCHEDULE_V3_REQUIRED');
+    return {schedule,migrationRequired};
+}
 export function normalizeSchedule(v) {
     const keys=v?.version===3?['version','revision','events','liveIdentityMigration',...(Object.hasOwn(v,'programPlan')?['programPlan']:[])]:v?.version===2?['version','revision','events','programPlan']:['version','revision','events'];
     if (!exact(v,keys) || ![1,2,3].includes(v.version) ||

@@ -1,11 +1,12 @@
-import {readFile,open,rename,lstat} from 'node:fs/promises';
+import {open,rename,lstat} from 'node:fs/promises';
 import {createServer} from 'node:net';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
-import {randomUUID,createHash} from 'node:crypto';
+import {randomUUID} from 'node:crypto';
 import {resolve} from 'node:path';
 import {acquireMaintenanceGate} from './AuthorityMaintenanceGate.js';
 import {evaluateWindowsAuthorityCensus} from './WindowsAuthorityProcessProof.js';
+import {readEvidence} from '../recovery/PersistentEvidence.js';
 const execute=promisify(execFile);
 const refuse=reason=>{throw new Error('RECONCILIATION_REFUSED: '+reason);};
 export async function proveWindowsOffline(){
@@ -27,16 +28,15 @@ export async function reconcileAuthorityLock({path,expectedEpoch,expectedPid,exp
  const releaseGate=await acquireMaintenanceGate(path);let releasePort;
  try{
   for(const file of [path,path+'.lock'])if(!(await lstat(file)).isFile()||(await lstat(file)).isSymbolicLink())refuse('ordinary files required');
-  const epochBytes=await readFile(path,'utf8'),lockBytes=await readFile(path+'.lock','utf8');
-  const hash=value=>createHash('sha256').update(value).digest('hex');
-  if(expectedEpochHash&&hash(epochBytes)!==expectedEpochHash.toLowerCase()||expectedLockHash&&hash(lockBytes)!==expectedLockHash.toLowerCase())refuse('reviewed file hash mismatch');
-  const epoch=JSON.parse(epochBytes).epoch,lock=JSON.parse(lockBytes);
+  const epochEvidence=await readEvidence(path,{json:true}),lockEvidence=await readEvidence(path+'.lock',{json:true});
+  if(expectedEpochHash&&epochEvidence.sha256!==expectedEpochHash.toLowerCase()||expectedLockHash&&lockEvidence.sha256!==expectedLockHash.toLowerCase())refuse('reviewed file hash mismatch');
+  const epoch=epochEvidence.value.epoch,lock=lockEvidence.value;
   if(!Number.isSafeInteger(epoch)||epoch<1||epoch!==expectedEpoch||lock.pid!==expectedPid||lock.authorityProcessSession!==expectedSession)refuse('reviewed identity/epoch mismatch');
   if(isAlive(lock.pid))refuse('recorded owner is still alive or ambiguous');
   const proof=await proveOffline();if(proof.absent!==true)refuse(proof.reason||'exclusive service absence unproven');
   releasePort=await reserve(port);
   const finalProof=await proveOffline();if(finalProof.absent!==true)refuse('offline proof changed');
-  if(await readFile(path,'utf8')!==epochBytes||await readFile(path+'.lock','utf8')!==lockBytes)refuse('authority files changed');
+  if((await readEvidence(path)).sha256!==epochEvidence.sha256||(await readEvidence(path+'.lock')).sha256!==lockEvidence.sha256)refuse('authority files changed');
   const id=randomUUID(),archive=path+'.lock.reconciled-'+id,audit=path+'.reconciliation-'+id+'.json';
   const record={version:1,at:new Date().toISOString(),operator:process.env.USERNAME||process.env.USER||'unknown',
    action:'archive-abandoned-lock',path,archive,epoch,previousOwner:lock,proof:finalProof,port,state:'PREPARED'};

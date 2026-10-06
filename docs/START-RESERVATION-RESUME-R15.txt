@@ -1,0 +1,239 @@
+LIVEZONE — STEP 8C-2C6R15 — START_RESERVED retry/resume contract
+
+Repository: C:\Projects\livezone-broadcast-engine-x
+Branch: build/1003.9A1
+Committed baseline: 1270d3e5bd17e206b8f8e78d6404ff7e8a978c3b
+All candidate changes remain unstaged. This is a fixture-based review artifact,
+not permission to operate the real runtime or resolve the real v1 orphan lock.
+
+1. EXACT EEXIST ORIGIN
+RecoveryWorkflow.reserveStart previously reused .start only inside the
+e.migrationCompleted branch. Native v2 with no migration records fell through
+to RecoveryContract.exclusive(this.audit+'.start', start), which calls
+fs.promises.open(path, 'wx', 0600). The already-durable file caused EEXIST.
+The fix keeps exclusive creation; it validates reuse before reaching that call.
+An unexpected concurrent writer still fails closed. EEXIST is never ignored.
+
+2. ARTIFACTS, SCHEMA, PRODUCER AND CONSUMERS
+The host reservation is a transient port/exclusivity reservation returned by
+host.reserve(). The maintenance gate is a distinct .execution.maintenance
+file created exclusively and released in finally. Neither is the Start audit.
+START_RESERVED and the Start record ARE THE SAME artifact:
+var/recovery-<RunId>.json.start. There is no separate reserved-phase file.
+RecoveryWorkflow.reserveStart produces it with exclusive creation and fsync;
+v2 Start creation/reuse also runs the native migrationAuditBarrier on it.
+Its payload is version:1, state:START_RESERVED, pid, at, approved head,
+bootstrap:boolean, before:full captured evidence with gate:null, and lineage.
+V2 producers include ledgerProtocolVersion:2; migration adds
+migrationTransactionId equal to the validated completion transactionId.
+Older native-v2 reservations without ledgerProtocolVersion remain supported;
+the captured v2 envelope determines the launch protocol, without rewriting.
+Lineage is version:1, auditHash, runId, head, root, phase:start,
+predecessorHash:the byte hash of this run's Disarm completion.
+before contains artifact value+SHA-256 (or null) for AutoLive, authority and
+locks, Schedule, PROGRAM, ledger, WAL, marker, Scheduled journal and lock,
+maintenance record, media manifest/delete journal and migration artifacts.
+The v2 envelope and WAL bind repositoryId, ledgerId, snapshot and history.
+The immutable approved HEAD selects the trusted helper/gate hashes. Current
+storage capability is checked at initial review, reserved recheck and reuse;
+migration additionally binds it to intent.native (including volume identity).
+Native v2 without migration has no historical volume field in the existing
+schema: it uses the canonical path, exact envelope/WAL bytes, approved helper
+identity and current local NTFS capability; no historical volume is invented.
+Consumers: ControlledStart (launch options, evidence and READY predecessor),
+RecoveryLineage (phase validation), prepareReview (phase review), and
+restoreReview/verifyRestoreAuthority (history validation and configuration
+Restore). READY is a distinct .ready artifact; it does not replace .start.
+
+3. ORDER AND RESUMABLE PREDICATE
+Prepared -> explicit offline Disarm plan -> Disarm completion -> Start review
+-> transient host reservation -> fresh Start review -> maintenance gate
+-> migration recovery when needed -> durable .start -> gate/host release
+-> fresh canonical census and evidence -> launch -> ownership/readiness
+-> native authoritative ledger anchor -> durable .ready.
+Reuse requires exact R12 lineage through Disarm completion and Start; matching
+schema/head/bootstrap/migration transaction/protocol; valid informational pid
+and timestamp; exact saved.before versus current normalized evidence; a
+usable closed ledger (or explicitly approved absent-ledger bootstrap); no
+authority/Scheduled/ledger owner requiring reconciliation; no pending ledger
+transaction; no Restore phase or READY; and current host/root/HEAD/service,
+Schedule, audited disarm, maintenance and native checks passing.
+The saved pid is NOT process ownership evidence and is never used to infer
+that its process died or to authorize a second owner.
+
+4. CURRENT REVALIDATION
+startReview reruns preflight: approved repository identity, canonical offline
+census, Stopped/Disabled service, free 8080 except the held reservation,
+MediaMTX identity, bootstrap permissions, canonical realpaths, Schedule and
+maintenance gate. It validates the audit, Disarm hashes, authoritative hashes,
+ledger/WAL consistency, migration state and native helper/capability.
+offline compares full initial and reserved reviews BEFORE acquiring the gate.
+Existing reservations are validated at that initial boundary, before any
+migration; an additional owned-gate review precedes reuse. ControlledStart
+compares evidence after release and again immediately before launch, after
+the before-controlled-launch hook. A changed phase or current state rejects.
+
+5. FOREIGN/STALE POLICY
+Wrong RunId/HEAD/root/audit/predecessor, copied records, wrong bootstrap or
+migration linkage, malformed/truncated records and stale current evidence
+reject; no unlink, replacement, migration or launch follows. Existing foreign
+artifacts are retained. Rejection tests compare the entire TEMP file tree,
+including bytes and mtime. A race discovered after taking a transient gate
+still releases only the gate/reservation owned by this operation.
+
+6. EXACT RED -> GREEN
+tmp/r15/red-native.log proves native v2 with no migration records, valid
+Disarm, durable START_RESERVED, injected interruption before launch, and SAME
+Start retry -> EEXIST from exclusive open. Zero launches precede failure.
+The permanent test retries through READY, retains the reservation bytes and
+ledgerId/snapshot/marker, preserves the WAL prefix (only legitimate runtime
+BEGIN/CLOSE records follow), performs one launch and creates no migration.
+Additional repeated retries do not reserve another durable Start record.
+The initial sandbox-only probe was blocked at native capability, not the
+target RED. An early GREEN attempt exposed a too-short fixture token; that
+fixture was corrected without changing production token validation.
+
+7. LAUNCH BEFORE READY
+Canonical process/port evidence blocks retry while an owner may exist.
+Authority/Scheduled/ledger locks and unresolved WAL state require canonical
+reconciliation; a PID alone is insufficient. If runtime progressed and then
+cleanly drained without READY, its authority epoch/WAL differ from .start;
+this lineage still rejects and requires a new recovery path. There is no
+implicit adoption, lock deletion or automatic second launch.
+
+8. READY EXISTS
+controlledStart checks for .ready before reserveStart. It reruns the existing
+offline Restore authority/lineage verification twice and compares fresh
+state, service and media. It requires exact READY authority epoch and current
+AutoLive/Schedule/PROGRAM hashes, valid R12 READY and authoritative ledger
+successor evidence, and no Restore phase. A completed offline retry returns
+{owner:null,result:ready} read-only; it does not create a gate, epoch or owner.
+An online owner, conflicting/stale READY, stale gate or unresolved ledger
+rejects and preserves canonical reconciliation requirements. Direct
+reserveStart rejects READY_ALREADY_EXISTS rather than authorizing a launch.
+
+9. MIGRATION PRESERVATION
+Clean migration and interrupted intent/installation are still reviewed before
+mutation under the R13 host reservation and maintenance gate. First Start
+finishes migration before creating .start. Completed migration before .start
+can still create it. Completed migration after .start now validates and reuses
+it without invoking startHeld or duplicating migration. A saved reservation
+with an unresolved v1 migration is rejected before migration mutation.
+
+10. MAINTENANCE GATE
+An existing gate still produces MAINTENANCE_GATE_REVIEW_REQUIRED. A Start
+record cannot license it. The current invocation acquires its own gate only
+after both preflights and evidence comparison, validates under that ownership,
+and releases it before launch. A hard process crash leaving a gate requires
+separate gate review even if START_RESERVED is otherwise legitimate.
+
+11. PHASE AND SCHEDULE PRESERVATION
+Reuse returns the ORIGINAL Start record, preserving timestamp, pid and
+lineage digest; READY links to its original byte hash. No retry lineage is
+created. R14 controlledSchedule is applied afresh: no-LIVE v1/v2 is valid;
+source.live requires identity migration to v3 at runtime; first introduction
+still promotes to v3. READY and completed-retry validation use current
+Schedule evidence and the established readiness contract.
+
+12. PRODUCTION FILES CHANGED BY R15
+server/recovery/RecoveryWorkflow.js
+server/recovery/ControlledStart.js
+All other R3-R14 production/support candidates remain byte-identical. The
+existing recovery-tooling test's obsolete unconditional EEXIST expectation is
+deliberately updated to validated reuse, retaining authorization checks.
+
+13. TESTS/SUPPORT/DOCUMENTATION
+test/start-reservation-resume.test.js (new permanent TEMP-only suite)
+test/recovery-tooling.test.js (one deliberate contract-expectation update)
+docs/START-RESERVATION-RESUME-R15.txt (this report)
+tmp/r15/* (new local logs, candidate preservation proof and review support)
+No other existing test/support file or independent final-review artifact is edited.
+
+14-19. FINAL VERIFICATION
+Final results, distinct totals, whitespace verification, all five protected
+SHA-256 values and remaining-review status are recorded below.
+Real var/, real locks, LIVEZONE runtime and service configuration were never
+used as test targets. Tests inject host proofs and use TEMP paths. Git index,
+branch and committed HEAD remain unchanged; no stage/commit/push is performed.
+The existing real v1 orphan-lock status is unchanged and remains outside R15.
+
+16-17. PRESERVATION AND WHITESPACE PROOF
+tmp/r15/preservation-before.json captures the pre-edit SHA-256 inventory.
+tmp/r15/preservation-final.json compares every preexisting candidate path:
+only RecoveryWorkflow.js, ControlledStart.js and the deliberate
+recovery-tooling.test.js contract expectation differ. All other inventoried
+candidate files are preserved; no independent review path was a write target.
+Protected 2C6H1 task-start and final hashes match:
+server/autolive/AutoLiveSafeHttp.js
+e08489051c477dc8073da95eee77df293cc75aa452f8ff1cf9f25a53e537d614
+server/autolive/ManagedIngestTransport.js
+6a375dcc1a574334212ef2b78b9ea6698e52591e6ec0efb72472bd7133bc83bf
+test/managed-ingest-transport-health.test.js
+9f4df81ab2124c8ef92c0bc44bf97bc726bc2459620c8896fb482bcf63909ca1
+test/scheduled-live-managed-health-gap.test.js
+4084481e4646196a5b1af2a46fda2561f96b33a878369bd80406e9fe3071b283
+test-support/MediaMtxCookieFixture.js
+10990da07b5d56ede3f273974d13cb14b3c2d16f154337e63a76e34c31befb72
+git diff --check returned 0. In addition, --no-index --check against NUL checked
+all 43 new candidate files outside var/ and review-log directories; there
+were no whitespace errors. No index insertion was used for that check.
+Production and permanent-test node --check commands also passed.
+
+Fixture verification history: the too-short token was corrected; a subsequent
+direct-native fixture refactor accidentally omitted the join import used by
+tree verification. That import was restored. Superseded TEMP-only test
+runners were stopped by exact command/parent identification to avoid wasting
+native-helper capacity. Their incomplete or fixture-failed runs are excluded
+from passing totals; final results come from reservation-verified.log.
+
+14. FOCUSED RESULTS
+All 26 permanent R15 cases pass: reservation-verified.log (exit 0), including
+the direct-native exact blocker, three prelaunch reservation retries, one
+runtime launch, durable READY, read-only post-drain READY retry, stale READY
+rejection, foreign/corrupt/copied reservations, current evidence changes,
+maintenance gate, migration retry and online/drained pre-READY rejection.
+The 111 existing Start/phase-lineage/preflight cases are also green on final
+code: affected-final.log verifies 110 cases; its one obsolete EEXIST
+expectation is replaced by the stronger authorization/reuse test. The full
+final recovery-tooling file passes 84/84 in tooling-verified.log, including
+that replacement; phase-lineage and preflight keep their final passing
+outcomes from affected-final.log. These are subsets of the gate below.
+
+15. BROADER DISTINCT TOTAL
+The complete 48-file existing gate is listed in tmp/r15/gate-files.txt.
+Its first run recorded 972 tests: 970 pass, two non-green outcomes, no skips.
+One is the obsolete unconditional EEXIST expectation, now verified in the
+updated full recovery-tooling file. The other is a 30-second TEMP compiler
+build timeout at the helper-trust parent before its children were discovered.
+The unchanged helper-trust suite passes 27/27 in helper-trust-verified.log
+(exit 0), including the previously undiscovered 26 children. No pin, timeout,
+trust assertion, native helper source or generated production binary changed.
+Corrected DISTINCT existing gate = 970 + 1 authorization case + 27 helper
+trust parent/children = 998 passing cases, zero unresolved failures/skips.
+Permanent R15 suite is disjoint: 26 passing cases.
+TOTAL DISTINCT = 998 + 26 = 1,024 passed, zero unresolved failures/skips.
+The 111 focused existing cases, repeated tooling runs, initial RED and
+superseded fixture runs are NOT added to this total.
+Coverage includes clean migration and its native abrupt-loss boundaries,
+helper/namespace durability and trust, Ledger v2 writer/recovery interruption,
+recovery integrity and Restore authoritative validation, Prepare ordering,
+R12 lineage, R13 maintenance conflicts/race/interrupted migration, R14
+empty-live readiness and first-LIVE v3 promotion, Ledger v1, entry validation
+and runtime, Scheduled provenance/recovery, startup/restart, late-start,
+temporal boundary, terminal contract, PROGRAM continuity and scheduler suites.
+
+18. REMAINING BLOCKERS BEFORE FINAL INDEPENDENT REVIEW
+No unresolved implementation or regression blocker remains in this exercised
+contract. Restart the independent review against the preserved unstaged
+candidate. The historical native-v2 schema has no recorded physical volume
+field; this report explicitly describes the actual existing identity contract
+instead of claiming a nonexistent historical volume attestation.
+
+19. REAL V1 STATUS
+Unchanged: the real orphan v1 lock remains outside this work and still needs
+its separate fail-closed recovery review. No real readiness, migration,
+runtime launch, service action or restart authorization is claimed.
+The final index is empty; branch and committed baseline HEAD are unchanged.
+No stage, commit or push was performed.
+
+START RESERVATION RESUME READY FOR REVIEW

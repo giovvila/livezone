@@ -1,9 +1,11 @@
+import {capturedEvidence} from '../recovery/PersistentEvidence.js';
 import {open, mkdir, unlink, readFile, lstat, realpath} from 'node:fs/promises';
 import {renameSync, openSync, fsyncSync, closeSync} from 'node:fs';
 import {dirname, resolve, relative, isAbsolute} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {scheduledEntryIdentity} from './ScheduledEntryIdentity.js';
 import {ledgerSnapshot, validateLedgerSnapshot, entryConsumption} from './ScheduledEntryLedgerContract.js';
+import {assertMigrationStartup} from '../recovery/CleanLedgerV1Migration.js';
 
 const inside = (root,path) => { const r=relative(root,path); return !r || (!r.startsWith('..') && !isAbsolute(r)); };
 const result = (status,record) => Object.freeze({status, ...(record ? {record} : {})});
@@ -32,6 +34,13 @@ export default class ScheduledEntryLedgerRepository {
     async initializeOnce() {
         if (this.closed) return;
         try {
+            try {if(await assertMigrationStartup(this.path))throw Error('LEDGER_V2_REPOSITORY_REQUIRED');}
+            catch(error){if(error.code!=='ENOENT')throw error;}
+            try {if(capturedEvidence(await this.fs.readFile(this.path),{json:true}).value?.schemaVersion===2)throw Error('LEDGER_V2_REPOSITORY_REQUIRED');}
+            catch(error){if(error.code!=='ENOENT')throw error;}
+            // Never reopen protocol-v2 history through the legacy writer.
+            try {await this.fs.lstat(this.path+'.wal');throw Error('LEDGER_V2_REPOSITORY_REQUIRED');}
+            catch(error){if(error.code!=='ENOENT')throw error;}
             await this.fs.mkdir(dirname(this.path),{recursive:true});
             const directory = await this.fs.realpath(dirname(this.path));
             const publicPath = await this.fs.realpath(this.publicRoot).catch(()=>this.publicRoot);
@@ -56,7 +65,7 @@ export default class ScheduledEntryLedgerRepository {
     async readSnapshot() {
         const stat = await this.fs.lstat(this.path);
         if (!stat.isFile() || stat.isSymbolicLink()) throw Error('LEDGER_NOT_REGULAR');
-        return validateLedgerSnapshot(JSON.parse(await this.fs.readFile(this.path,'utf8')));
+        return validateLedgerSnapshot(capturedEvidence(await this.fs.readFile(this.path),{json:true}).value);
     }
 
     enqueue(operation) {

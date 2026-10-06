@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm,writeFile,readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {join,relative,isAbsolute} from 'node:path';
 import AssetMutationCoordinator from '../server/media-library/AssetMutationCoordinator.js';
 import AssetReferenceInventory from '../server/media-library/AssetReferenceInventory.js';
 import MediaAssetRepository from '../server/media-library/MediaAssetRepository.js';
@@ -17,7 +17,14 @@ import StudioGraphicsUI from '../public/js/ui/StudioGraphicsUI.js';
 
 const capabilities=['canonical-catalog','preview-ownership-v2','asset-validation','channel-logo-authority-v1'];
 async function fixture(t){
-    const root=await mkdtemp(join(tmpdir(),'lz-d3-'));t.after(()=>rm(root,{recursive:true,force:true}));
+    const root=await mkdtemp(join(tmpdir(),'lz-d3-')),servers=[];
+    t.after(async()=>{
+        for(const server of servers)await new Promise((resolve,reject)=>{
+            server.closeAllConnections();server.close(error=>error?reject(error):resolve());
+        });
+        const rel=relative(tmpdir(),root);assert.ok(rel.startsWith('lz-d3-')&&!rel.startsWith('..')&&!isAbsolute(rel));
+        await rm(root,{recursive:true,force:true});
+    });
     const coordinator=new AssetMutationCoordinator(),repo=new MediaAssetRepository({root:join(root,'media')});await repo.initialize();repo.mutationCoordinator=coordinator;
     const options={coordinator,path:join(root,'clients.json'),coverageProven:true,minimumVersion:3,requireEpoch:true};
     const clients=new ReferenceClientRegistry(options);await clients.ready;
@@ -40,7 +47,7 @@ async function fixture(t){
     };
     const remove=id=>repo.delete(id,{isReferenced:async asset=>{const value=await inventory.inspect(asset);return !value.eligible;}});
     const open=async(c,assets=[])=>{const principal='operator|'+c.clientId;const value=await preview.open(principal);await preview.update(value.sessionId,principal,{sequence:1,assets});return {...value,principal};};
-    return {root,coordinator,repo,clients,options,preview,inventory,logos,upload,register,remove,open,setNow:value=>now=value};
+    return {root,servers,coordinator,repo,clients,options,preview,inventory,logos,upload,register,remove,open,setNow:value=>now=value};
 }
 
 for(const role of ['CONTROL','SCHEDULER'])test('D3 capable '+role+' completes bounded connected census',async t=>{
@@ -133,7 +140,7 @@ async function http(t){
     const h=await fixture(t),auth=new OperatorAuth({username:'operator',password:'d3-password-test-only',secureCookie:false}),session=auth.authenticate('operator','d3-password-test-only');
     const owner=createProgramOutputServer({publisherToken:'d3-test-publisher',operatorAuth:auth,mediaAssetRepository:h.repo,studioStatePath:join(h.root,'studio.json'),schedulePath:join(h.root,'schedule.json')});
     await new Promise(r=>owner.server.listen(0,'127.0.0.1',r));await Promise.all([owner.scheduler.ready,owner.executionOwnership.ready]);
-    t.after(()=>new Promise(r=>{owner.server.closeAllConnections();owner.server.close(r);}));
+    h.servers.push(owner.server);
     const base='http://127.0.0.1:'+owner.server.address().port;
     const headers={Cookie:auth.createCookie(session).split(';')[0],Origin:base,'Content-Type':'application/json','X-Livezone-Operator-Request':'1','X-Livezone-CSRF':session.csrfToken};
     const request=async(method,path,body,extra={})=>{const response=await fetch(base+path,{method,headers:{...headers,...extra},...(body===undefined?{}:{body:JSON.stringify(body)})});return {status:response.status,payload:await response.json()};};
