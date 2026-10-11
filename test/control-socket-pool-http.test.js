@@ -141,9 +141,10 @@ test('multiplex opt-in cannot bypass reference capability; disconnect remains fa
     const response=await h.request('/api/media-library/reference-presence?'+h.query+'&controlEvents=1');
     await events(response).next('presence');response.destroy();
     // Wait for the server's serialized close callback, with a finite deadline.
-    for(let n=0;n<100&&h.owner.referenceClients.clients.get(h.identity.clientId).confirmed;n++)
+    for(let n=0;n<100&&h.owner.referenceClients.effectiveConfirmation(h.owner.referenceClients.clients.get(h.identity.clientId));n++)
         await new Promise(resolve=>setTimeout(resolve,10));
-    assert.equal(h.owner.referenceClients.clients.get(h.identity.clientId).confirmed,false);
+    assert.equal(h.owner.referenceClients.clients.get(h.identity.clientId).confirmed,true);
+    assert.equal(h.owner.referenceClients.effectiveConfirmation(h.owner.referenceClients.clients.get(h.identity.clientId)),false);
     assert.equal(h.owner.referenceClients.snapshot().state,'INCOMPLETE');
 });
 

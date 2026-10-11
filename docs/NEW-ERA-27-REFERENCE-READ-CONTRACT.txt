@@ -1,0 +1,144 @@
+NEW-ERA-27 — REFERENCE CLIENT READ-PATH CONTRACT
+
+Identity lookup and durable lifecycle are separate.
+
+After canonical route classification and operator authorization, the shared
+ReferenceRequestIdentity prefilter awaits registry initialization and looks up
+the existing id/generation/principal. It does not register, update, persist,
+repair, acquire a mutation serializer, or call an execution authority.
+GET and HEAD use the same observational identity contract. This also applies
+to the identity step of mutating requests; their explicit handlers own writes.
+
+A supported active matching record is request.referenceClient. Unknown,
+mismatched, unsupported, inactive, or unavailable identities are null. Schedule
+and Studio descriptive reads remain available under operator authorization.
+Capability-dependent routes such as reference-presence and channel-logo reject
+unverified clients. A corrupt/unreadable registry cannot grant client capability.
+No request metadata silently replaces stored generation/principal/lastSeen.
+
+request.referenceClientStatus reports CURRENT_CAPABLE, REGISTRATION_REQUIRED,
+CLIENT_CAPABILITY_REQUIRED, or REGISTRY_UNAVAILABLE inside the server. It is
+request-local metadata; existing HTTP response shapes remain compatible.
+
+Unknown participation remains conservative process-local census evidence in a
+separate unregisteredPrincipals set. It is not a client entry, grant, durable
+protocol record, timestamp update, or durable registration. Its presence keeps
+CLIENT_CAPABILITY_UNKNOWN and blocks a complete Safe Delete inventory until
+positive session revocation. Repeated reads do not create additional identities.
+A later registration alone does not silently erase earlier unknown participation.
+After restart, actual durable client conflicts/legacy references and the existing
+epoch/authenticated-principal requirements still apply. The volatile set is not
+claimed to be historical durability evidence.
+
+POST /api/media-library/reference-clients registers/resumes a client explicitly.
+PUT /api/media-library/reference-clients/:id updates/acknowledges/closes it.
+PUT .../:id/legacy-assets submits legacy references. Existing catalog mutation
+handlers retain their explicit client-state updates. Operator authorization,
+origin/CSRF checks, principal/generation and resume-token validation are retained.
+Persistence still uses the existing coordinated registry implementation.
+Explicit mutating PROGRAM publication retains its obsolete-publisher census.
+
+Control Room/Schedule ReferenceClient.initialize performs the existing POST
+before using reference headers or connecting presence. Ordinary refresh/polling
+does not implicitly register. Presence connection bookkeeping remains ephemeral;
+it does not persist registry metadata or infer a completed capability epoch.
+
+The SchedulerServer.current separation from NEW-ERA-26 remains unchanged.
+The 510 NEW ERA matrix and its durable producer/native inputs remain unchanged.
+The GET /readyz writable probe reported during NEW-ERA-26/27 was outside the
+Reference Client fix. NEW-ERA-28 supersedes that readiness behavior with pure
+GET/HEAD metadata observation and a separate explicitly authorized diagnostic;
+see PROGRAM_OUTPUT_NETWORK.md. This does not certify the final deployment review.
+No real transition,
+proof installation, runtime launch, or service change is authorized here.
+
+NEW-ERA-31: Preview lease snapshot is a pure expiry projection. Its existing
+complete result requires every stored lease to be confirmed and unexpired
+(expiresAt > one sampled clock value), including required-principal coverage.
+At or after expiry the inventory reports Preview ownership incomplete without
+changing stored confirmed, generation, sequence or references. Retained references
+remain inventoried, so a stale lease cannot certify asset deletion eligibility.
+Existing open/update lifecycle owners retain explicit expire() materialization;
+snapshot and reference inventory GET never invoke it. Explicit close/revoke and
+restart adoption retain their established semantics. No new mutation endpoint.
+
+NEW-ERA-32: Reference presence observes canonical confirmation plus process-local
+connection evidence. GET, response finish/close/error and request abort never
+change client or Preview lease records. Last connection cleanup records absence
+only in transient evidence. Effective confirmation requires stored confirmation,
+support, current handshake where required, and no observed connection loss.
+Presence streams report CURRENT_CAPABLE or UNKNOWN; a new GET cannot clear
+observed absence. Registry census and authority checks use effective confirmation.
+There is no Reference Client TTL: the boundary is the last connection cleanup.
+Fresh authenticated registration/update owns reconfirmation. Existing authenticated
+PUT reference-clients also accepts confirmed:false to persist confirmation loss
+without changing generation, lastSeen or unrelated fields; retry is idempotent.
+Explicit closed:true retains the known closed-client contract and Preview release;
+session revocation retains canonical deconfirmation. Preview references/confirmation
+survive observational close, while the registry uncertainty vetoes safe deletion.
+Restart adoption still requires a new handshake. No new file or durable boundary.
+
+NEW-ERA-34: Explicit Reference Client close takes precedence over optional
+confirmed:false deconfirmation. closed:true establishes active:false and
+termination:EXPLICIT_CLOSE before the existing route revokes matching Preview.
+With confirmed:false stored confirmation is false; when omitted, the existing
+known-closed supported confirmation contract is retained. confirmed:true remains
+invalid. closed must be boolean; omission defaults to the existing active-update
+form. Deconfirmation without close changes only confirmation and retains Preview.
+Repeated explicit close preserves generation/lastSeen and never reconfirms a prior
+closed false confirmation. Preview removal is naturally idempotent.
+The existing client-persist then Preview-persist order remains; HTTP200 follows
+both. Interruption returns error, allowing deterministic retry. Persistence failure
+marks the affected owner unavailable; retained references remain fail closed until
+canonical reload/retry. There is no new cross-file transaction or durable boundary.
+Pure GET/HEAD/presence finalizers never invoke this lifecycle owner.
+
+NEW-ERA-35: appliedRevision is a Studio catalog acknowledgment, not a generic
+lifecycle-mutation receipt or concurrency revision. It must equal the recorded
+pendingRevision and CURRENT Studio revision for the same principal/generation.
+The existing pendingRevision context is retained after confirmation for exact
+acknowledgment retries, replaced by new pendingCatalog and cleared on fresh epoch
+registration/resume. No new revision, receipt, file or execution authority is added.
+A mixed acknowledgment/lifecycle request is accepted only if the canonical requested
+lifecycle postcondition already holds. Explicit close requires inactive EXPLICIT_CLOSE,
+requested false confirmation if present, and available Preview with no matching
+client-prefix lease in any generation. Otherwise reject before acknowledgment;
+perform close separately with the existing explicit PUT owner and retry acknowledgment.
+No acknowledgment performs Preview release or canonical close implicitly.
+closed:false alone requires lifecycle-active effective confirmation; confirmed:false
+without close requires stored false only, preserving NEW-ERA-34 flag-only semantics.
+confirmed:true remains invalid. Catalog assignment cannot be mixed with acknowledgment;
+two acknowledgment contexts in one request are rejected. Pure acknowledgment callers
+remain unchanged. Legacy acknowledgment uses the same lifecycle semantic fence and
+retained existing legacyRevision/status context for exact retries after pending assets
+have been adopted. State checks execute within the existing coordinator/mutate queue.
+Partial client/Preview state never counts as completed close acknowledgment; existing
+explicit retry or canonical reload/recovery must establish the missing postcondition.
+Pure reads and presence cleanup retain NEW-ERA-32/34 observational semantics.
+
+NEW-ERA-36: Ordinary Reference Client PUT fields are explicitly classified.
+Main client PUT accepts generation, catalog, closed, confirmed, appliedRevision,
+legacyAppliedRevision. Legacy-assets PUT accepts generation, assets, complete only.
+Unknown/read-only or cross-operation fields reject before any canonical mutation.
+Public catalog assignment accepts INVALID/CONFLICT by explicit field presence;
+PENDING/RECONCILED remain explicit server-owned values, empty/null/false are invalid.
+Combined ordinary catalog/lifecycle update is one Registry.mutate operation: validate
+all fields, apply accepted catalog plus lifecycle/deconfirmation, check canonical
+postconditions, then existing persist. No field is silently discarded on early return.
+confirmed:false alone remains flag-only; adding catalog applies that requested catalog
+without timestamp/Preview changes. closed:true additionally retains EXPLICIT_CLOSE and
+existing client-persist -> Preview-revoke ordering; catalog alone never releases Preview.
+Normal reconfirm/update timestamp semantics remain unchanged. Closed/deconfirmed retry
+keeps canonical counters/identity, no repeated logical Preview release.
+Acknowledgment combinations keep NEW-ERA-35 semantics: pure catalog/legacy acknowledgment
+or already-true lifecycle postcondition only; catalog assignment cannot mix with ack.
+No new endpoint/file/revision/durable boundary; pure observations remain unchanged.
+
+NEW-ERA-38 explicit registration/resume contract:
+Reference resumeId presence selects RESUME, never fallback CREATE. Existing UUID,
+current positive generation, matching secret and SAME non-revoked principal are
+required. Unknown/malformed/foreign/revoked resume rejects without persistence.
+The prior token-authorized cross-session transfer is superseded by this principal
+fence. Same-principal EXPLICIT_CLOSE resume remains an explicit new generation.
+Original-request retry after success rejects stale generation without identity churn;
+fresh handshake follows persistence. See NEW-ERA-38-REFERENCE-RESUME-CONTRACT.txt.

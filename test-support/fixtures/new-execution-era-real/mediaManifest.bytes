@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "assets": [
+    {
+      "version": 1,
+      "id": "asset-16cbee5e-0e99-49b3-8033-90b960b448f4",
+      "kind": "image",
+      "originalName": "80750_bl.jpg",
+      "storedName": "16cbee5e-0e99-49b3-8033-90b960b448f4.jpg",
+      "url": "/media-library/files/image/16cbee5e-0e99-49b3-8033-90b960b448f4.jpg",
+      "mimeType": "image/jpeg",
+      "size": 121215,
+      "createdAt": "2026-08-29T07:51:21.189Z",
+      "updatedAt": "2026-08-29T07:51:21.189Z",
+      "metadata": null
+    },
+    {
+      "version": 1,
+      "id": "asset-9a7ea294-4f4f-4705-b7d3-2bd17fb8939e",
+      "kind": "video",
+      "originalName": "Video_per_loop.MP4",
+      "storedName": "9a7ea294-4f4f-4705-b7d3-2bd17fb8939e.mp4",
+      "url": "/media-library/files/video/9a7ea294-4f4f-4705-b7d3-2bd17fb8939e.mp4",
+      "mimeType": "video/mp4",
+      "size": 86074013,
+      "createdAt": "2026-08-29T20:59:47.379Z",
+      "updatedAt": "2026-09-01T21:16:48.781Z",
+      "metadata": {
+        "durationSeconds": 46.04
+      }
+    },
+    {
+      "version": 1,
+      "id": "asset-583bed1e-99db-4f0a-9eb3-de2af775996e",
+      "kind": "audio",
+      "originalName": "12 Hours of Free Background Music - Copyright Free Music for Creators and Streamers [April Edition].mp3",
+      "storedName": "583bed1e-99db-4f0a-9eb3-de2af775996e.mp3",
+      "url": "/media-library/files/audio/583bed1e-99db-4f0a-9eb3-de2af775996e.mp3",
+      "mimeType": "audio/mpeg",
+      "size": 1035448480,
+      "createdAt": "2026-08-30T22:32:00.959Z",
+      "updatedAt": "2026-09-01T21:16:48.797Z",
+      "metadata": {
+        "durationSeconds": 43140.005465
+      }
+    },
+    {
+      "version": 1,
+      "id": "asset-b00941b2-13a7-46a0-ba5c-8b86be60388b",
+      "kind": "video",
+      "originalName": "VIDEO-INVERDURATA-015.mp4",
+      "storedName": "b00941b2-13a7-46a0-ba5c-8b86be60388b.mp4",
+      "url": "/media-library/files/video/b00941b2-13a7-46a0-ba5c-8b86be60388b.mp4",
+      "mimeType": "video/mp4",
+      "size": 610009609,
+      "createdAt": "2026-09-01T20:14:42.209Z",
+      "updatedAt": "2026-09-01T21:16:48.863Z",
+      "metadata": {
+        "durationSeconds": 778.68
+      }
+    },
+    {
+      "version": 1,
+      "id": "asset-6e5a1973-ead1-4c27-994a-5a5ea73bedb0",
+      "kind": "image",
+      "originalName": "sponsor1.png",
+      "storedName": "6e5a1973-ead1-4c27-994a-5a5ea73bedb0.png",
+      "url": "/media-library/files/image/6e5a1973-ead1-4c27-994a-5a5ea73bedb0.png",
+      "mimeType": "image/png",
+      "size": 1161160,
+      "createdAt": "2026-09-13T21:02:03.750Z",
+      "updatedAt": "2026-09-13T21:02:03.750Z",
+      "metadata": null
+    },
+    {
+      "version": 1,
+      "id": "asset-e672739a-7623-47dc-9128-91993535d695",
+      "kind": "image",
+      "originalName": "423225653_10231617681455108_6799983179205896779_n.jpg",
+      "storedName": "e672739a-7623-47dc-9128-91993535d695.jpg",
+      "url": "/media-library/files/image/e672739a-7623-47dc-9128-91993535d695.jpg",
+      "mimeType": "image/jpeg",
+      "size": 78986,
+      "createdAt": "2026-09-14T11:10:16.458Z",
+      "updatedAt": "2026-09-14T11:10:16.458Z",
+      "metadata": null
+    }
+  ]
+}

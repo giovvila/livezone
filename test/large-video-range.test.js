@@ -1,6 +1,8 @@
+import '../test-support/RuntimeStateGuard.mjs';
+import {writeTempDiagnostic} from '../test-support/TempDiagnostics.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { statSync, existsSync, openSync, readSync, closeSync, writeFileSync } from 'node:fs';
+import { statSync, existsSync, openSync, readSync, closeSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { once } from 'node:events';
 import { createProgramOutputServer } from '../test-support/ReferenceAuthorityTestServer.js';
@@ -33,6 +35,6 @@ for(const name of ['demo.mp4','demo3.mp4','demo2.mp4']) test(`production byte ra
             assert.equal(invalid.status,416);assert.equal(invalid.headers.get('content-range'),`bytes */${size}`);
             await invalid.arrayBuffer();
         }
-        writeFileSync(`var/large-video-range-${name}.json`,JSON.stringify(observations,null,2));
+        writeTempDiagnostic(`large-video-range-${name}.json`,JSON.stringify(observations,null,2));
     } finally {server.closeAllConnections();await new Promise(r=>server.close(r));}
 });

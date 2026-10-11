@@ -23,10 +23,10 @@ const caps=['canonical-catalog','preview-ownership-v2','asset-validation'];
 test('reconnect preserves pending legacy references until confirmed local application',async t=>{
     const h=await harness(t),a=await h.upload(),c=await h.client();
     const pending=await h.registry.updateLegacy(c.clientId,c.generation,{assets:[{assetId:a.id,kind:'image'}],complete:true},'operator');
-    const resumed=await h.registry.register({role:'CONTROL',version:2,capabilities:caps,resumeId:c.clientId,resumeGeneration:c.generation,resumeToken:c.resumeToken},'new-session');
+    const resumed=await h.registry.register({role:'CONTROL',version:2,capabilities:caps,resumeId:c.clientId,resumeGeneration:c.generation,resumeToken:c.resumeToken},'operator');
     assert.equal(h.registry.legacyReferences()[0].assetId,a.id);
     await assert.rejects(h.remove(a.id),{code:'ASSET_REFERENCED'});
-    await h.registry.confirmLegacy(resumed.clientId,resumed.generation,pending.revision,'new-session');
+    await h.registry.confirmLegacy(resumed.clientId,resumed.generation,pending.revision,'operator');
     assert.equal(h.registry.legacyReferences()[0].assetId,a.id);
 });
 
@@ -173,9 +173,10 @@ test('legacy asset removal retains previous references until local apply acknowl
     await assert.rejects(h.remove(a.id),{code:'ASSET_REFERENCED'});
     await h.registry.confirmLegacy(c.clientId,c.generation,stage.revision,'operator');assert.equal((await h.inventory.inspect(a)).status,'UNUSED');
 });
-test('client reconnect token permits a new authenticated session; stale generation cannot clear it',async t=>{
+test('client reconnect token stays principal-bound; stale generation cannot clear it',async t=>{
     const h=await harness(t),c=await h.client();
-    const newer=await h.registry.register({role:'CONTROL',version:2,capabilities:caps,resumeId:c.clientId,resumeGeneration:c.generation,resumeToken:c.resumeToken},'new-login');
+    await assert.rejects(h.registry.register({role:'CONTROL',version:2,capabilities:caps,resumeId:c.clientId,resumeGeneration:c.generation,resumeToken:c.resumeToken},'new-login'),{code:'CLIENT_GENERATION_CONFLICT'});
+    const newer=await h.registry.register({role:'CONTROL',version:2,capabilities:caps,resumeId:c.clientId,resumeGeneration:c.generation,resumeToken:c.resumeToken},'operator');
     assert.equal(newer.generation,2);
     await assert.rejects(h.registry.update(c.clientId,c.generation,{closed:true},'operator'),{code:'CLIENT_GENERATION_CONFLICT'});
     assert.equal(h.registry.clients.get(c.clientId).active,true);
@@ -200,14 +201,14 @@ test('confirmed Control close releases ownership even after a long uncertain int
 test('Control A close cannot clear Control B Preview ownership',async t=>{
     const h=await harness(t),a=await h.upload(),b=await h.upload(),sa=await h.preview.open('operator|A'),sb=await h.preview.open('operator|B');
     await h.preview.update(sa.sessionId,'operator|A',{sequence:1,assets:[a.id]});await h.preview.update(sb.sessionId,'operator|B',{sequence:1,assets:[b.id]});
-    await h.preview.close(sb.sessionId,'operator|A');assert.equal((await h.inventory.inspect(b)).status,'USED');
+    await assert.rejects(h.preview.close(sb.sessionId,'operator|A'),{code:'OWNERSHIP_SESSION_EXPIRED'});assert.equal((await h.inventory.inspect(b)).status,'USED');
     await h.preview.close(sa.sessionId,'operator|A');assert.equal((await h.inventory.inspect(a)).status,'UNUSED');assert.equal((await h.inventory.inspect(b)).status,'USED');
 });
 test('Preview reconnect retains ownership before confirmation and rejects stale update/close',async t=>{
     const h=await harness(t),a=await h.upload(),b=await h.upload(),old=await h.preview.open('old-login|A');await h.preview.update(old.sessionId,'old-login|A',{sequence:1,assets:[a.id]});
     const current=await h.preview.open('new-login|A',{resumeSessionId:old.sessionId,generation:old.generation,resumeToken:old.resumeToken});
     assert.equal((await h.inventory.inspect(a)).status,'UNKNOWN');await assert.rejects(h.remove(a.id),{code:'ASSET_REFERENCED'});
-    await h.preview.close(old.sessionId,'old-login|A',1);assert.equal(h.preview.snapshot().references.length,1);
+    await assert.rejects(h.preview.close(old.sessionId,'old-login|A',1),{code:'OWNERSHIP_SESSION_EXPIRED'});assert.equal(h.preview.snapshot().references.length,1);
     await assert.rejects(h.preview.update(old.sessionId,'new-login|A',{sequence:99,generation:1,assets:[]}),{code:'OWNERSHIP_STALE_UPDATE'});
     await h.preview.update(current.sessionId,'new-login|A',{sequence:1,generation:current.generation,assets:[b.id]});
     assert.equal((await h.inventory.inspect(a)).status,'UNUSED');assert.equal((await h.inventory.inspect(b)).status,'USED');

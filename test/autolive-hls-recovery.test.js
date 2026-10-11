@@ -1,7 +1,8 @@
+import '../test-support/RuntimeStateGuard.mjs';
+import {writeTempDiagnostic} from '../test-support/TempDiagnostics.js';
 import test from "node:test";
 import { AUTOLIVE_POST_TAKE_CONFIRMED_LOSS_MS } from "../public/js/studio/AutoLivePostTakePolicy.js";
 import trace from "../public/js/core/RuntimeTrace.js";
-import { writeFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import EventBus from "../public/js/core/EventBus.js";
 import Events from "../public/js/core/Events.js";
@@ -191,7 +192,7 @@ test('persistent native failures stay under LOSS and close only at 15s',async()=
  assert.deepEqual(history(h.published),['A','ENTRY','LIVE','LOSS']);
  document.createElement=create;await h.time.advance(1);await flush();assert.equal(h.controller.session,null);assert.equal(h.scheduler.ends,1);
  assert.deepEqual(history(h.published),['A','ENTRY','LIVE','LOSS','A']);assert.equal(h.renderer.program.renderer.video.currentTime,37);
- writeFileSync('var/hls-recovery-attempt-trace.json',trace.exportJSON());
+ writeTempDiagnostic('hls-recovery-attempt-trace.json',trace.exportJSON());
  }finally{document.createElement=create;trace.enabled=oldTrace;trace.clear();}
 }));
 test('operator override invalidates recovery owner before retry deadline',async()=>harness(async h=>{

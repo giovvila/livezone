@@ -2,12 +2,17 @@ import {randomUUID,randomBytes,createHash} from 'node:crypto';
 import {mkdir,readFile,writeFile,rename} from 'node:fs/promises';
 import {dirname} from 'node:path';
 import {referenceError} from './AssetReferenceInventory.js';
+import {isGeneration,successorGeneration} from './GenerationDomain.js';
 
 const CAPABILITIES=['canonical-catalog','preview-ownership-v2','asset-validation'];
 export default class ReferenceClientRegistry {
     constructor({coordinator,path,diagnostics,clock=()=>Date.now(),coverageProven=false,minimumVersion=2,requireEpoch=false,isSessionRevoked}={}) {
         Object.assign(this,{coordinator,path,diagnostics,clock,coverageProven,minimumVersion,requireEpoch,isSessionRevoked});
         this.handshaken=new Set();this.epochConfirmed=false;
+        this.presenceEvidence=new Map();
+        // Unknown request participation is conservative process-local census
+        // evidence, separate from durable client records and lifecycle updates.
+        this.unregisteredPrincipals=new Set();
         this.clients=new Map();this.available=true;this.ready=this.initialize();
     }
     async initialize() {
@@ -16,8 +21,8 @@ export default class ReferenceClientRegistry {
             const data=JSON.parse(await readFile(this.path,'utf8'));
             if(data.version!==1||!Array.isArray(data.clients)||data.clients.length>128)throw Error();
             for(const client of data.clients){
-                if(!/^[0-9a-f-]{36}$/.test(client.id)||!Number.isSafeInteger(client.generation)||
-                    client.generation<1||this.clients.has(client.id)||typeof client.principal!=='string'||
+                if(!/^[0-9a-f-]{36}$/.test(client.id)||!isGeneration(client.generation)||
+                    this.clients.has(client.id)||typeof client.principal!=='string'||
                     !/^[0-9a-f]{64}$/.test(client.resumeHash)||typeof client.active!=='boolean'||typeof client.supported!=='boolean'||
                     !['CONTROL','SCHEDULER','OBSOLETE'].includes(client.role)||!['PENDING','RECONCILED','CONFLICT','INVALID'].includes(client.catalog)||
                     !['PENDING','RECONCILED','INVALID'].includes(client.legacyStatus)||
@@ -48,41 +53,99 @@ export default class ReferenceClientRegistry {
         try{await this.persist();}catch(error){this.clients=before;this.available=false;throw error;}
         return result;
     });}
-    register({role,version,capabilities=[],resumeId,resumeGeneration,resumeToken}={},principal='operator',{observationOnly=false}={}) {
+    register(fields={},principal='operator',{observationOnly=false}={}) {
+        if(!fields||typeof fields!=='object'||Array.isArray(fields))return Promise.reject(referenceError('INVALID_CLIENT_STATE'));
+        const {role,version,capabilities=[],resumeId,resumeGeneration,resumeToken}=structuredClone(fields);
+        const resuming=Object.hasOwn(fields,'resumeId');
+        const orphanCredentials=!resuming&&(Object.hasOwn(fields,'resumeGeneration')||Object.hasOwn(fields,'resumeToken'));
         return this.mutate(()=>{
             const supported=version===this.minimumVersion&&['CONTROL','SCHEDULER'].includes(role)&&Array.isArray(capabilities)&&capabilities.length<=16&&CAPABILITIES.every(cap=>capabilities.includes(cap))&&
                 (this.minimumVersion<3||capabilities.includes('channel-logo-authority-v1'));
-            const prior=resumeId&&this.clients.get(resumeId);
-            if(prior&&(prior.generation!==resumeGeneration||typeof resumeToken!=='string'||createHash('sha256').update(resumeToken).digest('hex')!==prior.resumeHash))throw referenceError('CLIENT_GENERATION_CONFLICT');
+            if(orphanCredentials)throw referenceError('INVALID_CLIENT_STATE');
+            const prior=resuming?this.clients.get(resumeId):null;
+            if(resuming&&(!/^[0-9a-f-]{36}$/.test(typeof resumeId==='string'?resumeId:'')||!prior||
+                !isGeneration(resumeGeneration)||prior.generation!==resumeGeneration||
+                typeof resumeToken!=='string'||!/^[0-9a-f]{64}$/.test(resumeToken)||
+                createHash('sha256').update(resumeToken).digest('hex')!==prior.resumeHash||prior.principal!==principal||
+                this.isSessionRevoked?.(principal)===true||prior.termination==='SESSION_REVOKED'||
+                !prior.active&&prior.termination!=='EXPLICIT_CLOSE'))throw referenceError('CLIENT_GENERATION_CONFLICT');
             if(!prior&&this.clients.size>=128)throw referenceError('REFERENCE_AUDIT_UNAVAILABLE');
-            const id=prior?.id||randomUUID(),generation=(prior?.generation||0)+1;
+            const generation=prior?successorGeneration(prior.generation,'CLIENT_GENERATION_CONFLICT'):1;
+            const id=prior?.id||randomUUID();
             const token=prior?resumeToken:randomBytes(32).toString('hex');
             const client={...prior,id,generation,principal,version,resumeHash:createHash('sha256').update(token).digest('hex'),role:supported?role:'OBSOLETE',supported,catalog:prior?.catalog||'PENDING',legacyStatus:prior?.legacyStatus||'PENDING',legacyAssets:prior?.legacyAssets||[],
                 observationOnly,active:true,confirmed:supported,lastSeen:this.clock()};
-            if(this.requireEpoch){client.catalog='PENDING';client.legacyStatus='PENDING';}
+            if(this.requireEpoch){client.catalog='PENDING';client.legacyStatus='PENDING';delete client.pendingRevision;}
             this.clients.set(id,client);this.diagnostics?.record('CLIENT_CAPABILITY',{complete:supported});
-            if(supported){this.handshaken.add(id+':'+generation);this.epochConfirmed=true;}
             return {clientId:id,generation,supported,resumeToken:token};
+        }).then(result=>{
+            // Fresh capability confirmation follows successful canonical persistence.
+            if(result.supported){this.handshaken.add(result.clientId+':'+result.generation);this.epochConfirmed=true;}
+            return result;
         });
     }
-    update(id,generation,{catalog,closed=false}={},principal='operator') {
+    update(id,generation,fields={},principal='operator') {
+        const {catalog,closed=false,confirmed}=fields;
         return this.mutate(()=>{
             const client=this.clients.get(id);
             if(!client||client.generation!==generation||client.principal!==principal)throw referenceError('CLIENT_GENERATION_CONFLICT');
-            if(catalog&&!['PENDING','RECONCILED','CONFLICT','INVALID'].includes(catalog))throw referenceError('INVALID_CLIENT_STATE');
-            if(catalog)client.catalog=catalog;
+            if(Object.hasOwn(fields,'catalog')&&!['PENDING','RECONCILED','CONFLICT','INVALID'].includes(catalog))throw referenceError('INVALID_CLIENT_STATE');
+            if(typeof closed!=='boolean')throw referenceError('INVALID_CLIENT_STATE');
+            if(confirmed!==undefined&&confirmed!==false)throw referenceError('INVALID_CLIENT_STATE');
+            const expectedActive=confirmed===false&&!closed?client.active:!closed;
+            const expectedConfirmed=confirmed===false?false:closed&&!client.active&&client.termination==='EXPLICIT_CLOSE'?client.confirmed:client.supported;
+            const complete=()=>{
+                if(client.active!==expectedActive||client.confirmed!==expectedConfirmed||
+                    Object.hasOwn(fields,'catalog')&&client.catalog!==catalog||
+                    closed&&client.termination!=='EXPLICIT_CLOSE')throw referenceError('INVALID_CLIENT_STATE');
+                return {clientId:id,generation};
+            };
+            // Accepted catalog and lifecycle fields belong to one canonical mutation.
+            if(Object.hasOwn(fields,'catalog'))client.catalog=catalog;
+            // Explicit lifecycle termination must not be skipped by deconfirmation.
+            // An accepted close is completed before the route releases Preview.
+            if(closed){
+                if(!client.active&&client.termination==='EXPLICIT_CLOSE'){
+                    if(confirmed===false)client.confirmed=false;
+                    return complete();
+                }
+                client.active=false;client.confirmed=confirmed===false?false:client.supported;
+                client.termination='EXPLICIT_CLOSE';client.lastSeen=this.clock();
+                this.presenceEvidence.delete(id+':'+generation);
+                return complete();
+            }
+            // Explicit loss uses the existing authenticated, persisted update owner.
+            // Retry changes no liveness timestamp, generation or other client fields.
+            if(confirmed===false){client.confirmed=false;return complete();}
             client.active=!closed;client.confirmed=client.supported;client.termination=closed?'EXPLICIT_CLOSE':null;client.lastSeen=this.clock();
-            return {clientId:id,generation};
+            this.presenceEvidence.delete(id+':'+generation);
+            return complete();
         });
     }
     pendingCatalog(id,generation,revision,principal){return this.mutate(()=>{
         const client=this.identify(id,generation,principal);if(!client)throw referenceError('CLIENT_GENERATION_CONFLICT');
         client.catalog='PENDING';client.pendingRevision=revision;
     });}
-    confirmCatalog(id,generation,revision,principal){return this.mutate(()=>{
+    acknowledgmentMatches(client,fields,preview){
+        if(Object.hasOwn(fields,'catalog')||Object.hasOwn(fields,'closed')&&typeof fields.closed!=='boolean'||
+            Object.hasOwn(fields,'confirmed')&&fields.confirmed!==false)return false;
+        if(fields.closed===true){
+            const prefix=client.principal+'|'+client.id;
+            if(client.active||client.termination!=='EXPLICIT_CLOSE'||!preview?.available||
+                [...preview.sessions.values()].some(session=>session.principal===prefix||session.principal.startsWith(prefix+'|')))return false;
+            return fields.confirmed===false?!client.confirmed:true;
+        }
+        if(fields.confirmed===false)return client.confirmed===false;
+        if(fields.closed===false)return client.active&&this.effectiveConfirmation(client);
+        return true;
+    }
+    confirmCatalog(id,generation,revision,principal,postcondition=()=>true){return this.mutate(()=>{
         const client=this.identify(id,generation,principal);
-        if(!client||client.pendingRevision!==revision||this.currentCatalogRevision?.()!==revision)throw referenceError('CLIENT_GENERATION_CONFLICT');
-        client.catalog='RECONCILED';delete client.pendingRevision;
+        if(!client||!Number.isSafeInteger(revision)||revision<0||client.pendingRevision!==revision||
+            !['PENDING','RECONCILED'].includes(client.catalog)||this.currentCatalogRevision?.()!==revision||!postcondition(client))throw referenceError('CLIENT_GENERATION_CONFLICT');
+        // Retain the existing acknowledgment context for exact retries. A new
+        // pendingCatalog or generation/epoch still fences it; no lifecycle receipt.
+        client.catalog='RECONCILED';
     });}
     isHistoricalNonwriter(client){
         // Positive credential invalidation, never network silence. Current clients
@@ -96,19 +159,22 @@ export default class ReferenceClientRegistry {
         if(!this.available)reasons.push('CLIENT_REGISTRY_UNAVAILABLE');
         if(!this.coverageProven)reasons.push('LEGACY_CLIENT_CENSUS_UNPROVEN');
         if(this.requireEpoch&&!this.epochConfirmed)reasons.push('CLIENT_CENSUS_RECONNECT_REQUIRED');
+        if([...this.unregisteredPrincipals].some(principal=>this.isSessionRevoked?.(principal)!==true))
+            reasons.push('CLIENT_CAPABILITY_UNKNOWN');
         if(this.authenticatedPrincipals)for(const principal of this.authenticatedPrincipals()){
-            if(![...this.clients.values()].some(client=>client.principal===principal&&(client.active||client.termination==='EXPLICIT_CLOSE')&&client.supported&&client.confirmed))reasons.push('AUTHENTICATED_CLIENT_UNCONFIRMED');
+            if(![...this.clients.values()].some(client=>client.principal===principal&&(client.active||client.termination==='EXPLICIT_CLOSE')&&this.effectiveConfirmation(client)))reasons.push('AUTHENTICATED_CLIENT_UNCONFIRMED');
         }
         for(const client of this.clients.values()) {
             if(this.isHistoricalNonwriter(client))continue;
             if(client.catalog!=='RECONCILED')reasons.push('LEGACY_CATALOG_'+client.catalog);
             if(client.legacyStatus!=='RECONCILED')reasons.push('LEGACY_ALIASES_UNCONFIRMED');
-            if(client.active&&(!client.supported||!client.confirmed||this.requireEpoch&&!this.handshaken.has(client.id+':'+client.generation)))reasons.push('CLIENT_CAPABILITY_UNKNOWN');
+            if(client.active&&!this.effectiveConfirmation(client))reasons.push('CLIENT_CAPABILITY_UNKNOWN');
         }
         return {state:reasons.length?'INCOMPLETE':'COMPLETE',reasons:[...new Set(reasons)],clientCount:this.clients.size,
-            clients:[...this.clients.values()].map(client=>({role:client.role,state:this.isHistoricalNonwriter(client)?'HISTORICAL / NON-AUTHORITATIVE':!client.active?'DISCONNECTED':client.supported&&client.confirmed?'CURRENT_CAPABLE':'LEGACY/UNKNOWN'}))};
+            clients:[...this.clients.values()].map(client=>({role:client.role,state:this.isHistoricalNonwriter(client)?'HISTORICAL / NON-AUTHORITATIVE':!client.active?'DISCONNECTED':this.effectiveConfirmation(client)?'CURRENT_CAPABLE':'LEGACY/UNKNOWN'}))};
     }
     identify(id,generation,principal){const client=this.clients.get(id);return client&&client.generation===generation&&client.principal===principal?client:null;}
+    observeUnregistered(principal){this.unregisteredPrincipals.add(principal);}
     updateLegacy(id,generation,{assets,complete},principal){return this.mutate(()=>{
         const client=this.identify(id,generation,principal);if(!client)throw referenceError('CLIENT_GENERATION_CONFLICT');
         if(!Array.isArray(assets)||assets.length>500||typeof complete!=='boolean')throw referenceError('INVALID_CLIENT_STATE');
@@ -117,8 +183,10 @@ export default class ReferenceClientRegistry {
         if(complete){client.pendingLegacyAssets=values;client.legacyRevision=(client.legacyRevision||0)+1;}
         client.legacyStatus=complete?'PENDING':'INVALID';return {complete,revision:client.legacyRevision};
     });}
-    confirmLegacy(id,generation,revision,principal){return this.mutate(()=>{
-        const client=this.identify(id,generation,principal);if(!client||client.legacyRevision!==revision||!client.pendingLegacyAssets)throw referenceError('CLIENT_GENERATION_CONFLICT');
+    confirmLegacy(id,generation,revision,principal,postcondition=()=>true){return this.mutate(()=>{
+        const client=this.identify(id,generation,principal);if(!client||!Number.isSafeInteger(revision)||revision<1||client.legacyRevision!==revision||
+            !['PENDING','RECONCILED'].includes(client.legacyStatus)||!postcondition(client)||!client.pendingLegacyAssets&&client.legacyStatus!=='RECONCILED')throw referenceError('CLIENT_GENERATION_CONFLICT');
+        if(!client.pendingLegacyAssets)return;
         client.legacyAssets=client.pendingLegacyAssets;delete client.pendingLegacyAssets;client.legacyStatus='RECONCILED';
     });}
     legacyReferences(){return [...this.clients.values()].flatMap(client=>[...client.legacyAssets||[],...client.pendingLegacyAssets||[]]);}
@@ -130,8 +198,15 @@ export default class ReferenceClientRegistry {
         await this.ready;
         const client=this.identify(id,generation,principal);
         if(!client?.active||!this.handshaken.has(id+':'+generation))throw referenceError('CLIENT_CAPABILITY_REQUIRED');
-        client.confirmed=connected&&client.supported;
+        const key=id+':'+generation;
+        // Observational reconnect cannot erase previously observed absence.
+        // Fresh confirmation belongs to authenticated registration/update.
+        if(!connected||!this.presenceEvidence.has(key))this.presenceEvidence.set(key,connected);
+        return this.effectiveConfirmation(client)?'CURRENT_CAPABLE':'UNKNOWN';
     });}
+    effectiveConfirmation(client){return client.confirmed&&client.supported&&
+        (!this.requireEpoch||this.handshaken.has(client.id+':'+client.generation))&&
+        this.presenceEvidence.get(client.id+':'+client.generation)!==false;}
     revokePrincipal(principal){return this.mutate(()=>{
         for(const client of this.clients.values())if(client.principal===principal){
             client.active=false;client.confirmed=false;client.termination='SESSION_REVOKED';

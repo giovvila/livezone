@@ -6,6 +6,7 @@ import {randomUUID} from 'node:crypto';
 import {scheduledEntryIdentity} from './ScheduledEntryIdentity.js';
 import {ledgerSnapshot, validateLedgerSnapshot, entryConsumption} from './ScheduledEntryLedgerContract.js';
 import {assertMigrationStartup} from '../recovery/CleanLedgerV1Migration.js';
+import {executionEraStartup} from '../recovery/ExecutionEraContract.js';
 
 const inside = (root,path) => { const r=relative(root,path); return !r || (!r.startsWith('..') && !isAbsolute(r)); };
 const result = (status,record) => Object.freeze({status, ...(record ? {record} : {})});
@@ -34,6 +35,7 @@ export default class ScheduledEntryLedgerRepository {
     async initializeOnce() {
         if (this.closed) return;
         try {
+            if(executionEraStartup(this.path))throw Error('LEDGER_V2_REPOSITORY_REQUIRED');
             try {if(await assertMigrationStartup(this.path))throw Error('LEDGER_V2_REPOSITORY_REQUIRED');}
             catch(error){if(error.code!=='ENOENT')throw error;}
             try {if(capturedEvidence(await this.fs.readFile(this.path),{json:true}).value?.schemaVersion===2)throw Error('LEDGER_V2_REPOSITORY_REQUIRED');}
@@ -107,7 +109,7 @@ export default class ScheduledEntryLedgerRepository {
             const existing=this.snapshot.entries.find(r=>r.identity.entryKey===record.identity.entryKey);
             if (existing) return result('ALREADY_CONSUMED',existing);
             if(!check())return result('CONFLICT');
-            const next=ledgerSnapshot({ledgerId:this.snapshot.ledgerId,
+            const next=ledgerSnapshot({...this.snapshot,ledgerId:this.snapshot.ledgerId,
                 generation:this.snapshot.generation+1,entries:[...this.snapshot.entries,record]});
             await this.writeSnapshot(next,false,check);
             return result('CONSUMED',record);

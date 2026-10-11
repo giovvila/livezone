@@ -1,14 +1,12 @@
-import { open, unlink } from "node:fs/promises";
-import { join } from "node:path";
-import { randomUUID } from "node:crypto";
+import { opendir, stat } from "node:fs/promises";
 
 export default class RuntimeReadiness {
     constructor({ mediaReady, mediaAssetRepository, mediaIngestStatusClient,
-        writableProbe = probeWritableDirectory } = {}) {
+        storageObserver = observeStorageDirectory } = {}) {
         this.mediaReady = mediaReady;
         this.mediaAssetRepository = mediaAssetRepository;
         this.mediaIngestStatusClient = mediaIngestStatusClient;
-        this.writableProbe = writableProbe;
+        this.storageObserver = storageObserver;
     }
 
     async evaluate() {
@@ -27,7 +25,7 @@ export default class RuntimeReadiness {
     async checkMediaLibrary() {
         try {
             await this.mediaReady;
-            await this.writableProbe(this.mediaAssetRepository.tempRoot);
+            await this.storageObserver(this.mediaAssetRepository.tempRoot);
             return "ok";
         }
         catch { return "unavailable"; }
@@ -42,19 +40,22 @@ export default class RuntimeReadiness {
     }
 }
 
-async function probeWritableDirectory(directory) {
-    const path = join(directory, `.ready-${randomUUID()}.tmp`);
+export async function observeStorageDirectory(directory) {
+    if (!(await stat(directory)).isDirectory()) throw new Error("Storage directory unavailable");
     let handle;
     try {
-        handle = await open(path, "wx");
+        handle = await opendir(directory);
+        await handle.read();
     }
     finally {
-        await handle?.close().catch(() => {});
-        await unlink(path).catch(() => {});
+        await handle?.close();
     }
 }
 
 function readiness(ok, status, checks) {
     return Object.freeze({ ok, service: "livezone", status,
-        checks: Object.freeze(checks) });
+        checks: Object.freeze(checks), storage: Object.freeze({
+            readability: checks.mediaLibrary === "ok" ? "DIRECTORY_READABLE" : "UNAVAILABLE",
+            writeability: "NOT_PROBED", durability: "NOT_PROBED"
+        }) });
 }

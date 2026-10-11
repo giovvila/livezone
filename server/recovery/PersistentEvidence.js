@@ -1,7 +1,8 @@
 import {createHash} from 'node:crypto';
 import {isUtf8} from 'node:buffer';
 import {readFile, lstat} from 'node:fs/promises';
-import {assertCanonicalPath} from './RecoveryNamespace.js';
+import {readFileSync,lstatSync} from 'node:fs';
+import {assertCanonicalPathSync,assertCanonicalPath} from './RecoveryNamespace.js';
 
 const fail = code => {throw Object.assign(new Error(code), {code});};
 
@@ -26,6 +27,21 @@ export async function readEvidence(path, {optional=false, maxBytes=64*1024*1024,
         const stat=await lstat(path);
         if (!stat.isFile() || stat.isSymbolicLink() || stat.size>maxBytes) fail(ordinaryError);
         const bytes=await readFile(path);
+        if (bytes.length>maxBytes) fail(ordinaryError);
+        return capturedEvidence(bytes, interpretation);
+    } catch (error) {
+        if (optional && error.code==='ENOENT') return null;
+        throw error;
+    }
+}
+
+export function readEvidenceSync(path, {optional=false, maxBytes=64*1024*1024,
+    ordinaryError='ORDINARY_EVIDENCE_REQUIRED', ...interpretation}={}) {
+    try {
+        assertCanonicalPathSync(path);
+        const stat=lstatSync(path);
+        if (!stat.isFile() || stat.isSymbolicLink() || stat.size>maxBytes) fail(ordinaryError);
+        const bytes=readFileSync(path);
         if (bytes.length>maxBytes) fail(ordinaryError);
         return capturedEvidence(bytes, interpretation);
     } catch (error) {

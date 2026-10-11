@@ -1,0 +1,23 @@
+ expire(){if(this.grant&&this.clock()>=this.grant.expiresAt){this.retiredInstances.add(this.grant.ownerInstanceId);this.grant=null;this.principal=null;this.reason='LEASE_EXPIRED';++this.grantRevision;}}
+ snapshot(){this.expire();return {available:this.available===true,state:this.grant?'BROWSER_OWNER':'NO_OWNER',ownerKind:this.grant?'BROWSER':null,ownerInstanceId:this.grant?.ownerInstanceId??null,authorityEpoch:this.authorityEpoch,authorityProcessSession:this.authorityProcessSession,grantRevision:this.grantRevision,expiresAt:this.grant?.expiresAt??null,reason:this.reason,manualSuppressed:this.manualSuppressed===true,scheduledSuppressed:this.scheduledSuppressed===true,scheduledEventId:this.scheduledEventId??null,executionAllowed:false,serverTake:false};}
+ matches(candidate,principal,publisherSessionId=candidate?.publisherSessionId){
+  this.expire();const g=this.grant;
+  return this.available===true&&!this.closed&&g&&principal===this.principal&&candidate&&
+   ['authorityEpoch','authorityProcessSession','ownerInstanceId','publisherSessionId','grantRevision','ownerKind'].every(k=>candidate[k]===g[k])&&
+   same(candidate.leaseId,g.leaseId)&&publisherSessionId===g.publisherSessionId;
+ }
+ async operate(value,principal){await this.ready;this.expire();let grant=null;
+  if(!this.available||this.closed)return {state:this.snapshot(),grant,leaseRemainingMs:grant?Math.max(0,grant.expiresAt-this.clock()):0};
+  if(value.operation==='acquire'){
+   if(!validId(value.ownerInstanceId)||!validId(value.publisherSessionId))throw Error('INVALID_OWNER');
+   if(this.retiredInstances.has(value.ownerInstanceId)||this.retiredInstances.size>=4096){this.reason='OWNER_RETIRED';return {state:this.snapshot(),grant:null};}
+   if(!this.grant&&!this.restartBlocked&&!this.manualSuppressed&&!this.scheduledSuppressed){this.principal=principal;this.grant={authorityEpoch:this.authorityEpoch,authorityProcessSession:this.authorityProcessSession,ownerKind:'BROWSER',ownerInstanceId:value.ownerInstanceId,publisherSessionId:value.publisherSessionId,grantRevision:++this.grantRevision,leaseId:randomUUID(),expiresAt:this.clock()+this.leaseMs};this.reason='GRANTED';grant={...this.grant};}
+   // Knowing an instance ID never retrieves its secret or extends its lease.
+   if(!grant&&this.grant)return {state:{...this.snapshot(),reason:'OWNER_HELD'},grant:null};
+  }else if(value.operation==='renew'&&this.matches(value.grant,principal)){
+   this.grant.expiresAt=this.clock()+this.leaseMs;this.reason='RENEWED';grant={...this.grant};
+  }else if(value.operation==='release'&&this.matches(value.grant,principal)){
+   this.retiredInstances.add(this.grant.ownerInstanceId);this.grant=null;this.principal=null;++this.grantRevision;this.reason='RELEASED';
+  }else if(value.operation!=='inspect')this.reason='STALE_GRANT';
+  return {state:this.snapshot(),grant,leaseRemainingMs:grant?Math.max(0,grant.expiresAt-this.clock()):0};
+ }

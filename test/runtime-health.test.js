@@ -28,7 +28,7 @@ test("readyz reports usable dependencies and OBS offline remains ready", async (
             ok: true, service: "livezone", status: "ready", checks: {
                 mediaLibrary: "ok", programOutput: "ok", mediaIngestControl: "ok",
                 studioState: "uninitialized"
-            }
+            }, storage: {readability:'DIRECTORY_READABLE',writeability:'NOT_PROBED',durability:'NOT_PROBED'}
         });
     }, { mediaIngestStatusClient: statusClient("offline") });
 });
@@ -41,9 +41,17 @@ test("readyz degrades safely when optional MediaMTX control is unavailable", asy
             ok: true, service: "livezone", status: "degraded", checks: {
                 mediaLibrary: "ok", programOutput: "ok",
                 mediaIngestControl: "degraded", studioState: "uninitialized"
-            }
+            }, storage: {readability:'DIRECTORY_READABLE',writeability:'NOT_PROBED',durability:'NOT_PROBED'}
         });
     }, { mediaIngestStatusClient: statusClient("error") });
+});
+
+test("HEAD readyz returns readiness status with empty body over actual isolated HTTP", async () => {
+    await withServer(async base => {
+        const response=await fetch(`${base}/readyz`,{method:'HEAD'});
+        assert.equal(response.status,200);assert.equal(await response.text(),'');
+        assert.equal(response.headers.get('cache-control'),'no-store');
+    }, {mediaIngestStatusClient:statusClient('offline')});
 });
 
 test("readyz returns sanitized 503 when Media Library storage is unavailable", async () => {
@@ -60,7 +68,7 @@ test("readyz returns sanitized 503 when Media Library storage is unavailable", a
             ok: false, service: "livezone", status: "not-ready", checks: {
                 mediaLibrary: "unavailable", programOutput: "ok",
                 mediaIngestControl: "ok", studioState: "uninitialized"
-            }
+            }, storage: {readability:'UNAVAILABLE',writeability:'NOT_PROBED',durability:'NOT_PROBED'}
         });
         assert.equal(body.includes(secret), false);
         assert.equal(body.includes("private"), false);
@@ -69,16 +77,16 @@ test("readyz returns sanitized 503 when Media Library storage is unavailable", a
         mediaIngestStatusClient: statusClient("offline") });
 });
 
-test("Media Library write-probe failure makes application not ready", async () => {
+test("Media Library directory observation failure makes application not ready", async () => {
     const readiness = new RuntimeReadiness({ mediaReady: Promise.resolve(),
         mediaAssetRepository: { tempRoot: "not-returned" },
         mediaIngestStatusClient: statusClient("offline"),
-        writableProbe: async () => { throw new Error("read-only filesystem"); } });
+        storageObserver: async () => { throw new Error("unreadable directory"); } });
     assert.deepEqual(await readiness.evaluate(), {
         ok: false, service: "livezone", status: "not-ready", checks: {
             mediaLibrary: "unavailable", programOutput: "ok",
             mediaIngestControl: "ok"
-        }
+        }, storage: {readability:'UNAVAILABLE',writeability:'NOT_PROBED',durability:'NOT_PROBED'}
     });
 });
 

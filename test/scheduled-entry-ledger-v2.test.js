@@ -1,7 +1,8 @@
 import test from 'node:test';
+import {registerNativeTestRoot} from '../test-support/NativeTempGuard.mjs';
 import {transitionScheduledLiveTransaction} from '../server/scheduler/ScheduledLiveExecutionTransaction.js';
 import assert from 'node:assert/strict';
-import {mkdtemp,rm,writeFile,readFile,unlink} from 'node:fs/promises';
+import {mkdtemp,rm,writeFile,readFile,unlink,mkdir,readdir,link,symlink} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve,relative,isAbsolute} from 'node:path';
 import {spawnSync} from 'node:child_process';
@@ -10,11 +11,12 @@ import Repository from '../server/scheduler/ScheduledEntryLedgerV2Repository.js'
 import Legacy from '../server/scheduler/ScheduledEntryLedgerRepository.js';
 import {scheduledEntryIdentity} from '../server/scheduler/ScheduledEntryIdentity.js';
 import {repositoryIdentity} from '../server/scheduler/ScheduledExecutionProvenance.js';
-import {envelope,inspectV2,ordinary,parseWal,seal} from '../server/scheduler/ScheduledEntryLedgerV2Protocol.js';
+import {envelope,inspectV2,ordinary,parseWal,seal,install,hash} from '../server/scheduler/ScheduledEntryLedgerV2Protocol.js';
 import {ledgerRecoveryEvidence,reconcileScheduledEntryLedgerV2} from '../server/scheduler/ReconcileScheduledEntryLedgerV2.js';
 import {initializeEntryLedger} from '../server/scheduler/ScheduledEntryRuntime.js';
 import {harness,START,END} from '../test-support/ScheduledEntryHarness.js';
 import {directorySync as realDirectorySync} from '../server/scheduler/LedgerV2Durability.js';
+import {ledgerSnapshot} from '../server/scheduler/ScheduledEntryLedgerContract.js';
 import {migrationFixture} from '../test-support/CleanLedgerMigrationFixture.mjs';
 import BrowserExecutionOwnership from '../server/autolive/BrowserExecutionOwnership.js';
 
@@ -27,6 +29,7 @@ const proof=async()=>({absent:true,services:[{State:'Stopped',StartMode:'Disable
 const child=fileURLToPath(new URL('../test-support/LedgerV2CrashChild.mjs',import.meta.url));
 async function fixture(t) {
     const dir=await mkdtemp(join(tmpdir(),'lz-ledger-v2-')),path=join(dir,'ledger.json');const repositories=[];
+    registerNativeTestRoot(dir);
     t.after(async()=>{
         for(const r of repositories)await r.close().catch(()=>{});
         const rel=relative(resolve(tmpdir()),resolve(dir));assert.ok(rel&&!rel.startsWith('..')&&!isAbsolute(rel)&&rel.startsWith('lz-ledger-v2-'));
@@ -35,7 +38,8 @@ async function fixture(t) {
     const make=options=>{const r=new Repository({path,authority:context,syncDirectory,...options});repositories.push(r);return r;};
     const first=make({create:true});await first.initialize();assert.equal(first.status,'READY',first.error);await first.close();
     const inputPath=join(dir,'input.json');await writeFile(inputPath,JSON.stringify({identity,context}));
-    const crash=point=>{const r=spawnSync(process.execPath,[child,path,point,inputPath,nativeMode?'native':'fixture'],{encoding:'utf8',windowsHide:true,timeout:30000});assert.equal(r.status,77,r.stderr);};
+    const crash=point=>{const r=spawnSync(process.execPath,[child,path,point,inputPath,nativeMode?'native':'fixture'],{encoding:'utf8',windowsHide:true,timeout:300000,
+        env:{...process.env,LIVEZONE_NATIVE_TEST_ROOTS:JSON.stringify([dir])}});assert.equal(r.status,77,r.stderr);};
     const setupRecovery=async()=>{
         const owner=JSON.parse(await readFile(path+'.lock','utf8'));
         const authorityPath=join(dir,'authority.execution'),scheduledPath=join(dir,'scheduled.json');
@@ -70,9 +74,6 @@ const points=['before-intent','intent-opened','intent-written','intent-flushed',
 for(const point of points)test('abrupt child loss at '+point+': no ambiguous outcome becomes executable',async t=>{
     const f=await fixture(t);f.crash(point);const args=await f.setupRecovery();
     const locked=f.make();await locked.initialize();assert.equal(locked.status,'CONFLICT');
-    if(point==='opened') {
-        await assert.rejects(reconcileScheduledEntryLedgerV2(args));assert.ok(await ordinary(f.path+'.lock'));return;
-    }
     await reconcileScheduledEntryLedgerV2(args);
     await reconcileScheduledEntryLedgerV2(args); // retry after completed archival
     const r=f.make();await r.initialize();assert.equal(r.status,'READY',r.error);
@@ -81,11 +82,78 @@ for(const point of points)test('abrupt child loss at '+point+': no ambiguous out
     if(answer.status==='ALREADY_CONSUMED')assert.equal((await r.consume(identity,context)).status,'ALREADY_CONSUMED');
 });
 
+test('empty-stage recovery installs byte-identical uninterrupted bytes and one COMMIT/END',async t=>{
+    const f=await fixture(t);f.crash('intent-flushed');
+    const before=await inspectV2(f.path),pending=before.pending;
+    await install(f.path,pending.next,pending.transactionId,{syncDirectory});
+    const uninterrupted=await readFile(f.path);
+    // Same TEMP repository and transaction: reset only the install checkpoint.
+    await writeFile(f.path,before.canonicalBytes);
+    const stage=f.path+'.'+pending.transactionId+'.stage';await writeFile(stage,'');
+    await assert.rejects(install(f.path,pending.next,pending.transactionId,{syncDirectory}),{code:'LEDGER_V2_STAGING_MISMATCH'});
+    const args=await f.setupRecovery();await reconcileScheduledEntryLedgerV2(args);
+    assert.deepEqual(await readFile(f.path),uninterrupted);
+    const after=await inspectV2(f.path);
+    assert.deepEqual(after.current,pending.next);assert.equal(after.current.ledgerId,before.current.ledgerId);
+    assert.deepEqual(after.records.slice(0,before.records.length),before.records);
+    assert.equal(after.records.filter(r=>r.type==='COMMIT'&&r.data.transactionId===pending.transactionId).length,1);
+    assert.equal(after.records.filter(r=>r.type==='END'&&r.data.processSession===pending.owner.processSession).length,1);
+    const image=async()=>Promise.all((await readdir(f.dir)).sort().map(async name=>[name,hash(await readFile(join(f.dir,name)))]));
+    const first=await image();await reconcileScheduledEntryLedgerV2(args);assert.deepEqual(await image(),first);
+});
+
+test('repeated interruption before writing a resumed empty stage retains the same transaction',async t=>{
+    const f=await fixture(t);f.crash('opened');const args=await f.setupRecovery();
+    const before=await inspectV2(f.path),stage=f.path+'.'+before.pending.transactionId+'.stage';
+    for(let retry=0;retry<2;retry++){
+        await assert.rejects(reconcileScheduledEntryLedgerV2({...args,hook:point=>{if(point==='opened')throw Error('resumed-empty-interruption');}}),/resumed-empty-interruption/);
+        assert.equal((await readFile(stage)).length,0);
+        assert.deepEqual((await inspectV2(f.path)).pending,before.pending);
+        assert.ok(await ordinary(f.path+'.lock'));
+    }
+    await reconcileScheduledEntryLedgerV2(args);const after=await inspectV2(f.path);
+    assert.deepEqual(after.current,before.pending.next);
+    assert.equal(after.records.filter(r=>r.type==='COMMIT').length,1);
+    assert.equal(after.records.filter(r=>r.type==='END').length,2); // Initial clean session plus recovered writer.
+});
+
+for(const kind of ['one-byte','prefix','truncated-utf8','truncated-json','wrong-snapshot','foreign-ledger','wrong-generation',
+    'wrong-hash','wrong-repository','foreign-transaction','trailing-byte','wrong-name','case-alias','collision','directory','reparse','hardlink','no-intent'])
+test('empty-stage exception still refuses '+kind+' without changing Ledger/WAL/lock',async t=>{
+    const f=await fixture(t);f.crash('intent-flushed');const state=await inspectV2(f.path),pending=state.pending;
+    const stage=f.path+'.'+pending.transactionId+'.stage',expected=JSON.stringify(envelope(f.path,pending.next))+'\n';
+    const changedSnapshot=changes=>{const {checksum,...value}=JSON.parse(expected);value.snapshot={...value.snapshot,...changes};return JSON.stringify(seal(value))+'\n';};
+    let bytes=expected;
+    if(kind==='one-byte')bytes='x';
+    if(kind==='prefix')bytes=expected.slice(0,Math.floor(expected.length/2));
+    if(kind==='truncated-utf8')bytes=Buffer.from([0xe2,0x82]);
+    if(kind==='truncated-json')bytes=expected.slice(0,-3);
+    if(kind==='wrong-snapshot')bytes=JSON.stringify(envelope(f.path,state.current))+'\n';
+    if(kind==='foreign-ledger')bytes=JSON.stringify(envelope(f.path,ledgerSnapshot({...pending.next,ledgerId:'12345678-1234-1234-1234-123456789abc'})))+'\n';
+    if(kind==='wrong-generation')bytes=changedSnapshot({generation:pending.next.generation+1});
+    if(kind==='wrong-hash'){const value=JSON.parse(expected);value.checksum='0'.repeat(64);bytes=JSON.stringify(value)+'\n';}
+    if(kind==='wrong-repository'){const {checksum,...value}=JSON.parse(expected);value.repositoryId='0'.repeat(64);bytes=JSON.stringify(seal(value))+'\n';}
+    if(kind==='foreign-transaction')bytes=JSON.stringify(envelope(f.path,ledgerSnapshot({...pending.next,
+        entries:pending.next.entries.map(e=>({...e,consumptionId:'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'}))})))+'\n';
+    if(kind==='trailing-byte')bytes=expected+'x';
+    if(kind==='wrong-name')await writeFile(f.path+'.foreign.stage','');
+    else if(kind==='case-alias')await writeFile(stage.replace('.stage','.STAGE'),'');
+    else if(kind==='collision'){await writeFile(stage,'');await writeFile(f.path+'.other.stage','');}
+    else if(kind==='directory')await mkdir(stage);
+    else if(kind==='reparse'){const target=join(f.dir,'stage-target');await mkdir(target);await symlink(target,stage,process.platform==='win32'?'junction':'dir');}
+    else if(kind==='hardlink'){await writeFile(stage,'');await link(stage,join(f.dir,'empty-alias'));}
+    else if(kind==='no-intent'){await writeFile(stage,'');await writeFile(f.path+'.wal',state.records.slice(0,-1).map(r=>JSON.stringify(r)+'\n').join(''));}
+    else await writeFile(stage,bytes);
+    const args=await f.setupRecovery(),names=[f.path,f.path+'.wal',f.path+'.lock'];
+    const before=await Promise.all(names.map(p=>readFile(p)));
+    await assert.rejects(reconcileScheduledEntryLedgerV2(args));
+    assert.deepEqual(await Promise.all(names.map(p=>readFile(p))),before);
+});
+
 for(const point of ['prepared','opened','written','flushed','staged','before-replace','replaced','durable','commit-flushed','end-flushed','recovered','archived','completed'])
 test('recovery interruption at '+point+' retains suppression or blocks retry',async t=>{
     const f=await fixture(t);f.crash('intent-flushed');const args=await f.setupRecovery();
     await assert.rejects(reconcileScheduledEntryLedgerV2({...args,hook:stage=>{if(stage===point)throw Error('recovery-crash');}}),/recovery-crash/);
-    if(point==='opened'){await assert.rejects(reconcileScheduledEntryLedgerV2(args));return;}
     await reconcileScheduledEntryLedgerV2(args);
     const r=f.make();await r.initialize();assert.equal(r.status,'READY',r.error);assert.equal((await r.inspect(identity)).status,'ALREADY_CONSUMED');
 });

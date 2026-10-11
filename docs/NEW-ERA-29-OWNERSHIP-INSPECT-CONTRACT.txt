@@ -1,0 +1,44 @@
+NEW-ERA-29 — execution-ownership observation and expiry ownership
+
+API: authenticated POST /api/studio/execution-ownership with operation=inspect.
+There is no separate execution-ownership CLI dispatcher in the current source.
+The existing authentication/CSRF requirement and HTTP operation allowlist remain.
+
+After the already-owned initialization promise resolves, inspect reads state and
+samples the ownership clock once. snapshot(now) is a pure projection. Neither
+calls expire(), matches(), acquisition, release, persistence or reconciliation.
+No lease secret is returned by inspect (grant=null, leaseRemainingMs=0).
+
+Stored active grant: effective BROWSER_OWNER, reconciliationRequired=false.
+Stored expired grant (now >= expiresAt): effective NO_OWNER, reason=LEASE_EXPIRED,
+reconciliationRequired=true. Effective ownerKind, ownerInstanceId and expiresAt
+are null. Stored grant/principal/reason, retiredInstances and grantRevision stay
+unchanged. The revision in the response is the current stored revision. This
+projection does not authorize execution or prove that revocation was materialized.
+No grant: current NO_OWNER/reason, reconciliationRequired=false; no placeholder.
+
+Explicit mutating owners retain expire(): acquire/renew/release operation flow,
+RestartReconciliation.current() within authenticated prepare/reconcile, and
+matches() in authorized execution/publication validation. expire() materializes
+LEASE_EXPIRED, clears grant/principal, retires the document identity and increments
+grantRevision once. A second expiry evaluation has no additional effect. Existing
+renew extends the lease without allocating a new grant incarnation/revision;
+release and fresh acquisition retain their established revision behavior.
+
+Foreign/stale submitted inspect grant fields are not authoritative and are ignored
+by the existing inspect contract; inspect does not disclose another principal's
+lease. Corrupt epoch evidence or conflicting authority locks fail initialization
+closed (AUTHORITY_UNAVAILABLE). Inspection cannot repair them or break locks.
+There is no persisted browser lease: only authority epoch/lock and NEW ERA startup
+records persist. Restart creates a new authority process/epoch, loses the browser
+grant and retains the restart fence. Startup writes belong to startup, not inspect.
+
+The browser client requests acquire/renew/release and explicit restart challenges;
+it does not use inspect to expire a lease. Diagnostic runtimeState reads snapshot;
+it now obtains effective expiry without mutating the authority. No observational
+caller is changed to request mutation. Existing publication validation remains
+fail-closed for expired grants. No new endpoint, artifact or durable boundary.
+
+All behavioral evidence is isolated TEMP. No real transition, proof installation,
+service mutation, LIVEZONE launch, staging, commit or push. NEW-ERA-08B-C is not
+resumed by this change; complete independent deployment review remains pending.

@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {registerNativeTestRoot} from '../test-support/NativeTempGuard.mjs';
 import assert from 'node:assert/strict';
 import {mkdtempSync,realpathSync,rmSync,writeFileSync,readFileSync,existsSync,mkdirSync,chmodSync,symlinkSync,linkSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
@@ -15,6 +16,7 @@ const windows={skip:process.platform!=='win32'};
 const code={code:'LEDGER_V2_NAMESPACE_DURABILITY_UNPROVEN'};
 function fixture(t) {
     const root=realpathSync(tmpdir()),dir=mkdtempSync(join(root,'lz-r5-native-'));
+    registerNativeTestRoot(dir);
     t.after(()=>{const rel=relative(root,realpathSync(dir));assert.ok(rel.startsWith('lz-r5-native-')&&!rel.startsWith('..')&&!isAbsolute(rel));rmSync(dir,{recursive:true,force:true});});
     return dir;
 }
@@ -38,11 +40,19 @@ test('native replace, archive and remove acknowledge exact names and bytes; arch
     const other=join(dir,'retained');windowsLedgerDurability.archive(dest,other);assert.equal(existsSync(dest),false);
     assert.equal(readFileSync(other,'utf8'),'new');windowsLedgerDurability.remove(other);assert.equal(existsSync(other),false);
 });
-for(const args of [[],['unknown'],['capability'],['capability','C:\\','extra'],['durable-replace','C:\\'],['durable-remove','C:\\','extra']])
-test('native malformed arguments fail deterministically '+JSON.stringify(args),windows,()=>{const r=raw(...args);assert.equal(r.status,2);assert.equal(r.value.ok,false);});
+for(const kind of ['empty','unknown','missing-target','extra-capability','missing-replace-target','extra-remove'])
+test('native malformed arguments remain confined to verified TEMP: '+kind,windows,t=>{
+    const dir=fixture(t),other=join(dir,'extra');
+    const args={empty:[],unknown:['unknown',dir],'missing-target':['capability'],
+        'extra-capability':['capability',dir,other],'missing-replace-target':['durable-replace',dir],
+        'extra-remove':['durable-remove',dir,other]}[kind];
+    if(args.length<2){assert.throws(()=>raw(...args),{code:'NATIVE_TEST_TARGET_OUTSIDE_TEMP'});return;}
+    const r=raw(...args);assert.equal(r.status,2);assert.equal(r.value.ok,false);
+});
 test('native nonexistent, file/directory misuse, UNC, ADS, relative and alias paths fail closed',windows,t=>{
     const dir=fixture(t),file=join(dir,'file');writeFileSync(file,'x');
-    for(const p of [join(dir,'absent'),file,'\\\\server\\share\\folder','relative',file+':stream',join(dir,'x')+'\\..']) {
+    for(const p of ['\\\\server\\share\\folder','relative'])assert.throws(()=>raw('sync-directory',p),{code:'NATIVE_TEST_TARGET_OUTSIDE_TEMP'});
+    for(const p of [join(dir,'absent'),file,file+':stream',join(dir,'x')+'\\..']) {
         const r=raw('sync-directory',p);assert.notEqual(r.status,0);assert.equal(r.value.ok,false);
     }
     assert.throws(()=>windowsLedgerDurability.remove(dir),code);

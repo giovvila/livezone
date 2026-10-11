@@ -1,4 +1,6 @@
 import DurableProgramRepository from './program-output/DurableProgramRepository.js';
+import {executionEraStartup,publishEraReady} from './recovery/ExecutionEraContract.js';
+import {NewEraRecoveryWorkflow} from './recovery/NewEraRecoveryWorkflow.js';
 import ProgramCommitCoordinator from './program-output/ProgramCommitCoordinator.js';
 import ProgramRestoreValidation from './program-output/ProgramRestoreValidation.js';
 import RestartReconciliation from './autolive/RestartReconciliation.js';
@@ -50,6 +52,7 @@ import AssetReferenceInventory from './media-library/AssetReferenceInventory.js'
 import AssetMutationCoordinator from './media-library/AssetMutationCoordinator.js';
 import PreviewOwnership from './media-library/PreviewOwnership.js';
 import ReferenceClientRegistry from './media-library/ReferenceClientRegistry.js';
+import {identifyReferenceRequest as readReferenceRequestIdentity} from './media-library/ReferenceRequestIdentity.js';
 import ChannelLogoAuthority from './media-library/ChannelLogoAuthority.js';
 import AssetAuthorityDiagnostics from './media-library/AssetAuthorityDiagnostics.js';
 import { readFile } from 'node:fs/promises';
@@ -96,6 +99,7 @@ export function createProgramOutputServer({
     scheduledEntryLedgerPath = studioStatePath + '.scheduled-entry-ledger.json',
     scheduledEntryLedgerBootstrap = process.env.LIVEZONE_SCHEDULED_ENTRY_BOOTSTRAP==='1',
     scheduledEntryLedgerOptions = {},
+    executionOwnershipOptions = {},
     scheduledEntryLogger = entry=>console.info('[scheduled-entry]',JSON.stringify(entry)),
     scheduleClock = () => Date.now(),
     scheduleSetTimer = setTimeout,
@@ -108,6 +112,13 @@ export function createProgramOutputServer({
     assertPrivateStudioStatePath(autoLiveRecoveryPath);
     assertPrivateStudioStatePath(scheduledLiveExecutionPath);
     assertPrivateStudioStatePath(scheduledEntryLedgerPath);
+    const executionEra=executionEraStartup(scheduledEntryLedgerPath,{schedulePath});
+    if(executionEra&&(!(executionOwnershipOptions.eraRecovery instanceof NewEraRecoveryWorkflow)||
+        executionOwnershipOptions.eraRecovery.p.ledger!==scheduledEntryLedgerPath||
+        executionOwnershipOptions.eraRecovery.p.authority!==autoLivePath+'.execution'||
+        executionOwnershipOptions.eraRecovery.authorization.executionEraId!==executionEra.executionEraId||
+        executionOwnershipOptions.eraRecovery.authorization.transitionId!==executionEra.transitionId))
+        throw Object.assign(new Error('EXECUTION_ERA_CONTROLLED_START_REQUIRED'),{code:'EXECUTION_ERA_CONTROLLED_START_REQUIRED'});
     if(new Set([studioStatePath,schedulePath,autoLivePath,autoLiveRecoveryPath,studioStatePath+'.program-output.json',scheduledLiveExecutionPath,scheduledEntryLedgerPath].map(p=>{
         const path=resolve(p);return process.platform==='win32'?path.toLowerCase():path;
     })).size!==7)throw new TypeError('AutoLive state paths must be distinct.');
@@ -123,7 +134,7 @@ export function createProgramOutputServer({
         managedClient:mediaIngestStatusClient
     });
 
-    const executionOwnership=new BrowserExecutionOwnership({path:autoLivePath+'.execution',clock:executionClock,leaseMs:executionLeaseMs});
+    const executionOwnership=new BrowserExecutionOwnership({...executionOwnershipOptions,path:autoLivePath+'.execution',clock:executionClock,leaseMs:executionLeaseMs,eraLedgerPath:scheduledEntryLedgerPath});
     const clients = new Set();
     const assetMutations = new AssetMutationCoordinator();
     mediaAssetRepository.mutationCoordinator = assetMutations;
@@ -141,7 +152,7 @@ export function createProgramOutputServer({
     studioStateReady.catch(() => {});
     const studioStateRoutes = new StudioStateRoutes({ coordinator: studioStateCoordinator });
     const scheduler = new SchedulerServer({ path: schedulePath, clock: scheduleClock,
-        setTimer: scheduleSetTimer, clearTimer: scheduleClearTimer });
+        setTimer: scheduleSetTimer, clearTimer: scheduleClearTimer,executionEra,authority:executionOwnership });
     const scheduleRoutes = new ScheduleRoutes({ owner: scheduler });
     const effectiveOutput = new EffectiveProgramOutput({ store, scheduler, clock: scheduleClock, mediaAssetRepository });
     let bootstrapConfig=null;
@@ -174,6 +185,7 @@ export function createProgramOutputServer({
         durable:()=>({status:durableProgram.status,generation:durableProgram.record?.generation??null}),
         configuration:()=>({available:autoLive.available(),revision:autoLive.store.getSnapshot()?.revision,
             sourceFingerprint:autoLive.healthRuntime().resolvedSourceFingerprint})});
+    const executionEraReady=()=>publishEraReady({era:executionEra,authority:executionOwnership,program:durableProgram,autoLive,validateProgram:validateDurable});
     let executionConfigKey;
     const offExecutionConfig=autoLive.store.subscribe(()=>{
         const config=autoLive.store.getSnapshot();const key=JSON.stringify([config?.enabled,config?.armed,config?.sourceId]);
@@ -639,18 +651,7 @@ if(
         // are revoked, not merely network-silent. Reference records are retained.
         isSessionRevoked:principal=>!operatorAuth.disabled&&![...operatorAuth.sessions.sessions.values()].some(session=>createHash('sha256').update(session.id).digest('hex')===principal)});
     referenceClients.authenticatedPrincipals=()=>operatorAuth.disabled?[]:[...operatorAuth.sessions.sessions.values()].map(session=>createHash('sha256').update(session.id).digest('hex'));
-    const identifyReferenceRequest=async(request,session)=>{
-        await referenceClients.ready;
-        const principal=createHash('sha256').update(session.id||'development-bypass').digest('hex');
-        request.operatorReferencePrincipal=principal;
-        if(!request.url.startsWith('/api/media-library/reference-clients')){
-            const query=new URL(request.url,'http://reference.invalid').searchParams;
-            const client=referenceClients.identify(request.headers['x-livezone-reference-client']||query.get('referenceClient'),Number(request.headers['x-livezone-reference-generation']||query.get('referenceGeneration')),principal);
-            request.referenceClient=client?.supported&&client.active?client:null;
-            const cleanup=client&&!client.active&&request.method==='DELETE'&&request.url.startsWith('/api/media-library/preview-ownership/');
-            if(!client||!client.active&&!cleanup)await referenceClients.observeObsolete(principal).catch(()=>{});
-        }
-    };
+    const identifyReferenceRequest=(request,session)=>readReferenceRequestIdentity(request,session,referenceClients);
     const previewOwnership = new PreviewOwnership({ coordinator: assetMutations,
         validate: value => assetReferences.validate(value), clock: scheduleClock,path:assetAuthorityPath+'.preview.json',diagnostics:assetDiagnostics });
     previewOwnership.requiredPrincipals=()=>[...referenceClients.clients.values()].filter(client=>client.active&&client.role==='CONTROL').map(client=>client.principal+'|'+client.id+'|'+client.generation);
@@ -744,12 +745,15 @@ if(
                 sendJson(response, 200, { ok: true, service: "livezone", status: "alive" });
                 return;
             }
-            if (url.pathname === "/readyz" && request.method === "GET") {
+            if (url.pathname === "/readyz" && ["GET", "HEAD"].includes(request.method)) {
                 const result = await runtimeReadiness.evaluate();
                 await studioStateReady.catch(() => {});
                 const studioState = studioStateCoordinator.getStatus().status.toLowerCase();
-                sendJson(response, result.ok ? 200 : 503, { ...result,
-                    checks: { ...result.checks, studioState } });
+                const payload={ ...result, checks: { ...result.checks, studioState } };
+                if(request.method==='HEAD'){
+                    response.writeHead(result.ok?200:503,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});
+                    response.end();
+                }else sendJson(response, result.ok ? 200 : 503, payload);
                 return;
             }
             if (url.pathname === "/api/operator/session" && request.method === "GET") {
@@ -824,7 +828,9 @@ if(
                     try{const result=await assetMutations.run(async()=>{
                         await validateDurable();
                         if(!operatorGuard.session(request))throw Object.assign(Error('UNAUTHORIZED'),{code:'UNAUTHORIZED'});
-                        return restartReconciliation.execute(value,session.id||'development');
+                        const result=restartReconciliation.execute(value,session.id||'development');
+                        if(value.operation==='reconcile'&&executionEra)await executionEraReady();
+                        return result;
                     });sendJson(response,200,{...result,...(result.grant?{durableBinding:durableBinding()}:{} )});}
                     catch(error){
                         if(error.code==='UNAUTHORIZED'){sendJson(response,401,{error:'UNAUTHORIZED'});return;}
@@ -942,7 +948,7 @@ if(
         clients.forEach((response) => response.end());
         clients.clear();
     });
-    return { scheduledEntry, scheduledEntryReady, server, store, clients, durableProgram,programCommits,programReady,programValidation, studioStateCoordinator, scheduler, effectiveOutput, autoLive, liveAutomation, scheduledLiveOwnership, scheduledLivePersistence, scheduledLiveExecution, scheduledLiveExecutionRepository, scheduledLiveExecutionReady, scheduledLiveHydrationReady, executionOwnership,
+    return { restartReconciliation, executionEraReady, scheduledEntry, scheduledEntryReady, server, store, clients, durableProgram,programCommits,programReady,programValidation, studioStateCoordinator, scheduler, effectiveOutput, autoLive, liveAutomation, scheduledLiveOwnership, scheduledLivePersistence, scheduledLiveExecution, scheduledLiveExecutionRepository, scheduledLiveExecutionReady, scheduledLiveHydrationReady, executionOwnership,
         assetReferences, assetMutations, previewOwnership,referenceClients,assetDiagnostics };
 }
 

@@ -1,0 +1,79 @@
+{
+  "artifacts": [
+    {
+      "source": "var/studio-state/state.json.autolive.json.execution",
+      "sha256": "9a170c452e44e823a052a427d16df7e0d583e56c90b61c4d2f3848206b785564",
+      "byteLength": 12,
+      "key": "authority"
+    },
+    {
+      "source": "var/studio-state/state.json.autolive.json.execution.lock",
+      "sha256": "add5ce0c9d736b6495a80bb7a0d8f075992a68ab4da07fe786d7d9a62ef878ee",
+      "byteLength": 78,
+      "key": "authorityLock"
+    },
+    {
+      "source": "var/studio-state/state.json.autolive.json",
+      "sha256": "0e4cf2b0197f2532b6f6c17fb550dc6165579b5962edc95faa91badf1299c4c7",
+      "byteLength": 218,
+      "key": "autoLive"
+    },
+    {
+      "source": "var/studio-state/state.json.scheduled-entry-ledger.json.bootstrap",
+      "sha256": "222970a3722826de473740aac82b4a27dc02ac7c956ce8544078608dbf5aad93",
+      "byteLength": 33,
+      "key": "bootstrap"
+    },
+    {
+      "source": "var/studio-state/state.json.scheduled-entry-ledger.json",
+      "sha256": "9abf9d7b096da3ea429ef8a107df99c41ddf649ad34a737e6f96847a2cafa363",
+      "byteLength": 207,
+      "key": "ledger"
+    },
+    {
+      "source": "var/studio-state/state.json.scheduled-entry-ledger.json.lock",
+      "sha256": "8f980d7b62c03ff9d48c7fb4c55805bf248a92c46335df012f0c2c1ef7ad56be",
+      "byteLength": 81,
+      "key": "ledgerLock"
+    },
+    {
+      "source": "var/studio-state/state.json.program-output.json",
+      "sha256": "dab83c76a69304a1a361f8e16e3f02d4d77a1d2a40e85814cde256913db7b2e5",
+      "byteLength": 1985,
+      "key": "program"
+    },
+    {
+      "source": "var/scheduler/schedule.json",
+      "sha256": "9c0db63aaa7d2b7432aed590ce1dde10b6cf59f784717f0e0fd13ea0bcb7681e",
+      "byteLength": 4662,
+      "key": "schedule"
+    },
+    {
+      "source": "var/studio-state/state.json.scheduled-live-execution.json.lock",
+      "sha256": "51d4e0b9d755f48399a793de4303d3148e1fd7dd6ede74c9c042dd74bfcc38d0",
+      "byteLength": 406,
+      "key": "scheduledLock"
+    },
+    {
+      "sha256": "c99b424096bcd801b814c2cb200e8b91af56cf2123a7953489db23305f223336",
+      "key": "configuration",
+      "source": "public/config/config.json",
+      "byteLength": 418
+    },
+    {
+      "sha256": "76c8ee36b8222212e273b8f7db57985cc35065626311bf9f09d7df81d91d3292",
+      "key": "mediaManifest",
+      "source": "var/media-library/assets.json",
+      "byteLength": 3142
+    },
+    {
+      "sha256": "32fc9f67cad4cf773bf1ade12ac70457562db656e30b3637b8051b7cb5131cdf",
+      "key": "studio",
+      "source": "var/studio-state/state.json",
+      "byteLength": 4425
+    }
+  ],
+  "limitation": "Twelve available real artifacts captured exactly. Complete audits, namespace absence, unavailable history and referenced asset bytes must be captured by real DryRun before approval; missing history is not invented.",
+  "version": 1,
+  "captureDate": "2026-10-06"
+}

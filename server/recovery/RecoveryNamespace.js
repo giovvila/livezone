@@ -1,4 +1,5 @@
 import {readdir,lstat} from 'node:fs/promises';
+import {readdirSync,lstatSync} from 'node:fs';
 import {basename,dirname} from 'node:path';
 
 // Protocol basenames and generated suffixes are ASCII on supported Windows
@@ -29,6 +30,16 @@ export async function assertCanonicalPath(path,options) {
     // whenever the expected path resolves, without claiming Unicode equivalence.
     if(process.platform==='win32'&&!names.includes(basename(path))) {
         try{await lstat(path);}catch(e){if(e.code==='ENOENT')return;throw e;}
+        refuse(options?.code??'RECOVERY_NAMESPACE_NONCANONICAL');
+    }
+}
+// Synchronous authority fences use the same namespace rules as recovery reads.
+export function assertCanonicalPathSync(path,options) {
+    let names;
+    try{names=readdirSync(dirname(path));}catch(e){if(e.code==='ENOENT')return;throw e;}
+    assertCanonicalNames(names,[basename(path)],options);
+    if(process.platform==='win32'&&!names.includes(basename(path))) {
+        try{lstatSync(path);}catch(e){if(e.code==='ENOENT')return;throw e;}
         refuse(options?.code??'RECOVERY_NAMESPACE_NONCANONICAL');
     }
 }

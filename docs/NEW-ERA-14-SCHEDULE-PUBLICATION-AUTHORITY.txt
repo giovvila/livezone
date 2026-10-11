@@ -1,0 +1,30 @@
+LIVEZONE — NEW-ERA-14 SCHEDULE PUBLICATION RUNTIME AUTHORITY
+
+A durable era grant records authorization at issuance time. It does not authorize every future Schedule installation. Publication of a new era incarnation requires current READY and current operational Ledger authority at the Schedule replacement boundary.
+
+Canonical publication predicate
+ExecutionEraContract.assertEraPublication reuses assertEraAuthority({ready:true,operational:true}). It therefore checks current activation, matching executionEraId and authoritative ledgerId, browser ownership/epoch/session, ControlledStart reservation/claim/runtime-owned binding, READY lineage and immutable Ledger prefix, complete current Ledger/WAL structural validity, resolved owner and lock, and the bound initialized runtime writer's READY/open/observed-head state. It also checks pending grant evidence with canonical eraAdmits validation, retirement/activation/repository/HEAD/identity seals, and the exact logical request hash for type/source/start/end. It does not allocate a second grant.
+
+ScheduleStore.persist determines new era incarnations from candidate versus current state. The stronger predicate applies to insert/conversion/new incarnation publication. Initial hydration and ordinary edits/deletion/plan changes keep the existing browser-owner contract. Server-owned identity metadata remains rejected at the public mutate API. Existing publication recognition remains a read-only retry, not another mutation.
+
+Publication fences
+Before any stage is created, persist captures the canonical Schedule predecessor byte hash and verifies publication authority. It repeats the fence after before-open/opened/partial-written, after stage flush and namespace flush, and after before-install. No await separates the last synchronous fence from invoking the existing synchronous Windows replacement adapter. A known runtime loss, shutdown, READY/WAL corruption or Schedule predecessor change therefore cannot be hidden in an asynchronous pre-install hook.
+
+The existing single-owner mutation queue and optional mutation coordinator remain in force; no global lock was added. The native synchronous replacement is the publication linearization boundary. Loss after an authorized completed replacement does not roll the durable Schedule back. Existing hydration/recognition of an unobserved durable success remains idempotent. Arbitrary unsynchronized external writes after the final observation are outside the exclusive-owner contract; test-double/POSIX adapter behavior does not claim native Windows durability.
+
+On rejection before replacement, Schedule bytes and published in-memory state remain unchanged, the stage is cleaned with the existing durability adapter, and G1 remains unchanged. A failure after invoking replacement retains the existing uncertain-persistence/unavailable behavior. persist never resets Ledger UNAVAILABLE, external-change error, durability uncertainty, or lifecycle closure.
+
+Grant evidence versus execution admission
+By default eraAdmits now requires the current canonical Schedule target to carry the same incarnation, executionEraId and exact grant-byte hash. A pending durable grant is not execution admission. Only assertEraPublication requests requirePublished:false to validate recoverable pending evidence before installation. Direct grant evidence tests explicitly exercise that mode; runtime consumers use the published default. The option does not create or publish events and does not bypass the actual Ledger/runtime gates.
+
+Recovery and retry
+Restoring snapshot/WAL bytes does not clear a sticky writer. Ordinary initialize is memoized and does not recover it. The existing explicit dead-owner recovery/ledger and Scheduled reconciliation, authorized successor ControlledStart, and actual newly initialized writer restore operational authority. Matching G1 remains valid across compatible Schedule drift and legitimate Ledger generation/owner progression in the same execution era. The existing request/retirement/grant protocol then reuses identical G1 bytes and incarnation; no second grant is needed. Genuinely new requests and deliberate delete/reissue retain existing semantics.
+
+Lifecycle
+The actual writer is closed synchronously when finalize begins; publication cannot use a previously issued G1 to bypass shutdown/terminal state. Pending/durability-uncertain and UNAVAILABLE runtime states fail the same operational predicate.
+
+Crash mapping
+This patch adds only observations/predicates at existing hooks. No new stage, durable artifact, write, flush, replace, archive, cleanup or hook was introduced. The canonical 497 mapping remains 14 grant + 13 publication + 470 other boundaries. Fresh native validation reruns the affected 27 boundaries; only those evidence rows may be refreshed. Existing LocalSystem helper, gate, protocol and service requirements are unchanged.
+
+Scope
+Production changes are confined to ScheduleStore.js and ExecutionEraContract.js. Real runtime, service state, H1 files, HEAD and index are preserved. NEW-ERA-08B-A independent application review is not continued in this task.

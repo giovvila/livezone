@@ -1,0 +1,55 @@
+NEW-ERA-12 CURRENT LEDGER AUTHORITY CONTRACT
+
+READY proves a historical startup, not an immutable current generation.
+The sealed READY anchor retains the exact WAL prefix, its current snapshot hash,
+Ledger/era/retirement identities and startup authority. The active snapshot may
+advance through valid INTENT/COMMIT history. Every issuance must additionally
+inspect the complete current Ledger and WAL.
+
+Trace: issueEraEntry -> assertEraAuthority(ready:true, operational:true) ->
+executionEraStartup (eight activation phases, bootstrap marker, forensic and
+retired evidence, active Ledger identity, Schedule era) -> durable authority
+lock/epoch, Start owner and ControlledStart bindings -> canonical inspectV2Sync
+of authorization.ledgerPath, its .wal and namespace staging -> historical READY
+prefix binding -> operational Ledger writer binding -> grant mutation.
+
+inspectV2 and inspectV2Sync drive the SAME inspectV2Evidence generator. There is
+one set of Ledger protocol rules: complete supported WAL, seals/predecessors,
+repository identity, BASE/BEGIN/INTENT/COMMIT/END linkage, monotonic generation,
+snapshot/current-or-pending relationship and transaction staging. Sync evidence
+reads use the existing capturedEvidence UTF8/size contract and equivalent
+canonical filename and ordinary-file rules; no writes are added.
+
+Recovery is allowed to inspect a structurally valid pending transaction or END.
+Issuance is stricter on lifecycle: no pending transaction, snapshot=current,
+active owner exactly equals durable Ledger lock and READY's historical writer,
+and authority epoch/session equals the current live execution authority.
+Terminal END has no active writer and cannot authorize a new grant. A controlled
+restart establishes a successor BEGIN and new READY and may issue grants while
+retaining prior consumed history.
+
+Existing historical/read-only assertEraAuthority callers use ready:true without
+operational:true. They receive complete structural inspection and historical
+binding, not an implied permission to execute. completedStart uses inspectV2
+and the existing shared validateEraReadyLedger historical proof. Restore,
+recovery/reconciliation, runtime Ledger checks and terminalShutdown retain their
+canonical inspection and phase-specific conditions. No Ledger rules are copied
+into eraAdmits; legitimate grants keep their existing admission semantics.
+
+The grant queue serializes direct duplicate issuance; ScheduleStore serializes
+publication. Existing fences re-inspect current authority without caching, at
+entry, after authorized, immediately before stage open, after staging, before
+install/cleanup and after durable verification. The final Schedule read and authority inspection are synchronous, so no await
+separates the final inspection from invoking the existing mutation primitive.
+A valid transaction completed at an issuance hook is accepted after reinspection;
+an invalid tail inserted at that hook is rejected. A tail invalidated after
+staging prevents installation and leaves recoverable stage evidence. This does
+not claim atomic protection against arbitrary out-of-process unauthorized disk
+writes after the final fence; the existing exclusive Ledger/runtime ownership
+contract remains required. No global lock or new durable artifact is introduced.
+
+Mutation structure is unchanged: 14 grant + 13 Schedule publication hooks.
+Canonical crash matrix remains 497 unique boundaries; NEW-ERA-12 reruns those
+27 affected native abrupt-loss cases. Other 470 rows retain their prior evidence.
+All mutations and fixtures remain protected OS TEMP. Real var/services are
+observed only; no stage, commit or push.

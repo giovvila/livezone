@@ -20,7 +20,7 @@ export default class MediaLibraryRoutes {
             if(!client)return this.failure(response,409,'CLIENT_CAPABILITY_REQUIRED','Control or Scheduler requires reload.');
             const controlEvents=url.searchParams.get('controlEvents')==='1'&&client.role==='CONTROL'&&this.controlEventFeed;
             let presenceState='CURRENT_CAPABLE';
-            try{await this.referenceClients.presence(client.id,client.generation,principal,true);}
+            try{presenceState=await this.referenceClients.presence(client.id,client.generation,principal,true);}
             catch(error){
                 if(!controlEvents||error.code!=='CLIENT_CAPABILITY_REQUIRED')return this.failure(response,409,'CLIENT_CAPABILITY_REQUIRED','Control or Scheduler requires reload.');
                 // After a server restart the reference epoch still requires a fresh
@@ -34,12 +34,15 @@ export default class MediaLibraryRoutes {
             response.write(`event: presence\ndata: ${JSON.stringify({state:presenceState})}\n\n`);
             const offEvents=controlEvents?this.controlEventFeed.connect(response):null;
             const timer=setInterval(()=>{if(!response.write(': presence\n\n'))response.destroy();},15000);timer.unref?.();
-            response.once('close',()=>{
+            let cleaned=false;
+            const cleanup=()=>{
+                if(cleaned)return;cleaned=true;
                 offEvents?.();clearInterval(timer);const remaining=(this.presenceConnections.get(key)||1)-1;
                 if(remaining){this.presenceConnections.set(key,remaining);return;}this.presenceConnections.delete(key);
-                void this.referenceClients.presence(client.id,client.generation,principal,false)
-                    .then(()=>this.previewOwnership.disconnect(principal+'|'+client.id+'|'+client.generation)).catch(()=>{});
-            });return true;
+                void this.referenceClients.presence(client.id,client.generation,principal,false).catch(()=>{});
+            };
+            response.once('finish',cleanup);response.once('close',cleanup);
+            response.once('error',cleanup);request.once('aborted',cleanup);return true;
         }
         const logoMatch=/^\/api\/media-library\/channel-logo\/(preview|program)$/.exec(url.pathname);
         if(logoMatch&&this.channelLogoAuthority){
@@ -62,13 +65,22 @@ export default class MediaLibraryRoutes {
             if(!match)return this.failure(response,400,'INVALID_CLIENT','Invalid reference client.');
             try{
                 const body=await this.readJson(request,16384);
+                if(match[1]&&request.method==='PUT'){
+                    const allowed=match[2]?['generation','assets','complete']:['generation','catalog','closed','confirmed','appliedRevision','legacyAppliedRevision'];
+                    if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).some(key=>!allowed.includes(key)))return this.failure(response,422,'INVALID_CLIENT_STATE','Unsupported client update field.');
+                }
                 if(match[1]&&match[2]&&request.method==='PUT')return this.success(response,200,
                     {legacy:await this.referenceClients.updateLegacy(match[1],body.generation,body,request.operatorReferencePrincipal)});
                 if(!match[1]&&request.method==='POST')return this.success(response,201,{client:await this.referenceClients.register(body,request.operatorReferencePrincipal)});
                 if(match[1]&&request.method==='PUT'){
-                    if(body.appliedRevision!==undefined){await this.referenceClients.confirmCatalog(match[1],body.generation,body.appliedRevision,request.operatorReferencePrincipal);return this.success(response,200,{});}
-                    if(body.legacyAppliedRevision!==undefined){await this.referenceClients.confirmLegacy(match[1],body.generation,body.legacyAppliedRevision,request.operatorReferencePrincipal);return this.success(response,200,{});}
-                    if(body.catalog&&!['INVALID','CONFLICT'].includes(body.catalog))return this.failure(response,422,'INVALID_CLIENT_STATE','Catalog confirmation is server-owned.');
+                    if(body.appliedRevision!==undefined||body.legacyAppliedRevision!==undefined){
+                        if(body.appliedRevision!==undefined&&body.legacyAppliedRevision!==undefined)return this.failure(response,422,'INVALID_CLIENT_STATE','One acknowledgment context is required.');
+                        const postcondition=client=>this.referenceClients.acknowledgmentMatches(client,body,this.previewOwnership);
+                        if(body.appliedRevision!==undefined)await this.referenceClients.confirmCatalog(match[1],body.generation,body.appliedRevision,request.operatorReferencePrincipal,postcondition);
+                        else await this.referenceClients.confirmLegacy(match[1],body.generation,body.legacyAppliedRevision,request.operatorReferencePrincipal,postcondition);
+                        return this.success(response,200,{});
+                    }
+                    if(Object.hasOwn(body,'catalog')&&!['INVALID','CONFLICT'].includes(body.catalog))return this.failure(response,422,'INVALID_CLIENT_STATE','Catalog confirmation is server-owned.');
                     const client=await this.referenceClients.update(match[1],body.generation,body,request.operatorReferencePrincipal);
                     if(body.closed===true)await this.previewOwnership.revokePrincipal(request.operatorReferencePrincipal+'|'+match[1]);
                     return this.success(response,200,{client});
@@ -87,7 +99,9 @@ export default class MediaLibraryRoutes {
                 if (match[1] && request.method === 'PUT') return this.success(response, 200,
                     { ownership: await this.previewOwnership.update(match[1], principal, await this.readJson(request, 16384)) });
                 if (match[1] && request.method === 'DELETE') {
-                    await this.previewOwnership.close(match[1], principal,Number(request.headers['x-livezone-ownership-generation']||1)); return this.success(response, 200, {});
+                    const header=request.headers['x-livezone-ownership-generation'];
+                    if(typeof header!=='string'||!/^\d+$/.test(header)||!Number.isSafeInteger(Number(header))||Number(header)<1)throw Object.assign(Error('Invalid ownership generation.'),{code:'INVALID_OWNERSHIP'});
+                    await this.previewOwnership.close(match[1], principal,Number(header)); return this.success(response, 200, {});
                 }
                 return this.failure(response, 405, 'METHOD_NOT_ALLOWED', 'Method not allowed.');
             } catch (error) { return this.failure(response, 409, error.code || 'REFERENCE_AUDIT_UNAVAILABLE',

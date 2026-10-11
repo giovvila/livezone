@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {registerNativeTestRoot} from '../test-support/NativeTempGuard.mjs';
 import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,rm,readFile,writeFile,readdir,unlink,rename,stat} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -30,6 +31,7 @@ const event={id:'historical-fixture',version:1,type:'source.live',enabled:true,s
     payload:{sourceId:'primecast',precheckSeconds:180,unavailableAction:'KEEP_PROGRAM',unavailableSceneId:null,endAction:'RETURN',endSceneId:null},createdAt:stamp,updatedAt:stamp};
 async function fixture(t,{legacy=true,adopt=true}={}){
     const root=await mkdtemp(join(tmpdir(),'lz-recovery-')),p=paths(root),owners=[];
+    registerNativeTestRoot(root);
     t.after(async()=>{for(const owner of owners)await new Promise(done=>owner.server.close(()=>done()));
         const child=relative(tmpdir(),root);assert.ok(child&&!child.startsWith('..')&&!isAbsolute(child));await rm(root,{recursive:true,force:true});});
     await mkdir(dirname(p.auto),{recursive:true});await mkdir(dirname(p.schedule),{recursive:true});
@@ -78,7 +80,8 @@ test('post-bootstrap Prepare returns PREPARED and exits despite persistent TCP p
     let result;
     // Repeated Prepare now performs native preflight and final evidence fences.
     // Keep the natural-exit/socket-leak proof bounded by the native child budget.
-    try{result=await promisify(execFile)(process.execPath,[child,h.root,HEAD],{timeout:90000,windowsHide:true});}
+    try{result=await promisify(execFile)(process.execPath,[child,h.root,HEAD],{timeout:300000,windowsHide:true,
+        env:{...process.env,LIVEZONE_NATIVE_TEST_ROOTS:JSON.stringify([h.root])}});}
     catch(error){assert.fail('Fixture did not complete/exit: '+error.message+'\n'+error.stdout+'\n'+error.stderr);}
     assert.match(result.stdout,/AUDIT_DURABLE_ADOPTED/);assert.match(result.stdout,/RELEASE_RETURN/);
     assert.match(result.stdout,/PREPARED_UNCHANGED/);assert.equal(result.stderr,'');

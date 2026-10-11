@@ -73,7 +73,7 @@ test('disconnected legacy client never loses unresolved catalog evidence',async 
 });
 test('anonymous legacy marker cannot be cleared by sibling capable handshake',async t=>{const h=await fixture(t);await h.clients.observeObsolete('operator');await h.register();assert.equal(h.clients.snapshot().state,'INCOMPLETE');});
 test('presence socket disconnect is uncertainty rather than absence',async t=>{
-    const h=await fixture(t),c=await h.register();await h.clients.presence(c.clientId,c.generation,'operator',false);assert.equal(h.clients.snapshot().clients[0].state,'LEGACY/UNKNOWN');await h.clients.presence(c.clientId,c.generation,'operator',true);assert.equal(h.clients.snapshot().state,'COMPLETE');
+    const h=await fixture(t),c=await h.register();await h.clients.presence(c.clientId,c.generation,'operator',false);assert.equal(h.clients.snapshot().clients[0].state,'LEGACY/UNKNOWN');await h.clients.presence(c.clientId,c.generation,'operator',true);assert.equal(h.clients.snapshot().state,'INCOMPLETE');await h.clients.update(c.clientId,c.generation,{},'operator');assert.equal(h.clients.snapshot().state,'COMPLETE');
 });
 
 test('valid Channel Logo is persisted and immediately inventoried before application',async t=>{
@@ -127,7 +127,7 @@ test('restarted Preview is UNKNOWN until resumed report',async t=>{const h=await
     await next.update(s.sessionId,s.principal,{generation:resumed.generation,sequence:1,assets:[a.id]});assert.equal(next.snapshot().complete,true);
 });
 test('one Control disconnect or close never clears another Control',async t=>{const h=await fixture(t),a=await h.register(),b=await h.register(),x=await h.upload(),y=await h.upload(),sa=await h.open(a,[x.id]);await h.open(b,[y.id]);await h.preview.revokePrincipal(sa.principal);assert.equal(h.preview.snapshot().references[0].assetId,y.id);});
-test('superseded generation cannot close current Preview ownership',async t=>{const h=await fixture(t),c=await h.register(),a=await h.upload(),s=await h.open(c,[a.id]);const next=await h.preview.open(s.principal,{resumeSessionId:s.sessionId,generation:s.generation,resumeToken:s.resumeToken});await h.preview.close(s.sessionId,s.principal,s.generation);assert.equal(h.preview.snapshot().references.length,1);assert.equal(next.generation,s.generation+1);});
+test('superseded generation cannot close current Preview ownership',async t=>{const h=await fixture(t),c=await h.register(),a=await h.upload(),s=await h.open(c,[a.id]);const next=await h.preview.open(s.principal,{resumeSessionId:s.sessionId,generation:s.generation,resumeToken:s.resumeToken});await assert.rejects(h.preview.close(s.sessionId,s.principal,s.generation),{code:'OWNERSHIP_STALE_UPDATE'});assert.equal(h.preview.snapshot().references.length,1);assert.equal(next.generation,s.generation+1);});
 test('stale Control generation cannot clear a current logo reference',async t=>{const h=await fixture(t),c=await h.register();await h.register('CONTROL',{resumeId:c.clientId,resumeGeneration:c.generation,resumeToken:c.resumeToken});await assert.rejects(h.logos.assign(c.record,'preview',{revision:2,asset:null}),{code:'CLIENT_CAPABILITY_REQUIRED'});});
 
 test('complete inventory with no references enables guarded deletion',async t=>{const h=await fixture(t);await h.register();const a=await h.upload();assert.equal((await h.inventory.inspect(a)).eligible,true);await h.remove(a.id);assert.equal(h.repo.get(a.id),null);});
@@ -180,7 +180,9 @@ test('authenticated SSE disconnect retains Preview when close notification is lo
     await h.request('PUT','/api/media-library/preview-ownership/'+opened.sessionId,{sequence:1,generation:opened.generation,assets:[a.id]});
     const abort=new AbortController();const response=await fetch(h.base+'/api/media-library/reference-presence',{headers:h.headers,signal:abort.signal});
     assert.equal(response.status,200);const reader=response.body.getReader();await reader.read();abort.abort();
-    await new Promise(resolve=>setTimeout(resolve,30));assert.equal(h.owner.previewOwnership.snapshot().references[0].assetId,a.id);assert.equal(h.owner.previewOwnership.snapshot().complete,false);
+    await new Promise(resolve=>setTimeout(resolve,30));assert.equal(h.owner.previewOwnership.snapshot().references[0].assetId,a.id);assert.equal(h.owner.previewOwnership.snapshot().complete,true);
+    assert.equal(h.owner.referenceClients.snapshot().state,'INCOMPLETE');
+    assert.equal([...h.owner.previewOwnership.sessions.values()][0].confirmed,true);
     assert.equal((await h.request('DELETE','/api/media-library/assets/'+a.id)).status,409);
 });
 

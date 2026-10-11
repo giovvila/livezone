@@ -4,16 +4,17 @@
   "type": "module",
   "scripts": {
     "serve": "node --env-file-if-exists=.env server/program-output-server.js",
-    "test:runtime-health": "node --test test/runtime-health.test.js",
-    "test:windows-services": "node --test test/windows-services.test.js",
-    "test:operator-auth": "node --test test/operator-auth.test.js",
-    "test:program-output": "node --test test/program-output-network.test.js",
-    "test:scheduler": "node --test test/scheduler.test.js",
-    "test:schedule-workspace": "node --test test/schedule-workspace.test.js",
-    "test:live-sources": "node --test test/live-sources.test.js",
-    "test:dominant-live": "node --test test/dominant-live.test.js",
-    "test:unified-sources": "node --test test/unified-sources.test.js",
-    "test:media-library": "node --test test/media-library.test.js"
+    "test:runtime-health": "node tools/test-runtime-isolated.mjs test/runtime-health.test.js",
+    "test:windows-services": "node tools/test-runtime-isolated.mjs test/windows-services.test.js",
+    "test:operator-auth": "node tools/test-runtime-isolated.mjs test/operator-auth.test.js",
+    "test:program-output": "node tools/test-runtime-isolated.mjs test/program-output-network.test.js",
+    "test:scheduler": "node tools/test-runtime-isolated.mjs test/scheduler.test.js",
+    "test:schedule-workspace": "node tools/test-runtime-isolated.mjs test/schedule-workspace.test.js",
+    "test:live-sources": "node tools/test-runtime-isolated.mjs test/live-sources.test.js",
+    "test:dominant-live": "node tools/test-runtime-isolated.mjs test/dominant-live.test.js",
+    "test:unified-sources": "node tools/test-runtime-isolated.mjs test/unified-sources.test.js",
+    "test:media-library": "node tools/test-runtime-isolated.mjs test/media-library.test.js",
+    "test:runtime-isolation": "node tools/test-runtime-isolated.mjs test/runtime-state-isolation.test.js test/autolive-restore-guard.test.js test/new-execution-era-production.test.js test/new-execution-era-independence.test.js"
   },
   "dependencies": {
     "busboy": "^1.6.0"

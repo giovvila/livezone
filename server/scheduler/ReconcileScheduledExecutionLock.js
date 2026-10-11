@@ -31,9 +31,9 @@ export function classifyScheduledLock(lock,journalPresent,repositoryId) {
 
 export async function reconcileScheduledExecutionLock({path,authorityPath,operationId,expected,
     authorizeLegacyQuarantine=false,proveOffline=proveWindowsOffline,reserve=reservePort,
-    isAlive=alive,hook=()=>{}}) {
+    isAlive=alive,hook=()=>{},newEraRecovery,durability}) {
     if(!isAbsolute(path || '') || !isAbsolute(authorityPath || '') ||
-        !authorityPath.endsWith('.execution') || !/^[a-zA-Z0-9_-]{1,80}$/.test(operationId || ''))
+        !(authorityPath.endsWith('.execution')||(newEraRecovery&&authorityPath===newEraRecovery.p.authority)) || !/^[a-zA-Z0-9_-]{1,80}$/.test(operationId || ''))
         refuse('EXPLICIT_RECOVERY_IDENTITY_REQUIRED');
     path=resolve(path); authorityPath=resolve(authorityPath);
     for(const file of [path,authorityPath]) {
@@ -46,7 +46,8 @@ export async function reconcileScheduledExecutionLock({path,authorityPath,operat
     const audit=path+'.reconciliation-'+operationId+'.json';
     const proof=async()=>{const p=await proveOffline();if(p.absent!==true)refuse('CANONICAL_OFFLINE_PROOF_REQUIRED');return p;};
     await proof();
-    const releaseGate=await acquireMaintenanceGate(authorityPath);
+    const recoveryGate=newEraRecovery?(await newEraRecovery.journal()).records.at(-1)?.body.recoveryGate:undefined;
+    const releaseGate=await acquireMaintenanceGate(authorityPath,{durability,record:recoveryGate,...(newEraRecovery?{hook:point=>hook('gate/'+point)}:{})});
     let releasePort;
     try {
         releasePort=await reserve();
@@ -103,9 +104,10 @@ export async function reconcileScheduledExecutionLock({path,authorityPath,operat
         };
         const census=await recheck();
         if(prior===null) await exclusive(audit,{contract:prepared,at:new Date().toISOString(),proof:census});
+        if(durability)await durability.syncFile(audit);
         await hook('prepared');
         await recheck();
-        if(lockBytes!==null) await rename(path+'.lock',archive);
+        if(lockBytes!==null){if(durability)await durability.archive(path+'.lock',archive);else await rename(path+'.lock',archive);}
         await hook('archived');
         if(await ordinary(archive)!==bytes || await ordinary(path+'.lock')!==null ||
             await ordinary(path)!==journal || await ordinary(authorityPath)!==epochBytes ||
@@ -115,6 +117,8 @@ export async function reconcileScheduledExecutionLock({path,authorityPath,operat
         const completed=await ordinary(audit+'.completed');
         if(completed===null) await exclusive(audit+'.completed',completion);
         else if(JSON.stringify(JSON.parse(completed))!==JSON.stringify(completion)) refuse('COMPLETION_MISMATCH');
+        if(durability)await durability.syncFile(audit+'.completed');
+        if(newEraRecovery)await hook('completed');
         return {archive,audit,completion: audit+'.completed',reason:classification};
     } finally {if(releasePort)await releasePort();await releaseGate();}
 }

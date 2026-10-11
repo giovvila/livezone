@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {registerNativeTestRoot} from '../test-support/NativeTempGuard.mjs';
 import assert from 'node:assert/strict';
 import {mkdtempSync,realpathSync,mkdirSync,readFileSync,writeFileSync,copyFileSync,rmSync,existsSync,renameSync,linkSync,symlinkSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -25,6 +26,7 @@ function copyDeployment(root,gate=gatePath,gatePin=gateSha256,image=helperPath,i
 }
 test('Windows helper trust: R6 regression, locked namespace attacks, byte-loaded gate and reproducible build',{skip:process.platform!=='win32',timeout:300000},async t=>{
     const temp=realpathSync(tmpdir()),root=mkdtempSync(join(temp,'lz-r7-trust-'));
+    registerNativeTestRoot(root);
     const children=[];
     t.after(()=>{
         for(const child of children)child.kill();

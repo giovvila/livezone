@@ -1,0 +1,43 @@
+NEW-ERA-39 — canonical Reference / Preview generation domain
+
+Canonical persisted incarnation generation is a JSON number, positive safe
+integer: 1 <= generation <= Number.MAX_SAFE_INTEGER (9007199254740991).
+This is the existing ReferenceClientRegistry and PreviewOwnership loader domain,
+not a new range. GenerationDomain.isGeneration now expresses it for both owners.
+
+CREATE remains generation 1. RESUME validates identity/token/principal according
+to NEW-ERA-38, then derives successor before changing canonical fields. The shared
+successorGeneration checks current domain, rejects maximum with GENERATION_EXHAUSTED,
+and otherwise returns current+1. MAX-1 -> MAX is valid and loader-round-trips;
+MAX has no successor. No wrap, reset, coercion, unsafe integer or replacement UUID.
+
+Invalid/stale credential input keeps CLIENT_GENERATION_CONFLICT (Reference) or
+OWNERSHIP_STALE_UPDATE (Preview). Valid credentials at maximum yield HTTP409
+GENERATION_EXHAUSTED. Wrong credentials at maximum do not reveal exhaustion ahead
+of identity validation. Existing persistence/availability errors remain unchanged.
+Overflow rejection restores complete existing state and calls no persistence;
+no confirmation, reference, identity, token or generation change occurs.
+
+Same original request after successful MAX-1 -> MAX is stale and rejects using
+existing NEW-ERA-38 retry semantics. A request at MAX exhausts; lost HTTP response
+cannot produce another unsafe successor. Restart accepts persisted MAX and retains
+conservative unconfirmed adoption; matching close/delete still may release without
+increment. EXPLICIT_CLOSE resume requires successor and therefore exhausts at MAX.
+
+PreviewOwnershipClient keeps saved recovery identity and stops automatic retry
+when GENERATION_EXHAUSTED is returned. No implicit CREATE or storage clearing.
+ReferenceClient initialize already fails without automatic fallback/retry or storage
+replacement on error. Explicit operator resolution is needed for exhausted identity;
+this change does not introduce a reset/replacement authorization mechanism.
+
+Other same-domain replicas: ChannelLogoAuthority persists Reference generation
+and validates positive safe integer on load; it copies current fenced Reference
+generation and does not advance it. MediaLibraryRoutes DELETE generation parser
+requires decimal positive safe integer. Preview close uses isGeneration. Shared
+generation writers are only Reference register/resume and Preview open/resume.
+Other numeric revisions, sequences and browser-local request counters have different
+contracts and are outside this correction.
+
+No new durable artifact/boundary: generation validation precedes existing lifecycle
+persistence. Matrix remains 510. No real transition/install/launch/service change,
+staging/commit/push or final deployment review authorized by this contract.

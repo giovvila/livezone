@@ -1,3 +1,5 @@
+import '../test-support/RuntimeStateGuard.mjs';
+import {writeTempDiagnostic} from '../test-support/TempDiagnostics.js';
 import test from "node:test";
 import assert from "node:assert/strict";
 import EventBus from "../public/js/core/EventBus.js";
@@ -695,7 +697,6 @@ test('operator TAKE from a synchronous commit subscriber cannot resurrect LIVE o
 
 test('handoff trace distinguishes ENTRY from genuine LOSS and records source state at restore', async () => {
     const { default: trace } = await import('../public/js/core/RuntimeTrace.js');
-    const { writeFileSync } = await import('node:fs');
     const enabled = trace.enabled, now = trace.now;
     trace.enabled = true; trace.clear();
     try {
@@ -715,7 +716,7 @@ test('handoff trace distinguishes ENTRY from genuine LOSS and records source sta
             assert.equal(Number.isFinite(restore.revision), true);
             assert.equal(entries.filter(e => e.scope === 'entry-slate' && e.event === 'show-request').length, 1);
             assert.equal(entries.filter(e => e.scope === 'loss-slate' && e.event === 'show-request').length, 2);
-            writeFileSync('var/post-take-simulated-trace.json', trace.exportJSON());
+            writeTempDiagnostic('post-take-simulated-trace.json', trace.exportJSON());
         });
     } finally { trace.enabled = enabled; trace.now = now; trace.clear(); }
 });

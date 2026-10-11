@@ -1,0 +1,96 @@
+NEW-ERA-13 CURRENT LEDGER RUNTIME AUTHORITY CONTRACT
+
+A valid persistent Ledger/WAL and historical READY are necessary but do not
+prove that the active writer can authorize new work. Its observed snapshot and
+WAL head may be newer than a coherent replacement on disk; UNAVAILABLE is sticky.
+
+Production trace:
+program-output-server scheduledEntryReady -> initializeEntryLedger -> canonical
+ScheduledEntryLedgerV2Repository({authority: executionOwnership}) -> initialize
+under the existing exclusive Ledger lock -> BASE/BEGIN inspection -> snapshot,
+records and READY publication in memory -> bindEraLedgerRuntime. The binding is
+a WeakMap keyed by the exact executionOwnership object. It retains the actual
+initialized repository, not a disk-reopened writer or an availability copy.
+A different repository cannot replace an existing binding for the same owner.
+ControlledStart waits for scheduledEntryReady before publishing its era READY.
+The component/native fixtures traverse that same repository initialization.
+
+issueEraEntry -> assertEraAuthority(ready:true, operational:true) requires:
+unchanged activation, execution ownership, Start/ControlledStart/READY lineage;
+canonical complete current inspectV2Sync (including namespace and pending state);
+historical READY prefix and Ledger/era identity; resolved active writer matching
+the durable Ledger lock and anchored startup owner; registered live repository
+for this exact authority/path/activation/ledgerId/executionEraId; initialized
+repository, retained lock handle, !closed and status READY; state/current snapshot,
+owner, no pending transaction and last WAL checksum equal the writer's observed
+snapshot, lockOwner and records. assertObservedState is shared with verifySnapshot.
+
+enqueue already makes external-change failures UNAVAILABLE and records their
+error. Operational issuance applies that same sticky transition when comparison
+itself detects a coherent rollback or fork. A subsequent initialize() reuses the
+original initialization promise. Restoring valid bytes does not clear UNAVAILABLE,
+replace the binding, or recover the same runtime. DURABILITY_UNCERTAIN, CONFLICT,
+TERMINAL, CLOSED and synchronous shutdown admission freeze all reject issuance.
+Normal completed consume publishes the new snapshot and returns status READY;
+new grants can then use that current generation, including 0 -> 1 -> 2. READY
+does not freeze the Ledger at its startup generation.
+
+Caller policy:
+ScheduleStore insert/conversion and direct issueEraEntry always need operational
+runtime authority. An offline copy of executionOwnership with valid disk evidence
+has no registered writer and cannot issue. Already-published Schedule retry only
+recognizes the historical identity; it issues no new grant. Recovery inspection,
+NewEraRecoveryWorkflow completedStart/finishRuntime, publishEraReady, Schedule
+publication owner checks, ScheduledLiveExecutionRepository and Ledger consume
+historical readiness checks keep their existing phase-specific semantics.
+ready:true without operational:true is evidence validation, not grant permission.
+No tooling path obtains issuance by reopening the Ledger. Recovery is explicit:
+stop/drain the owner, preserve uncertain evidence/locks, obtain canonical offline
+review and completed-owner/pending reconciliation authorization, then establish
+a successor through prepareRestart/ControlledStart and a newly initialized writer.
+Canonical living-owner and ambiguous-owner refusals remain unchanged.
+
+Race policy:
+The existing per-Ledger grant queue and Schedule publication queue are retained.
+Every issuance fence re-reads disk and consults the current repository; the check
+is synchronous immediately before invoking stage open, install or cleanup.
+Additional observations after opened/partial-written and verified/before-return
+catch knowable lifecycle changes across asynchronous hooks. An in-flight actual
+INTENT sets DURABILITY_UNCERTAIN before its first asynchronous append; it cannot
+authorize issuance even while the old disk remains structurally valid. finalize
+and close set closed synchronously before draining work and writing END.
+On Windows the native archive/remove primitives mutate synchronously on invocation.
+No new global lock, disk artifact, protocol record or durable mutation boundary is
+added. This retains the existing exclusive-owner assumption, not an atomic defense
+against arbitrary external filesystem writes after an observation. Rejection after
+staging preserves existing stage evidence and does not install a grant.
+
+eraAdmits remains unchanged: it checks historical grant/Schedule identity and
+staging. The rollback defect is fixed at issuance, before an invalid grant can be
+installed; existing historical grants still require canonical consume/runtime
+eligibility gates before capture. Recovery is never implicit grant issuance.
+
+Already queued consume also rechecks READY at writeSnapshot entry. If its earlier
+asynchronous verifier completed before issuance observed an external change, the
+queued operation cannot append an INTENT or publish READY over UNAVAILABLE. Its
+original external-change error is retained. A real verifier/drain regression
+exercises this interval without setting a fake availability flag.
+
+The permanent ERA12 synthetic valid-growth test now advances the real writer via
+canonical Schedule publication and consume. Directly injecting a valid completed
+transaction while the active writer retains an older observed head is an external
+change, not legitimate runtime progression. Structural negative cases still use
+their canonical shared inspector. Native crash receipts additionally pin the
+ScheduledEntryLedgerV2Repository source, alongside the existing source hashes.
+ScheduledEntryHarness now registers its newly created, canonical OS TEMP directory
+with NativeTempGuard. Its previous missing registration blocked the native helper
+before Ledger initialization in five application fixture cases. No guard or runtime
+authority condition was relaxed; initial failed evidence is retained and the
+affected broader/native gates are rerun fresh.
+
+The canonical crash matrix remains 497 unique boundaries: 14 grant and 13 grant
+Schedule publication hooks are unchanged. Fresh relevant native evidence is
+reported separately from the retained other 470 historical rows. No native helper,
+gate, protocol or service-account requirement was changed. Existing LocalSystem
+capability evidence is revalidated read-only. All mutation tests use guarded TEMP;
+real var, H1 sources, services, committed HEAD and the empty index are preserved.

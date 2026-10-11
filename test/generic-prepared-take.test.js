@@ -1,3 +1,5 @@
+import '../test-support/RuntimeStateGuard.mjs';
+import {writeTempDiagnostic} from '../test-support/TempDiagnostics.js';
 // Cold fallback contract: reusePreview:false deliberately exercises bounded duplicate preparation.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -235,7 +237,7 @@ for(const [label,program,preview] of [['A','BREAK','P'],['B','A','BREAK'],['C','
             if(label==='E'){assert.equal(during.videos,3);assert.equal(during.audios,1);}
             resourceRows.push({case:label,program,preview,kind:'deterministic-element-census-not-browser-GPU-measurement',before,during,after,
                 configuredPrimaryDelayMs:100,preparationLatencyMs:completedAt-at,timeoutConsumer:null,httpRangeConcurrency:'measured separately'});
-            const {writeFileSync}=await import('node:fs');writeFileSync('var/generic-take-resource-matrix.json',JSON.stringify(resourceRows,null,2));
+            writeTempDiagnostic('generic-take-resource-matrix.json',JSON.stringify(resourceRows,null,2));
         } finally {document.createElement=create;}
     });
 });
@@ -281,7 +283,7 @@ test('A-E HTTP range matrix completes concurrent representative VIDEO/AUDIO read
             results.push({case:label,videoRangeRequests:videos,audioRangeRequests:audios,peakClientRequests:peak,elapsedMs:performance.now()-started,lengths,
                 scope:'real HTTP controlled range reads; not browser decoder load'});
         }
-        fs.writeFileSync('var/generic-take-http-matrix.json',JSON.stringify(results,null,2));
+        writeTempDiagnostic('generic-take-http-matrix.json',JSON.stringify(results,null,2));
     }finally{server.closeAllConnections();await new Promise(r=>server.close(r));}
 });
 

@@ -3,10 +3,12 @@ import {mkdir,writeFile} from 'node:fs/promises';
 import {ledgerSnapshot,entryConsumption} from '../server/scheduler/ScheduledEntryLedgerContract.js';
 import {scheduledEntryIdentity} from '../server/scheduler/ScheduledEntryIdentity.js';
 import {CleanLedgerV1Migration} from '../server/recovery/CleanLedgerV1Migration.js';
+import {registerNativeTestRoot} from './NativeTempGuard.mjs';
 export const HEAD='1270d3e5bd17e206b8f8e78d6404ff7e8a978c3b';
 export const identity=n=>scheduledEntryIdentity({eventId:'migration-'+n,incarnationId:'12345678-1234-1234-1234-123456789abc',entryRevision:1,
     type:'source.live',sourceId:'camera',startAt:'2026-10-02T12:00:00.000Z',endAt:'2026-10-02T12:05:00.000Z'});
 export function migrationFixture(root,options={}) {
+    registerNativeTestRoot(root);
     const path=options.path??join(root,'ledger.json'),authorityPath=options.authorityPath??join(root,'authority.execution');
     const host=options.host??{inspect:async()=>({root,branch:'build/1003.9A1',head:HEAD,administrator:true,
         service:{Name:'LivezoneNode',State:'Stopped',StartMode:'Disabled'},media:{status:'VERIFIED',Name:'LivezoneMediaMtx'},

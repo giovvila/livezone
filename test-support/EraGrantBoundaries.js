@@ -1,0 +1,2 @@
+export const grantBoundaries=[...['authorized','before-open','opened','partial-written','written','file-flushed','namespace-flushed','before-install','installed','durable','verified','before-return','before-stage-cleanup','stage-cleaned'].map(p=>'grant/'+p),
+ ...['before-open','opened','partial-written','written','file-flushed','namespace-flushed','before-install','installed','durable','published','before-return','before-cleanup','stage-cleaned'].map(p=>'grant-schedule/'+p)];

@@ -135,7 +135,7 @@ test("logout invalidates the session and malformed cookies never authenticate", 
     });
 });
 
-test("expired sessions are removed and denied", async () => {
+test("expired sessions are denied without removal by authentication reads", async () => {
     let now = 1000;
     let serial = 0;
     const sessions = new OperatorSessionStore({ ttlSeconds: 300, clock: () => now,
@@ -146,6 +146,8 @@ test("expired sessions are removed and denied", async () => {
         now += 301000;
         assert.equal((await fetch(`${base}/api/media-library/assets`,
             { headers: { Cookie: session.cookie } })).status, 401);
+        assert.equal(sessions.sessions.size, 1);
+        sessions.sweep();
         assert.equal(sessions.sessions.size, 0);
     }, { operatorAuth: auth });
 });
@@ -324,7 +326,7 @@ test("operator origins compare normalized scheme, host and effective port", () =
     assert.equal(allowed.authorizeLogin(request("https://evil.example"), response), false);
 });
 
-test("session store sweeps expiry and fails closed at a bounded capacity", () => {
+test("session store reads derive expiry and creation sweeps at bounded capacity", () => {
     let now = 0; let serial = 0;
     const sessions = new OperatorSessionStore({ ttlSeconds: 300, maxSessions: 3,
         clock: () => now, random: () => `random-${++serial}` });
@@ -337,6 +339,8 @@ test("session store sweeps expiry and fails closed at a bounded capacity", () =>
     assert.ok(sessions.create());
     now += 301000;
     assert.equal(sessions.get(first.id), null);
+    assert.equal(sessions.sessions.size, 3);
+    sessions.sweep();
     assert.equal(sessions.sessions.size, 0);
     assert.ok(sessions.create());
 });

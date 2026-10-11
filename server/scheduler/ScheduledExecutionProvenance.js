@@ -25,6 +25,7 @@ export function repositoryIdentity(path) {
 export function validateLock(lock, repositoryId) {
     if (lock?.version === 1 && id(lock.processSession)) return 'LEGACY_UNVERIFIABLE';
     if (lock?.schemaVersion !== 2) refuse('SCHEDULED_LOCK_SCHEMA_UNSUPPORTED');
+    if(lock.executionEraId!==undefined&&(!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(lock.executionEraId)||!hash(lock.retirementHash)))refuse('SCHEDULED_ERA_INVALID');
     if (!hash(lock.repositoryId) || lock.repositoryId !== repositoryId ||
         !id(lock.processSession) || !positive(lock.processId) ||
         !positive(lock.authorityEpoch) || !id(lock.authorityProcessSession) || !hash(lock.authorityId) ||
@@ -36,6 +37,7 @@ export function validateLock(lock, repositoryId) {
 export function journalEnvelope(record, lock) {
     const inner=scheduledLiveTransactionEnvelope(record);
     const provenance={repositoryId:lock.repositoryId, processSession:lock.processSession,
+        ...(lock.executionEraId?{executionEraId:lock.executionEraId,retirementHash:lock.retirementHash}:{}),
         authorityEpoch:lock.authorityEpoch, authorityProcessSession:lock.authorityProcessSession, authorityId:lock.authorityId,
         // Immutable capture identifies the transaction across its phase writes.
         transactionId:digest(canonical(record === null ? null : {
@@ -49,6 +51,7 @@ export function validateJournal(value, repositoryId) {
     if (value?.schemaVersion === 1) refuse('LEGACY_JOURNAL_REVIEW_REQUIRED');
     if (value?.schemaVersion !== 2) refuse('SCHEDULED_JOURNAL_SCHEMA_UNSUPPORTED');
     const p=value.provenance;
+    if(p?.executionEraId!==undefined&&(!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(p.executionEraId)||!hash(p.retirementHash)))refuse('SCHEDULED_ERA_INVALID');
     if (!p || p.repositoryId !== repositoryId || !hash(p.repositoryId) ||
         !id(p.processSession) || !positive(p.authorityEpoch) || !id(p.authorityProcessSession) || !hash(p.authorityId))
         refuse('SCHEDULED_JOURNAL_PROVENANCE_MISMATCH');

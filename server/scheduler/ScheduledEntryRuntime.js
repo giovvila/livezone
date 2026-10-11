@@ -8,10 +8,12 @@ import {resolveSchedule} from './ScheduleContract.js';
 import {evaluateLiveAutomation} from './LiveAutomationShadow.js';
 import {migrationArtifacts} from '../recovery/CleanLedgerV1Migration.js';
 import {capturedEvidence} from '../recovery/PersistentEvidence.js';
+import {eraAdmits,executionEraStartup} from '../recovery/ExecutionEraContract.js';
 
 // Marker is a bootstrap reservation, never a recovery authorization. A crash
 // between marker and ledger creation deliberately requires explicit maintenance.
 export async function initializeEntryLedger({path,ownership,startupSchedule,executionRepository,bootstrap=false,options={}}){
+    executionEraStartup(path);
     let create=false;
     // V2 rollout is explicit; once a WAL exists, downgrade is forbidden even
     // when a caller omits the rollout option after a clean restart.
@@ -115,11 +117,13 @@ export default class ScheduledEntryRuntime {
     gate(ticket,{capture=false}={}){
         if(this.closed)return 'CLOSED';
         if(!this.ledger || this.ledger.status!=='READY')return 'LEDGER_UNAVAILABLE';
+        if(this.ledger.executionEra&&this.ownership.eraReady!==true)return 'EXECUTION_ERA_READY_REQUIRED';
         if(!this.scheduler.available())return 'MIGRATION_INCOMPLETE';
         const schedule=this.scheduler.store.getSnapshot();
         const event=schedule?.events.find(e=>e.id===ticket.eventId);
         if(!event)return 'DELETED';
         if(!event.enabled)return 'DISABLED';
+        if(this.ledger.executionEra&&!eraAdmits(this.ledger.executionEra,identityForScheduledEvent(event)))return 'OLD_EXECUTION_DOMAIN_RETIRED';
         if(event.entryMigration?.disposition==='EXCLUDED')return 'EXCLUDED';
         try{if(identityForScheduledEvent(event).entryKey!==ticket.entryKey)return 'STALE_VERSION';}catch{return 'STALE_VERSION';}
         const now=this.clock();

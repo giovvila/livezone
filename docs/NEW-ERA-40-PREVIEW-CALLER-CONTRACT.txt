@@ -1,0 +1,60 @@
+NEW-ERA-40 — Preview caller intent and resume failure
+
+PreviewOwnershipClient selects CREATE_NEW only at start with no saved/in-memory
+resume identity. With saved identity it selects RESUME_EXISTING and sends the same
+UUID, generation and token. Explicit malformed saved evidence stops for review;
+it is never interpreted as absent. Concurrent starts on the same instance share
+one request/promise. No new durable receipt or artifact is introduced.
+
+Policy after failed resume:
+OWNERSHIP_SESSION_EXPIRED / OWNERSHIP_STALE_UPDATE / INVALID_OWNERSHIP /
+CLIENT_GENERATION_CONFLICT / CLIENT_CAPABILITY_REQUIRED / GENERATION_EXHAUSTED
+    -> TERMINAL_RESUME_REJECTION, stopped, unavailable, identity retained.
+REFERENCE_AUDIT_UNAVAILABLE / recovery failure / unknown server rejection
+    -> STOP_REVIEW_REQUIRED, stopped, identity retained.
+transport exception / timeout exception / undecodable or lost response
+    -> UNCERTAIN_RESULT, stopped, identity retained, inspect/reconcile first.
+storage unreadable / malformed saved identity
+    -> STOP_REVIEW_REQUIRED without sending a request or clearing evidence.
+
+Automatic retries for these classes are zero. Explicit start can retry the SAME
+saved RESUME after appropriate operator resolution; it cannot become CREATE.
+heartbeat on a stopped caller does nothing. A report rejected for missing session
+also stops and preserves identity, rather than clearing sessionId for CREATE.
+getStatus() exposes sanitized code/classification/intent/reviewRequired; no tokens.
+Status inspection itself sends no request and mutates no ownership or storage.
+Control Room displays a small status notice for failed restore, uncertain outcome
+or exhausted Preview identity. It invokes no recovery/CREATE action and exposes
+no secret; status callback is presentation-only and cannot alter the failure fence.
+
+Saved identity is replaced only after successful canonical POST with returned
+same resume UUID/new generation/token, or genuine separately selected CREATE.
+Known successful response arriving after caller stop preserves recovery identity
+in existing storage, but cannot activate reporting/retry from an obsolete callback.
+Saved identity is deleted only by existing explicit confirmedGone close AFTER
+successful canonical DELETE, retaining NEW-ERA-37 generation/principal fences.
+Resume rejection alone never removes it or issues replacement token.
+
+Lost successful resume response: server may already hold the same UUID at G+1.
+The caller preserves original UUID/G/token and stops UNCERTAIN_RESULT. Reconstructed
+caller retries same identity and receives existing stale-generation rejection;
+it does not claim automatic recovery of the lost generation. Current server has
+no per-session read-only status/receipt endpoint. Canonical inspection/reconciliation
+is therefore required to resolve generation before any additional mutation.
+This task adds no server endpoint/receipt or stronger replay guarantee. No second
+lease is created, no implicit reset, and no second resume advance on old-G retry.
+
+New identity workflow: initial genuine start without saved identity, or a separate
+explicit release acknowledged by canonical DELETE followed by explicitly requested
+new start. Failed RESUME is not authority to erase identity or select CREATE_NEW.
+There is no force-create-after-rejection flag or automatic replacement workflow.
+
+ReferenceClient.initialize already rejects before saved identity/header replacement
+and has no automatic CREATE fallback; unchanged. Preview report expiry fallback was
+the other same generic caller path and now stops without clearing its sessionId.
+Existing permitted server Preview token-based transfer semantics are unchanged;
+the caller respects any server foreign/terminal rejection without substitution.
+
+All new failure status is process-local. Existing identity storage schema unchanged.
+Matrix 510 and native/proof inputs unchanged. No real deployment/review C resume,
+transition/install/launch/service change/staging/commit/push authorized here.

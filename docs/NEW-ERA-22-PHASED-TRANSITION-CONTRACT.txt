@@ -1,0 +1,131 @@
+NEW-ERA-22 — OPERATOR-CONTROLLED TRANSITION CONTRACT
+
+Scope: offline transition orchestration only. No deployment authorization,
+real execution, proof installation, service restoration or application launch
+is granted by this document. The active command sequence is section 3 of
+NEW-ERA-07-FUTURE-REAL-RUNBOOK.txt. NEW-ERA-22 supersedes its former single
+transition invocation and impossible intermediate human checkpoints.
+
+CANONICAL CLI
+NEW-ERA-25: optional READ_ONLY inspect requires --expected-head, interpreted by
+the existing recoveryIdentity contract, and checks current repository HEAD/branch.
+For persisted checkpoints also pass the original --authorization-file/digest and
+current --runtime-capability-proof. It retains the inspector context/lineage fence;
+incomplete checkpoints reuse transitionStatus for exact phase/forensic/archive/
+target verification and P1 proof binding. It creates no expected-context file.
+NO_TRANSITION grants no continuation. After activated, inspection validates the
+historical lineage and current deployment proof without rebinding P1; READY owner
+inspection is descriptive, with full runtime readiness reviewed via start-review.
+The same command works after process restart; inputs are independently approved
+HEAD/A plus existing canonical bytes. Never learn expected HEAD from the phase
+being inspected. Inspection remains separate from the next scoped mutation.
+
+transition-status requires the original authorization file and canonical
+authorization digest, plus the current permanent proof directory. It reads
+actual files, verifies authorization, host, proof and durable state, and reports
+completedPhase, nextPhase, partialPhase, checkpoint evidence, identities,
+checkpointHash and continuationAuthorizationCurrent. It never reserves a
+port, invokes the native helper, creates a directory or writes runtime files.
+Invalid state returns REVIEW_REQUIRED, exit 1, no checkpointHash and no
+continuation authority. Malformed CLI/authorization input also exits nonzero.
+
+transition additionally requires --phase PHASE --expected-checkpoint-hash HASH.
+One invocation may execute ONLY the verified next phase, or recognize the
+same last completed phase as ALREADY_COMPLETED_PHASE without advancing.
+The CLI has no monolithic default and no phase-skipping/force option.
+The inspected hash binds the original authorization, current verified proof,
+HEAD/branch, service/MediaMTX identity, completed phase and exact captured
+canonical phase, forensic, archive and Ledger/Schedule target/staging bytes.
+The operator must inspect and approve this hash before that single command.
+Scope is checked before native capability checks and again under the existing
+exclusive offline reservation before namespace/file mutations. Existing
+evidence/proof fences remain active at mutation hooks. Completed-phase retry
+returns before reservation/native calls. Read checks are not human prompts.
+
+COMMON INPUTS / PRECONDITIONS
+Every phase shares the SAME original verified authorization A: transitionId,
+executionEraId, ledgerId, retirementHash, expected storage pins, exact legacy
+inventory, root/paths, approved HEAD/branch and authorizedProofHash. The host
+must satisfy the existing administrator, stopped/disabled LivezoneNode,
+verified MediaMTX, offline owner/port and bootstrap guards. Full current proof
+verification must still yield A.authorizedProofHash. Every prior phase record
+must equal canonical sealed bytes with the exact predecessor and A. Completed
+forensic/archive/target artifacts must remain exact. Unknown phase files,
+future records, incompatible targets, links, alias paths and invalid stages
+reject. No assertion from shell history determines current durable state.
+
+EXACT EIGHT-PHASE TRACE (production NewExecutionEra / ExecutionEraContract)
+1 authorized: inputs A/legacy inventory; no earlier phase; first execution
+  creates execution-era and execution-era-forensic directories, then publishes
+  authorized.json. Completion is that canonical record. Return before blobs.
+2 forensic: authorized predecessor; publish every present inventory blob and
+  sealed manifest without reconstructing unavailable history; publish
+  forensic.json. Return before retirement. Inspect every blob/manifest hash.
+3 retired: forensic predecessor and retained exact evidence; publish
+  retired.json containing A's WHOLE old-domain retirement identity/scope.
+  This is logical retirement evidence, not filesystem archival. Return before
+  intent. Old Ledger/files remain; no new Ledger or Schedule binding exists.
+4 intent: retired predecessor; publish intent.json for the SAME transaction.
+  Return before physical archival. There is no additional intent file format.
+5 archived: intent predecessor; archive each present ledger, ledgerLock,
+  bootstrap, authorityLock, scheduledLock, scheduledJournal to its existing
+  .retired-era-TRANSITION destination with existing durability/read checks;
+  publish archived.json. Return before Ledger. All archived bytes must match
+  forensic inventory, original archived paths absent, no fresh Ledger exists.
+6 ledger: archived predecessor; publish generation-0 v2 Ledger snapshot,
+  BASE WAL and NEW_ERA bootstrap marker using the original targets; publish
+  ledger.json. Return before Schedule. One original approved ledgerId/era,
+  empty fresh domain; old Schedule remains unchanged and unbound here.
+7 schedule: ledger predecessor; publish the original canonical Schedule
+  replacement stage, validate and replace Schedule with revision+1/era binding;
+  publish schedule.json. Return before activation. Inspect all bindings.
+8 activated: schedule predecessor; publish activated.json; validate complete
+  startup chain/bindings; return ACTIVATED_OFFLINE with nextPhase=null.
+  Authority allocation/ControlledStart/READY is a SEPARATE operation/approval.
+
+For every row, the exact linked phase JSON plus its required side effects is
+durable completion evidence. The next-phase consent is the next explicit CLI
+invocation naming that phase and the operator-reviewed CURRENT checkpointHash,
+not a new transition authorization or a newly minted identity. We expose all
+eight existing durable phase boundaries; no extra prompts within reads or
+internal writes. Forensic, logical retirement, physical archival and fresh
+Ledger each necessarily return before any following phase mutation.
+
+AUTHORIZATION / STALENESS
+A approves this whole exact transaction. Independent approval of A remains
+required before its first mutation. Each returned checkpoint requires fresh
+operator inspection/consent to the next scoped command. No new durable approval
+artifact is created; retain command/output approval records outside runtime.
+P2 with another canonical proofHash cannot use A for P1, including after a
+partial transition. Do not refresh A to bypass partial lineage. A byte-identical
+relocated approved bundle remains P1. Relevant HEAD, host state, forensic,
+retirement, Ledger, phase or staging changes revoke a stale checkpoint. Exact
+completed artifacts may not be replaced with semantically similar JSON.
+
+INTERRUPTION / RETRY / AUTOMATION
+Existing canonical stage-prefix rules remain: exact empty/partial/full expected
+prefixes can resume the SAME pending phase under A; foreign or ambiguous state
+requires STOP/review. Status reports partialPhase/canonicalResumeRequired.
+Inspect the actual interrupted state, approve its current hash and explicitly
+repeat that pending phase. Return at its completion; recovery is never consent
+to the following phase. Last-completed-phase retries perform no writes and
+never advance; earlier/skipped phases reject. Do not restore old runtime files.
+No service/startup caller invokes this maintenance transition. Normal startup
+and ControlledStart still require the complete eight-phase activation chain;
+an incomplete chain fails EXECUTION_ERA_RESUME_REQUIRED. Reboot therefore cannot
+cross an operator checkpoint. Full activated lineage admits only the separately
+certified ControlledStart/READY workflow, with its own current proof/approvals.
+
+MATRIX / COMPATIBILITY
+No new durable file, serialized field, phase, mutation hook, archival target,
+Ledger target, Schedule target or write protocol is introduced. The unchanged
+unscoped in-process maintenance method remains for existing explicit fixtures
+and crash-model callers; it has no production startup/service caller and the
+operator CLI cannot invoke it. Its write-hook sequence is compared with the
+union of eight scoped invocations in isolated fixtures. Each existing offline
+matrix boundary maps to the same enclosing phase; recovery now returns at that
+phase's existing completion before any separately approved next phase. Runtime
+boundary groups and ControlledStart/READY implementation remain unchanged.
+This structural mapping preserves the prior 510-boundary model; it is not a
+new native crash run or a physical power-loss guarantee. Native/probe-critical
+inputs and permanent approval policy are unchanged; no build/probe is needed.

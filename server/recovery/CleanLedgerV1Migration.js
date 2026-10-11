@@ -106,7 +106,7 @@ export class CleanLedgerV1Migration {
         const capability=this.native.capability(dirname(this.path));
         return {helperSha256,gateSha256,version:'1.0.0',protocol:1,capability};
     }
-    async view() {
+    async view({readOnly=false}={}) {
         const lock=await ordinary(this.path+'.lock',{optional:true});
         if(lock!==null){if(json(lock).version===1)fail('LEGACY_LEDGER_LOCK_UNVERIFIABLE');fail('LEDGER_V2_OFFLINE_RECONCILIATION_REQUIRED');}
         const a=await migrationArtifacts(this.path),canonicalEvidence=await evidence(this.path,{optional:true});
@@ -131,6 +131,10 @@ export class CleanLedgerV1Migration {
             }
             const snapshot=validateLedgerSnapshot(value);
             if(wal!==null||suffixes.filter(s=>s!=='intent.stage').some(s=>a[s]!==null))fail('LEDGER_MIGRATION_UNRECOGNIZED_V2');
+            if(readOnly){
+                if(a['intent.stage']!==null)fail('LEDGER_MIGRATION_STAGING_CAPABILITY_VERIFICATION_REQUIRED');
+                return {mode:'V1',a,canonical,wal,marker,migrationState:'V1_STABLE'};
+            }
             const seed={schemaVersion:1,state:'INTENT',path:this.path,repositoryId:repositoryIdentity(this.path),
                 root:this.root,rootId:repositoryIdentity(this.root),original:{bytes:canonical,hash:canonicalEvidence.sha256,generation:snapshot.generation},
                 markerBytes:marker,markerHash:markerEvidence.sha256,authority:{path:this.authorityPath,bytes:authority,hash:authorityEvidence.sha256,epoch},
@@ -158,17 +162,18 @@ export class CleanLedgerV1Migration {
         if(a['completion.stage']!==null&&a.activated===null)fail('LEDGER_MIGRATION_STAGE_ORDER');
         return {mode:'V1',intent,a,canonical,wal,marker,target,base,migrationState:a.activated?'ACTIVATED':canonical===target?'V2_INSTALLED':wal?'BASE_DURABLE':a.intent?'INTENT_DURABLE':a['intent.stage']!==null?'INTENT_STAGING':'V1_STABLE'};
     }
-    async inspect() {
+    async inspect({readOnly=false}={}) {
         try {
             await this.hostState();
-            const v=await this.view();
+            const v=await this.view({readOnly});
             if(v.mode==='V1'&&(await ordinary(this.authorityPath+'.lock',{optional:true})!==null||
                 this.scheduledPath&&await ordinary(this.scheduledPath+'.lock',{optional:true})!==null))fail('LOCK_RECONCILIATION_REQUIRED');
-            const nativeCapability=v.mode==='ABSENT'?'NOT_REQUIRED':await this.storage();
+            const nativeCapability=v.mode==='ABSENT'?'NOT_REQUIRED':readOnly?'NOT_EXERCISED_BY_READ_ONLY_INSPECTION':await this.storage();
             return {ledgerMode:v.mode==='V1'&&v.canonical===v.target?'V2_PENDING':v.mode,migrationState:v.migrationState??(v.mode==='ABSENT'?'ABSENT':v.mode==='V2'?'V2_STABLE':'V1_STABLE'),
                 nativeCapability,migrationRequired:v.mode==='V1',migrationResumable:v.mode==='V1'&&v.migrationState!=='V1_STABLE',blockingReason:null,
-                transactionId:v.intent?.transactionId??null};
-        }catch(e){return {ledgerMode:'BLOCKED',migrationState:'UNPROVEN',nativeCapability:'UNPROVEN',migrationRequired:false,migrationResumable:false,blockingReason:e.code??e.message};}
+                transactionId:v.intent?.transactionId??null,...(readOnly?{readOnly:true,eligibleForMutation:false}: {})};
+        }catch(e){return {ledgerMode:'BLOCKED',migrationState:'UNPROVEN',nativeCapability:'UNPROVEN',migrationRequired:false,migrationResumable:false,blockingReason:e.code??e.message,
+            ...(readOnly?{readOnly:true,eligibleForMutation:false}: {})};}
     }
     async guard() {
         await this.hostState();

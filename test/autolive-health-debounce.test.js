@@ -1,7 +1,8 @@
+import '../test-support/RuntimeStateGuard.mjs';
+import {writeTempDiagnostic} from '../test-support/TempDiagnostics.js';
 import { AUTOLIVE_POST_TAKE_CONFIRMED_LOSS_MS } from "../public/js/studio/AutoLivePostTakePolicy.js";
 import test from "node:test";
 import trace from "../public/js/core/RuntimeTrace.js";
-import { writeFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import EventBus from "../public/js/core/EventBus.js";
 import Events from "../public/js/core/Events.js";
@@ -153,7 +154,7 @@ test('60 minutes of short periodic gaps produce no slate or session replacement'
  for(let n=0;n<360;n++){await h.advance(9700);h.renderer.program.renderer.video.dispatchEvent(new Event(n%2?'waiting':'stalled'));await h.time.advance(300);h.progress();await flush();}
  assert.deepEqual(history(h.published),['A','ENTRY','LIVE']);assert.equal(h.controller.session,session);assert.equal(h.scheduler.ends,0);assert.equal(h.scheduler.begins,1);
  assert.equal(h.state.getPreviewSceneId(),'P');assert.equal(session.returnTarget.cueAtInterruption,37);
- writeFileSync('var/health-debounce-60min-history.json',JSON.stringify({history:history(h.published),minutes:60,shortGaps:360,begins:h.scheduler.begins,ends:h.scheduler.ends},null,2));
+ writeTempDiagnostic('health-debounce-60min-history.json',JSON.stringify({history:history(h.published),minutes:60,shortGaps:360,begins:h.scheduler.begins,ends:h.scheduler.ends},null,2));
 }));
 test('currentTime polling tolerates delayed timeupdate notifications',async()=>harness(async h=>{
  await h.detect();await h.advance(61000);const v=h.renderer.program.renderer.video;
@@ -203,7 +204,7 @@ test('bounded diagnostics distinguish suppressed uncertainty and visible loss wi
  const decisions=trace.snapshot().filter(e=>e.scope==='autolive-visual-health');
  assert.ok(decisions.some(e=>e.state==='SUPPRESSED'));assert.ok(decisions.some(e=>e.state==='SHOWN'));
  assert.ok(decisions.every(e=>e.ownershipState==='NO'));assert.ok(!JSON.stringify(decisions).includes('https://'));
- writeFileSync('var/health-debounce-decisions.json',JSON.stringify(decisions,null,2));
+ writeTempDiagnostic('health-debounce-decisions.json',JSON.stringify(decisions,null,2));
  }finally{trace.enabled=old;trace.clear();}
 }));
 

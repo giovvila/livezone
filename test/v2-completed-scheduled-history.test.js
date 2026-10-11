@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {registerNativeTestRoot} from '../test-support/NativeTempGuard.mjs';
 import assert from 'node:assert/strict';
 import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -131,7 +132,7 @@ test('R18 active Scheduled shutdown retains all witnesses for normal offline rec
 for(const point of ['before-Scheduled-release','after-Scheduled-release','before-authority-release','after-authority-release','before-ledger-release'])test('R18 native READY completed history shutdown: '+point,{skip:process.platform!=='win32',timeout:180000},async t=>{
     const root=await mkdtemp(join(tmpdir(),'lz-r18-output-')),output=join(root,'observation.json');t.after(()=>removeTemp(root,'lz-r18-output-'));
     const child=spawnSync(process.execPath,[fileURLToPath(new URL('../test-support/CompletedScheduledHistoryChild.mjs',import.meta.url)),output,point],{encoding:'utf8',windowsHide:true,timeout:120000});assert.equal(child.status,77,child.stdout+child.stderr);
-    const h=JSON.parse(await readFile(output,'utf8'));t.after(()=>removeTemp(h.root,'lz-r10-integrity-'));assert.throws(()=>process.kill(h.pid,0),{code:'ESRCH'});
+    const h=JSON.parse(await readFile(output,'utf8'));registerNativeTestRoot(h.root);t.after(()=>removeTemp(h.root,'lz-r10-integrity-'));assert.throws(()=>process.kill(h.pid,0),{code:'ESRCH'});
     assert.ok(h.ready);assert.ok(h.ledgerLock);assert.equal(h.scheduled.value.transaction.record.state,'COMPLETED');assert.equal(h.lastType,'END');assert.equal(h.pending,null);assert.equal(h.owner,null);
     assert.deepEqual(h.programAfter,h.programBefore);
     assert.equal(h.captures,0);assert.equal(h.executions,0);

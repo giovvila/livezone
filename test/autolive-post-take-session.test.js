@@ -1,7 +1,8 @@
+import '../test-support/RuntimeStateGuard.mjs';
+import {writeTempDiagnostic} from '../test-support/TempDiagnostics.js';
 import { AUTOLIVE_POST_TAKE_CONFIRMED_LOSS_MS } from "../public/js/studio/AutoLivePostTakePolicy.js";
 import test from "node:test";
 import trace from "../public/js/core/RuntimeTrace.js";
-import { writeFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import EventBus from "../public/js/core/EventBus.js";
 import Events from "../public/js/core/Events.js";
@@ -149,7 +150,7 @@ for(const minutes of [10,30,60])test('healthy external LIVE '+minutes+' minutes 
  assert.equal(h.controller.session,session);assert.equal(h.controller.activeHealth,owner);
  assert.deepEqual(history(h.published),['A','ENTRY','LIVE']);assert.equal(h.scheduler.begins,1);assert.equal(h.scheduler.ends,0);
  assert.equal(h.state.getPreviewSceneId(),'P');assert.equal(session.returnTarget.cueAtInterruption,37);
- writeFileSync('var/post-take-healthy-'+minutes+'min.json',JSON.stringify({minutes,history:history(h.published),begins:h.scheduler.begins,ends:h.scheduler.ends,sessionId:session.sessionId},null,2));
+ writeTempDiagnostic('post-take-healthy-'+minutes+'min.json',JSON.stringify({minutes,history:history(h.published),begins:h.scheduler.begins,ends:h.scheduler.ends,sessionId:session.sessionId},null,2));
 }));
 test('short Program buffering uses LOSS and recovery retains session and cue',async()=>harness(async h=>{
  await h.detect();await h.advance(61000);const session=h.controller.session,video=h.renderer.program.renderer.video;
@@ -208,7 +209,7 @@ test('legacy monitor authority reproduces a full false close loop with safe trac
   h.monitor.emit('OFFLINE');await h.advance(6000);h.monitor.emit('ONLINE');await flush();h.progress();await h.advance(61000);
   assert.deepEqual(history(h.published),['A','ENTRY','LIVE','LOSS','A','ENTRY','LIVE']);
   assert.equal(h.scheduler.ends,1);assert.equal(h.scheduler.begins,2);
-  writeFileSync('var/post-take-false-loop-trace.json',trace.exportJSON());
+  writeTempDiagnostic('post-take-false-loop-trace.json',trace.exportJSON());
  }finally{trace.enabled=old;trace.clear();}
 }));
 

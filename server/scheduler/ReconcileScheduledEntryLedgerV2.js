@@ -8,6 +8,7 @@ import {reserve8080} from '../recovery/WindowsRecoveryHost.js';
 import {repositoryIdentity,validateLock,journalMatchesLock,completedScheduledHistory,assertScheduledTerminalNamespace} from './ScheduledExecutionProvenance.js';
 import {append,directorySync,equal,fail,hash,inspectV2,ordinary,recoverV2,terminalShutdown,validateV2Lock} from './ScheduledEntryLedgerV2Protocol.js';
 import {readEvidence} from '../recovery/PersistentEvidence.js';
+import {executionEraStartup} from '../recovery/ExecutionEraContract.js';
 
 const alive=pid=>{try{process.kill(pid,0);return true;}catch(e){if(e.code==='ESRCH')return false;throw e;}};
 const sha=bytes=>bytes===null?null:hash(bytes);
@@ -21,7 +22,7 @@ export async function ledgerRecoveryEvidence({path,authorityPath,scheduledPath})
         hashes:Object.fromEntries(captures.map(([key,e])=>[key,e?.sha256??null]))};
 }
 export async function reconcileScheduledEntryLedgerV2({path,authorityPath,scheduledPath,operationId,expected,
-    proveOffline=proveWindowsOffline,reserve=reserve8080,isAlive=alive,syncDirectory=directorySync,hook=()=>{}}) {
+    proveOffline=proveWindowsOffline,reserve=reserve8080,isAlive=alive,syncDirectory=directorySync,hook=()=>{},newEraRecovery}) {
     if(![path,authorityPath,scheduledPath].every(p=>typeof p==='string'&&isAbsolute(p)) ||
         !/^[a-zA-Z0-9_-]{1,80}$/.test(operationId??'') || !expected)fail('LEDGER_V2_RECOVERY_IDENTITY_REQUIRED');
     [path,authorityPath,scheduledPath]=[path,authorityPath,scheduledPath].map(p=>resolve(p));
@@ -41,7 +42,9 @@ export async function reconcileScheduledEntryLedgerV2({path,authorityPath,schedu
     if(syncDirectory(path)!=='DIRECTORY_SYNCED')fail('LEDGER_V2_NAMESPACE_DURABILITY_UNPROVEN');
     const durability=createLedgerV2Durability({syncDirectory});
     for(const p of [path,authorityPath,scheduledPath])durability.sync(p);
-    const releaseGate=await acquireMaintenanceGate(authorityPath,{durability});let releasePort;
+    const recoveryGate=newEraRecovery?(await newEraRecovery.journal()).records.at(-1)?.body.recoveryGate:undefined;
+    const releaseGate=await acquireMaintenanceGate(authorityPath,{durability,record:recoveryGate,
+        ...(newEraRecovery?{hook:point=>hook('gate/'+point)}:{})});let releasePort;
     const audit=path+'.recovery-'+operationId+'.json',archive=path+'.lock.reconciled-'+operationId;
     const save=async(p,value)=>{
         const f=await open(p,'wx',0o600);try{await f.writeFile(JSON.stringify(value)+'\n');await f.sync();}finally{await f.close();}
@@ -70,7 +73,11 @@ export async function reconcileScheduledEntryLedgerV2({path,authorityPath,schedu
         const terminal=terminalShutdown(state,lock);
         if(terminalReason(saved?.reason)&&(!terminal||observed.hashes.ledger!==expected.ledger||observed.hashes.wal!==expected.wal))fail('LEDGER_V2_TERMINAL_CHANGED');
         const marker=JSON.parse(observed.bytes.marker),authority=JSON.parse(observed.bytes.authority),al=JSON.parse(observed.bytes.authorityLock),sl=JSON.parse(observed.bytes.scheduledLock);
-        if(marker?.version!==1||!Number.isSafeInteger(marker.authorityEpoch)||marker.authorityEpoch<1||marker.authorityEpoch>lock.authorityEpoch)
+        const era=executionEraStartup(path);
+        if(era){
+            if(!newEraRecovery||!equal(marker,era.marker))fail('LEDGER_V2_MARKER_INVALID');
+            await newEraRecovery.validateRecoveryLock(lock);
+        }else if(marker?.version!==1||!Number.isSafeInteger(marker.authorityEpoch)||marker.authorityEpoch<1||marker.authorityEpoch>lock.authorityEpoch)
             fail('LEDGER_V2_MARKER_INVALID');
         if(authority?.epoch!==lock.authorityEpoch||((!terminal||al!==null)&&(al?.pid!==lock.pid||al.authorityProcessSession!==lock.authorityProcessSession)))
             fail('LEDGER_V2_AUTHORITY_MISMATCH');
@@ -78,7 +85,7 @@ export async function reconcileScheduledEntryLedgerV2({path,authorityPath,schedu
         if(terminal){await assertScheduledTerminalNamespace(scheduledPath);}
         if(terminal&&sl===null){
             scheduledHistory=completedScheduledHistory(observed.bytes.scheduled,{scheduledPath,authorityPath,ledgerLock:lock});
-        }else{
+        }else if(!(era&&sl===null&&observed.bytes.scheduled===null)){
             if(validateLock(sl,repositoryIdentity(scheduledPath))!=='VERIFIABLE'||sl.processId!==lock.pid||sl.authorityEpoch!==lock.authorityEpoch||
                 sl.authorityProcessSession!==lock.authorityProcessSession||sl.authorityId!==repositoryIdentity(authorityPath))fail('LEDGER_V2_SCHEDULED_MISMATCH');
             journalMatchesLock(observed.bytes.scheduled,sl);
@@ -113,6 +120,9 @@ export async function reconcileScheduledEntryLedgerV2({path,authorityPath,schedu
         }
         await hook('recovered');state=await inspectV2(path);
         if(state.owner||state.pending)fail('LEDGER_V2_RECOVERY_INCOMPLETE');
+        // Complete END bytes can outlive a producer killed before its fsync ACK.
+        // Establish current file and namespace durability before lock archival.
+        await durability.syncFile(path);await durability.syncFile(path+'.wal');
         await verifyExternal();
         if(observed.bytes.lock!==null) {
             if(await ordinary(archive,{optional:true})!==null)fail('LEDGER_V2_ARCHIVE_EXISTS');

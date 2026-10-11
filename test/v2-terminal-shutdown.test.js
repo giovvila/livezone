@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {registerNativeTestRoot} from '../test-support/NativeTempGuard.mjs';
 import assert from 'node:assert/strict';
 import {mkdtemp,readFile,rm,writeFile,unlink} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -20,7 +21,7 @@ async function removeTemp(path,prefix){const rel=relative(tmpdir(),path);assert.
 test('R17 exact R16: READY terminal END survives missing companion locks and reconciles without replay',windows,async t=>{
     const root=await mkdtemp(join(tmpdir(),'lz-r17-output-')),output=join(root,'observation.json');t.after(()=>removeTemp(root,'lz-r17-output-'));
     const child=spawnSync(process.execPath,[fileURLToPath(new URL('../test-support/TerminalShutdownChild.mjs',import.meta.url)),output],{encoding:'utf8',windowsHide:true,timeout:120000});assert.equal(child.status,77,child.stdout+child.stderr);
-    const h=JSON.parse(await readFile(output,'utf8'));t.after(()=>removeTemp(h.root,'lz-r10-integrity-'));
+    const h=JSON.parse(await readFile(output,'utf8'));registerNativeTestRoot(h.root);t.after(()=>removeTemp(h.root,'lz-r10-integrity-'));
     assert.ok(h.ready);assert.ok(h.ledgerLock);assert.equal(h.authorityLock,null);assert.equal(h.scheduledLock,null);assert.equal(h.lastType,'END');assert.equal(h.owner,null);assert.equal(h.pending,null);
     assert.throws(()=>process.kill(h.pid,0),{code:'ESRCH'});
     const args={path:h.p.ledger,authorityPath:h.p.authority,scheduledPath:h.p.scheduled,operationId:'r17-exact',proveOffline:async()=>({absent:true,services:[{State:'Stopped',StartMode:'Disabled'}]}),reserve:async()=>()=>{}};args.expected=(await ledgerRecoveryEvidence(args)).hashes;
@@ -105,7 +106,7 @@ test('R17 admission close during an irrevocable consume prevents Scheduled captu
 for(const point of ['before-admission','during-drain','after-drain-before-END','during-END','after-END-fsync','after-terminal-barrier','before-ledger-release','after-ledger-release','before-Scheduled-release','after-Scheduled-release','before-authority-release','after-authority-release'])test('R17 actual shutdown interruption: '+point,windows,async t=>{
     const root=await mkdtemp(join(tmpdir(),'lz-r17-output-')),output=join(root,'observation.json');t.after(()=>removeTemp(root,'lz-r17-output-'));
     const child=spawnSync(process.execPath,[fileURLToPath(new URL('../test-support/TerminalShutdownChild.mjs',import.meta.url)),output,point],{encoding:'utf8',windowsHide:true,timeout:120000});assert.equal(child.status,77,child.stdout+child.stderr);
-    const h=JSON.parse(await readFile(output,'utf8'));t.after(()=>removeTemp(h.root,'lz-r10-integrity-'));assert.throws(()=>process.kill(h.pid,0),{code:'ESRCH'});
+    const h=JSON.parse(await readFile(output,'utf8'));registerNativeTestRoot(h.root);t.after(()=>removeTemp(h.root,'lz-r10-integrity-'));assert.throws(()=>process.kill(h.pid,0),{code:'ESRCH'});
     assert.equal(h.lastType==='END',!['before-admission','during-drain','after-drain-before-END'].includes(point));
     if(['before-admission','during-drain','after-drain-before-END','during-END','after-END-fsync','after-terminal-barrier','before-Scheduled-release'].includes(point)){assert.ok(h.authorityLock);assert.ok(h.scheduledLock);}
     if(point==='after-ledger-release'){assert.equal(h.ledgerLock,null);assert.equal(h.authorityLock,null);assert.equal(h.scheduledLock,null);return;}

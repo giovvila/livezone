@@ -1,4 +1,6 @@
 import {capturedEvidence} from '../recovery/PersistentEvidence.js';
+import {createLedgerV2Durability} from './LedgerV2Durability.js';
+import {assertEraAuthority} from '../recovery/ExecutionEraContract.js';
 ﻿import {
     open,
     mkdir,
@@ -48,6 +50,7 @@ export default class ScheduledLiveExecutionRepository {
         path,
         publicRoot=resolve('public'),
         authority,
+        eraDurability=createLedgerV2Durability(),
         hook=()=>{}
     }={}){
         if(
@@ -62,6 +65,7 @@ export default class ScheduledLiveExecutionRepository {
         this.publicRoot=resolve(publicRoot);
         this.hook=hook;
         this.authority=authority;
+        this.era=authority?.executionEra;this.eraDurability=eraDurability;
 
         this.status='UNAVAILABLE';
         this.record=null;
@@ -71,6 +75,7 @@ export default class ScheduledLiveExecutionRepository {
 
     assertAuthority(){
         const a=this.authority;
+        if(this.era)assertEraAuthority(this.era,a);
         if (!a || a.available!==true || a.closed || !isAbsolute(a.path || '') ||
             !Number.isSafeInteger(a.authorityEpoch) || a.authorityEpoch<1 ||
             typeof a.authorityProcessSession!=='string' || !/^[a-zA-Z0-9_-]{1,120}$/.test(a.authorityProcessSession))
@@ -126,6 +131,7 @@ export default class ScheduledLiveExecutionRepository {
                 authorityEpoch:this.authority.authorityEpoch,
                 authorityProcessSession:this.authority.authorityProcessSession,
                 authorityId:repositoryIdentity(this.authority.path),
+                ...(this.era?{executionEraId:this.era.executionEraId,retirementHash:this.era.retirementHash}:{}),
                 createdAt:new Date().toISOString(),initialJournalHash:null};
 
             try{
@@ -176,6 +182,7 @@ export default class ScheduledLiveExecutionRepository {
             const journal=evidence.value;
             const envelope=validateJournal(journal,this.repositoryId);
             const previous=journal.provenance;
+            if(previous.executionEraId!==this.owner.executionEraId||previous.retirementHash!==this.owner.retirementHash)refuse('SCHEDULED_JOURNAL_ERA_MISMATCH');
             if(previous.authorityId!==this.owner.authorityId ||
                 previous.authorityEpoch>this.owner.authorityEpoch ||
                 (previous.authorityEpoch===this.owner.authorityEpoch &&
@@ -208,6 +215,7 @@ export default class ScheduledLiveExecutionRepository {
         this.lockBytes=JSON.stringify(this.owner);
         await this.lock.writeFile(this.lockBytes);
         await this.lock.sync();
+        if(this.era)this.eraDurability.sync(this.path+'.lock');
         this.assertAuthority();
     }
 
@@ -294,7 +302,7 @@ export default class ScheduledLiveExecutionRepository {
 
             replacing=true;
 
-            renameSync(temp,this.path);
+            if(this.era){this.eraDurability.sync(temp);this.eraDurability.replace(temp,this.path);}else renameSync(temp,this.path);
 
             this.hook('replaced');
 
@@ -306,6 +314,7 @@ export default class ScheduledLiveExecutionRepository {
             finally{
                 closeSync(fd);
             }
+            if(this.era)this.eraDurability.sync(this.path);
 
             this.record=envelope.transaction.record;
 
@@ -348,8 +357,9 @@ export default class ScheduledLiveExecutionRepository {
             this.lock=null;
             // Never remove a replacement lock belonging to another session.
             const bytes=await readFile(this.path+'.lock').then(bytes=>capturedEvidence(bytes).text).catch(()=>null);
-            if(bytes===(this.lockBytes ?? ''))
-                await unlink(this.path+'.lock').catch(()=>{});
+            if(bytes===(this.lockBytes ?? '')){
+                if(this.era)await this.eraDurability.remove(this.path+'.lock');else await unlink(this.path+'.lock').catch(()=>{});
+            }
         }
     }
 }

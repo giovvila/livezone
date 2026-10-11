@@ -2,6 +2,7 @@ import { randomUUID,randomBytes,createHash } from 'node:crypto';
 import { referenceError } from './AssetReferenceInventory.js';
 import {mkdir,readFile,writeFile,rename} from 'node:fs/promises';
 import {dirname} from 'node:path';
+import {isGeneration,successorGeneration} from './GenerationDomain.js';
 
 export default class PreviewOwnership {
     constructor({ coordinator, validate, clock = () => Date.now(), leaseMs = 30000, maxSessions = 64, path, diagnostics }) {
@@ -16,8 +17,8 @@ export default class PreviewOwnership {
             const data=JSON.parse(await readFile(this.path,'utf8'));
             if(data.version!==2||!Array.isArray(data.sessions)||data.sessions.length>this.maxSessions)throw Error();
             for(const [id,session] of data.sessions){
-                if(!/^[0-9a-f-]{36}$/.test(id)||!Number.isSafeInteger(session.generation)||typeof session.principal!=='string'||
-                    session.generation<1||this.sessions.has(id)||!/^[0-9a-f]{64}$/.test(session.resumeHash)||
+                if(!/^[0-9a-f-]{36}$/.test(id)||!isGeneration(session.generation)||typeof session.principal!=='string'||
+                    this.sessions.has(id)||!/^[0-9a-f]{64}$/.test(session.resumeHash)||
                     !Number.isSafeInteger(session.sequence)||session.sequence<0||!Number.isFinite(session.expiresAt)||
                     !Array.isArray(session.references)||session.references.length>64||
                     session.references.some(value=>!value||typeof value.assetId!=='string'||value.kind!=='PREVIEW'||value.ownerId!==id))throw Error();
@@ -39,18 +40,25 @@ export default class PreviewOwnership {
         try{await this.persist();}catch(error){this.sessions=before;this.available=false;throw error;}
         return result;
     });}
-    open(principal,{resumeSessionId,generation,resumeToken}={}) {
+    open(principal,fields={}) {
+        if(!fields||typeof fields!=='object'||Array.isArray(fields))return Promise.reject(referenceError('INVALID_OWNERSHIP'));
+        const {resumeSessionId,generation,resumeToken}=structuredClone(fields);
+        const resuming=Object.hasOwn(fields,'resumeSessionId');
+        const orphanCredentials=!resuming&&(Object.hasOwn(fields,'generation')||Object.hasOwn(fields,'resumeToken'));
         return this.mutate(() => {
-            this.expire();
-            const previous=resumeSessionId&&this.sessions.get(resumeSessionId);
+            if(orphanCredentials)throw referenceError('INVALID_OWNERSHIP');
+            const previous=resuming?this.sessions.get(resumeSessionId):null;
+            if(resuming&&!previous)throw referenceError('OWNERSHIP_SESSION_EXPIRED');
             if(previous){
-                if(previous.generation!==generation||typeof resumeToken!=='string'||createHash('sha256').update(resumeToken).digest('hex')!==previous.resumeHash)throw referenceError('OWNERSHIP_STALE_UPDATE');
+                if(!isGeneration(generation)||previous.generation!==generation||typeof resumeToken!=='string'||createHash('sha256').update(resumeToken).digest('hex')!==previous.resumeHash)throw referenceError('OWNERSHIP_STALE_UPDATE');
+                const nextGeneration=successorGeneration(previous.generation,'OWNERSHIP_STALE_UPDATE');
+                this.expire();
                 previous.principal=principal;
-                previous.generation++;previous.sequence=0;previous.confirmed=false;previous.expiresAt=this.clock()+this.leaseMs;
+                previous.generation=nextGeneration;previous.sequence=0;previous.confirmed=false;previous.expiresAt=this.clock()+this.leaseMs;
                 return {sessionId:resumeSessionId,generation:previous.generation,resumeToken,sequence:0,leaseMs:this.leaseMs};
             }
-            if (resumeSessionId)throw referenceError('OWNERSHIP_SESSION_EXPIRED');
             if (this.sessions.size >= this.maxSessions) throw referenceError('REFERENCE_AUDIT_UNAVAILABLE');
+            this.expire();
             const sessionId = randomUUID();
             const token=randomBytes(32).toString('hex');
             this.sessions.set(sessionId, { principal, resumeHash:createHash('sha256').update(token).digest('hex'),generation:1, sequence: 0, confirmed: false,
@@ -87,9 +95,13 @@ export default class PreviewOwnership {
     }
     close(sessionId, principal, generation=1) {
         return this.mutate(() => {
+            if(!isGeneration(generation))throw referenceError('INVALID_OWNERSHIP');
             const session=this.sessions.get(sessionId);
-            if(session?.principal===principal&&session.generation===generation){this.sessions.delete(sessionId);
-                this.diagnostics?.record('PREVIEW_OWNERSHIP_RELEASED',{complete:true});}
+            if(!session)return;
+            if(session.principal!==principal)throw referenceError('OWNERSHIP_SESSION_EXPIRED');
+            if(session.generation!==generation)throw referenceError('OWNERSHIP_STALE_UPDATE');
+            this.sessions.delete(sessionId);
+            this.diagnostics?.record('PREVIEW_OWNERSHIP_RELEASED',{complete:true});
         });
     }
     expire() { for (const value of this.sessions.values()) if (value.expiresAt <= this.clock()&&value.confirmed) {
@@ -105,10 +117,12 @@ export default class PreviewOwnership {
         }
     });}
     snapshot() {
-        this.expire();
+        // Expiry is a read projection; lifecycle owners alone materialize it.
+        const now=this.clock();
         const sessions=[...this.sessions.values()];
+        const confirmed=session=>session.confirmed&&session.expiresAt>now;
         const required=this.requiredPrincipals?.()||[];
-        return { complete: this.available && sessions.every(s => s.confirmed)&&required.every(principal=>sessions.some(s=>s.principal===principal&&s.confirmed)),
+        return { complete: this.available && sessions.every(confirmed)&&required.every(principal=>sessions.some(s=>s.principal===principal&&confirmed(s))),
             references: [...this.sessions.values()].flatMap(s => s.references) };
     }
 }

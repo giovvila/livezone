@@ -1,0 +1,47 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readdir,readFile} from 'node:fs/promises';
+import {eraFixture} from '../test-support/NewExecutionEraFixture.js';
+import {componentLaunch} from '../test-support/NewEraControlledRuntime.js';
+import {NewEraRecoveryWorkflow} from '../server/recovery/NewEraRecoveryWorkflow.js';
+import {controlledStart} from '../server/recovery/ControlledStart.js';
+import {executionEraStartup,eraAdmits} from '../server/recovery/ExecutionEraContract.js';
+import {grantFutureRuntime} from '../test-support/EraGrantFutureRuntime.js';
+import {inspectV2,hash} from '../server/scheduler/ScheduledEntryLedgerV2Protocol.js';
+import {identityForScheduledEvent} from '../server/scheduler/ScheduledEventIdentity.js';
+test('independent retry after unrelated Schedule change must retain one grant',async t=>{
+ const f=await eraFixture(t);await f.writer.transition(f.authorization);
+ let workflow=new NewEraRecoveryWorkflow({writer:f.writer,authorization:f.authorization});
+ let now=Date.parse('2030-01-01T11:50:00.000Z');let runtime=componentLaunch(f,{clock:()=>now});
+ const programBefore=await readFile(f.paths.program),autoBefore=await readFile(f.paths.autoLive);
+ try {
+ const {owner}=await controlledStart({workflow,authorizeStart:true,authorizeReconciliation:true,launch:runtime.launch});
+ const store=owner.scheduler.store,era=executionEraStartup(f.paths.ledger);
+ const old=store.listEvents().find(e=>e.type==='source.live');const event={...old,id:'era08b-future',name:'TEMP future',startAt:'2030-01-01T12:00:00.000Z',endAt:'2030-01-01T12:10:00.000Z'};for(const key of ['incarnationId','entryRevision','entryMigration','executionEraId','entryGrantHash'])delete event[key];
+ const revision=store.getSnapshot().revision;
+ store.eraGrantHook=point=>{if(point==='grant-schedule/before-open')throw Object.assign(new Error('injected publication interruption'),{code:'TEMP_INTERRUPT'});};
+ const interrupted=await store.insert(event,revision);
+ assert.equal(interrupted.ok,false);
+ const firstFiles=(await readdir(era.directory)).filter(n=>/^grant-.*\.json$/.test(n));assert.equal(firstFiles.length,1);
+ const first=JSON.parse(await readFile(era.directory+'/'+firstFiles[0]));
+ store.eraGrantHook=undefined;
+ const unrelated=await store.update(store.listEvents()[0].id,{name:'TEMP unrelated edit'},revision);assert.equal(unrelated.ok,true,JSON.stringify(unrelated));
+ const retry=await store.insert(event,store.getSnapshot().revision);assert.equal(retry.ok,true,JSON.stringify(retry));
+ const second=store.getEvent(event.id);
+ const grantFiles=(await readdir(era.directory)).filter(n=>/^grant-.*\.json$/.test(n));
+ const oldIdentity=identityForScheduledEvent({...second,incarnationId:first.incarnationId,executionEraId:first.executionEraId,entryGrantHash:hash(await readFile(era.directory+'/'+firstFiles[0]))});
+ const newIdentity={identitySchema:2,eventId:event.id,...second};newIdentity.eventId=event.id;
+ assert.equal(first.incarnationId,second.incarnationId);assert.equal(second.entryGrantHash,hash(await readFile(era.directory+'/'+firstFiles[0])));
+ assert.equal(eraAdmits(era,oldIdentity),true);assert.equal(eraAdmits(era,newIdentity),true);
+ assert.deepEqual(store.getSnapshot().publishedEraGrants,[first.incarnationId]);
+ assert.equal((await inspectV2(f.paths.ledger)).current.entries.length,0);
+ assert.deepEqual(await readFile(f.paths.program),programBefore);assert.deepEqual(await readFile(f.paths.autoLive),autoBefore);
+ assert.equal(grantFiles.length,1,'same request acquired a second durable grant');
+ const counter={captures:0};await grantFutureRuntime({app:owner,event,clock:()=>now,setNow:value=>now=value,counter});
+ await runtime.close();workflow=await workflow.prepareRestart({authorizeRestart:true,expectedReviewHash:(await workflow.recoveryReview()).hash,principal:'TEMP-era10-restart'});
+ runtime=componentLaunch(f,{clock:()=>now});const restarted=await controlledStart({workflow,authorizeStart:true,authorizeReconciliation:true,launch:runtime.launch});
+ await grantFutureRuntime({app:restarted.owner,event,clock:()=>now,setNow:value=>now=value,counter,replay:true});
+ assert.equal(counter.captures,1);assert.equal((await inspectV2(f.paths.ledger)).current.entries.filter(e=>e.identity.eventId===event.id).length,1);
+ assert.deepEqual(await readFile(f.paths.autoLive),autoBefore);assert.equal(restarted.owner.durableProgram.status,'PRESENT');
+ }finally{await runtime.close();}
+});

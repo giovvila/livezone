@@ -4,6 +4,7 @@ import {validateLedgerSnapshot} from '../scheduler/ScheduledEntryLedgerContract.
 import {hash,equal,decodeEnvelope,parseWal,inspectV2,fail} from '../scheduler/ScheduledEntryLedgerV2Protocol.js';
 import {assertMigrationStartup,migrationArtifacts,validateMigrationCompletion} from './CleanLedgerV1Migration.js';
 import {readEvidence} from './PersistentEvidence.js';
+import {executionEraStartup} from './ExecutionEraContract.js';
 
 const evidence=(path,options={})=>readEvidence(path,{...options,
     ordinaryError:'LEDGER_V2_ORDINARY_FILE_REQUIRED',encodingError:'RESTORE_ENCODING_UNPROVEN'});
@@ -11,7 +12,7 @@ const evidence=(path,options={})=>readEvidence(path,{...options,
 // The READY anchor retains the observed WAL prefix, not only a generation. A
 // later closed chain must extend that exact prefix; a replacement/fork cannot
 // qualify by keeping a ledger ID or copying earlier consumption records.
-export async function ledgerAuthority(workflow,{allowOwner=false}={}){
+export async function ledgerAuthority(workflow,{allowOwner=false,storage}={}){
     const {p,migration}=workflow;
     for(const path of [p.ledger,p.ledgerWal,p.marker]){
         try{const stat=await lstat(path);if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1)fail('RESTORE_ORDINARY_STORAGE_REQUIRED');}
@@ -27,7 +28,12 @@ export async function ledgerAuthority(workflow,{allowOwner=false}={}){
     const snapshot=v2?decodeEnvelope(p.ledger,value):validateLedgerSnapshot(value);
     if(marker===null)fail('RESTORE_BOOTSTRAP_MARKER_MISSING');
     const m=JSON.parse(marker),authority=(await evidence(p.authority,{json:true})).value;
-    if(m.version!==1||Object.keys(m).sort().join(',')!=='authorityEpoch,version'||!Number.isSafeInteger(m.authorityEpoch)||
+    const era=executionEraStartup(p.ledger);
+    if(era){
+        if(!workflow.newEra||!equal(m,era.marker)||snapshot.ledgerId!==era.ledgerId||snapshot.executionEraId!==era.executionEraId||
+            snapshot.retirementHash!==era.retirementHash||!Number.isSafeInteger(authority.epoch)||hasMigration||wal===null)
+            fail('RESTORE_NEW_ERA_AUTHORITY_REQUIRED');
+    }else if(m.version!==1||Object.keys(m).sort().join(',')!=='authorityEpoch,version'||!Number.isSafeInteger(m.authorityEpoch)||
         m.authorityEpoch<1||!Number.isSafeInteger(authority.epoch)||m.authorityEpoch>authority.epoch)fail('RESTORE_MARKER_INCONSISTENT');
     if(!v2)return {mode:'V1',snapshot,canonicalHash:canonicalEvidence.sha256,markerHash:markerEvidence.sha256};
     if(wal===null)fail('RESTORE_WAL_MISSING');
@@ -40,7 +46,9 @@ export async function ledgerAuthority(workflow,{allowOwner=false}={}){
     if(state.pending||!equal(snapshot,state.current)||(!allowOwner&&state.owner))fail('RESTORE_LEDGER_TRANSACTION_UNRESOLVED');
     if(state.base.ledgerId!==snapshot.ledgerId||state.records[0].data.namespaceDurability!=='DIRECTORY_SYNCED')fail('RESTORE_LEDGER_DURABILITY_UNPROVEN');
     return {mode:'V2',schemaVersion:2,path:p.ledger,repositoryId:repositoryIdentity(p.ledger),snapshot,
-        canonicalHash:canonicalEvidence.sha256,walBytes:wal,walHash:walEvidence.sha256,markerHash:markerEvidence.sha256,transactionId,storage:await migration.storage()};
+        canonicalHash:canonicalEvidence.sha256,walBytes:wal,walHash:walEvidence.sha256,markerHash:markerEvidence.sha256,transactionId,
+        ...(era?{executionEraId:era.executionEraId,transitionId:era.transitionId,retirementHash:era.retirementHash}:{}),
+        storage:era?(storage?storage():workflow.writer.native.capability((await import('node:path')).dirname(p.ledger))):await migration.storage()};
 }
 
 export async function verifyRestoreAuthority(workflow,{audit,ready,start,evidence}){

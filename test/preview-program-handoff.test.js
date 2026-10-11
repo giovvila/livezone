@@ -1,3 +1,5 @@
+import '../test-support/RuntimeStateGuard.mjs';
+import {writeTempDiagnostic} from '../test-support/TempDiagnostics.js';
 import test from "node:test";
 import assert from "node:assert/strict";
 import EventBus from "../public/js/core/EventBus.js";
@@ -229,7 +231,7 @@ for (const type of ['cut','dissolve']) for (const [label,from,to] of [
   matrix.push({case:label,type,before,during:before,after:counts(h),newIncomingConsumers:0,
     newPreparationSeeks:0,preparationLatencyMs:0,timeoutConsumer:null,
     scope:'deterministic surface ownership; not native decoder or HTTP instrumentation'});
-  writeFileSync('var/surface-handoff-resource-matrix.json',JSON.stringify(matrix,null,2));
+  writeTempDiagnostic('surface-handoff-resource-matrix.json',JSON.stringify(matrix,null,2));
   await selectPreview(h,'B');assert.equal(h.renderer.program.renderer,incoming);assert.notEqual(incoming.destroyed,true);
   assert.equal(h.coordinator.isBusy(),false);
  }));

@@ -1,6 +1,6 @@
 import {validateSchedule as validateProgramSchedule} from '../../public/js/scheduler/ScheduleContract.js';
 import {normalizeProgramPlan} from '../../public/js/scheduler/ProgramScheduleAdapter.js';
-import {ENTRY_METADATA,identityForScheduledEvent,requiresLiveIdentityMigration} from './ScheduledEventIdentity.js';
+import {ENTRY_METADATA,ERA_ENTRY_METADATA,identityForScheduledEvent,requiresLiveIdentityMigration} from './ScheduledEventIdentity.js';
 const fail = code => { throw Object.assign(new Error(code), { code }); };
 const object = v => v && typeof v === 'object' && !Array.isArray(v);
 const exact = (v, keys) => object(v) && Object.keys(v).every(k => keys.includes(k)) && keys.every(k => Object.hasOwn(v, k));
@@ -15,7 +15,8 @@ export function timestamp(value) {
 }
 export function normalizeEvent(v) {
     const hasIdentity=ENTRY_METADATA.some(key=>Object.hasOwn(v||{},key));
-    if (!exact(v, ['id','version','type','enabled','startAt','endAt','priority','payload','createdAt','updatedAt',...(Object.hasOwn(v||{},'name')?['name']:[]),...(hasIdentity?ENTRY_METADATA:[])])) fail('INVALID_EVENT');
+    const hasEra=ERA_ENTRY_METADATA.some(key=>Object.hasOwn(v||{},key));
+    if (!exact(v, ['id','version','type','enabled','startAt','endAt','priority','payload','createdAt','updatedAt',...(Object.hasOwn(v||{},'name')?['name']:[]),...(hasIdentity?ENTRY_METADATA:[]),...(hasEra?ERA_ENTRY_METADATA:[])])) fail('INVALID_EVENT');
     if (Object.hasOwn(v,'name')&&!text(v.name,120)) fail('INVALID_NAME');
     if (!text(v.id,120) || !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(v.id)) fail('INVALID_ID');
     if (v.version !== 1 || !['overlay.crawl','overlay.sponsor','source.live'].includes(v.type)) fail('UNSUPPORTED_EVENT');
@@ -115,7 +116,7 @@ export function normalizeEvent(v) {
             if(m.originalEndAt<=m.originalStartAt || m.disposition!==(m.originalStartAt<=m.cutoffAt?'EXCLUDED':'FUTURE'))fail('INVALID_ENTRY_MIGRATION');
             migration={...m};
         }
-        metadata={incarnationId:v.incarnationId,entryRevision:v.entryRevision,entryMigration:migration};
+        metadata={incarnationId:v.incarnationId,entryRevision:v.entryRevision,entryMigration:migration,...(hasEra?{executionEraId:v.executionEraId,entryGrantHash:v.entryGrantHash}:{})};
     }
     return freeze({id:v.id,...(v.name?{name:v.name.trim()}:{}),version:1,type:v.type,enabled:v.enabled,startAt:v.startAt,endAt:v.endAt,
         priority:v.priority,payload,createdAt:v.createdAt,updatedAt:v.updatedAt,...metadata});
@@ -131,7 +132,7 @@ export function controlledSchedule(value,{ready=false}={}) {
     return {schedule,migrationRequired};
 }
 export function normalizeSchedule(v) {
-    const keys=v?.version===3?['version','revision','events','liveIdentityMigration',...(Object.hasOwn(v,'programPlan')?['programPlan']:[])]:v?.version===2?['version','revision','events','programPlan']:['version','revision','events'];
+    const keys=v?.version===3?['version','revision','events','liveIdentityMigration',...(Object.hasOwn(v,'programPlan')?['programPlan']:[]),...(Object.hasOwn(v,'executionEra')?['executionEra']:[]),...(Object.hasOwn(v,'publishedEraGrants')?['publishedEraGrants']:[])]:v?.version===2?['version','revision','events','programPlan']:['version','revision','events'];
     if (!exact(v,keys) || ![1,2,3].includes(v.version) ||
         !Number.isSafeInteger(v.revision) || v.revision < 0 || !Array.isArray(v.events) || v.events.length > MAX_EVENTS) fail('INVALID_SCHEDULE');
     const events = v.events.map(normalizeEvent).sort((a,b) => compareIds(a.id,b.id));
@@ -148,8 +149,16 @@ export function normalizeSchedule(v) {
             if(e.entryMigration && e.entryMigration.cutoffAt!==liveIdentityMigration?.cutoffAt)fail('INVALID_ENTRY_MIGRATION');
         }
     }else if(events.some(e=>e.incarnationId))fail('UNSUPPORTED_EVENT_IDENTITY');
-    return freeze({version:v.version,revision:v.revision,events,...(Object.hasOwn(v,'programPlan')?{programPlan:normalizeProgramPlan(v.programPlan)}:{}),
-        ...(v.version===3?{liveIdentityMigration}:{})});
+    if(v.executionEra){const era=v.executionEra;
+        if(!exact(era,['version','executionEraId','retirementHash','transitionId'])||era.version!==1||
+            !/^[a-f0-9-]{36}$/.test(era.executionEraId)||!/^[a-f0-9-]{36}$/.test(era.transitionId)||!/^[a-f0-9]{64}$/.test(era.retirementHash)||
+            events.some(e=>e.executionEraId&&e.executionEraId!==era.executionEraId))fail('INVALID_EXECUTION_ERA');
+    }else if(events.some(e=>e.executionEraId))fail('EXECUTION_ERA_REQUIRED');
+    if(Object.hasOwn(v,'publishedEraGrants')&&(!v.executionEra||!Array.isArray(v.publishedEraGrants)||
+        v.publishedEraGrants.some(id=>typeof id!=='string'||!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(id))||
+        new Set(v.publishedEraGrants).size!==v.publishedEraGrants.length))fail('INVALID_ERA_GRANT_PUBLICATIONS');
+    return freeze({version:v.version,revision:v.revision,events,...(Object.hasOwn(v,'publishedEraGrants')?{publishedEraGrants:[...v.publishedEraGrants]}:{}),...(Object.hasOwn(v,'programPlan')?{programPlan:normalizeProgramPlan(v.programPlan)}:{}),
+        ...(v.version===3?{liveIdentityMigration}:{}),...(v.executionEra?{executionEra:{...v.executionEra}}:{})});
 }
 export function resolveSchedule(schedule, now) {
     if (!Number.isFinite(now)) fail('INVALID_CLOCK');

@@ -1,0 +1,13 @@
+import fs from 'node:fs';
+import {join,resolve} from 'node:path';
+import {schema,operations,artifactNames,ordinary,sha} from '../server/recovery/PermanentCapabilityContract.js';
+import {validateProbeRoot} from './localsystem-durability-probe.mjs';
+const [sourceArgument,destinationArgument]=process.argv.slice(2);
+const source=validateProbeRoot(sourceArgument),destination=validateProbeRoot(destinationArgument);
+if(source===destination||fs.readdirSync(destination).length)throw Error('FRESH_DISTINCT_PACKAGE_ROOT_REQUIRED');
+const receipt=JSON.parse(ordinary(join(source,'receipt.json'))),result=JSON.parse(ordinary(join(source,'result-success.json')));
+const artifacts=artifactNames.map(name=>{const bytes=ordinary(join(source,name));fs.writeFileSync(join(destination,name),bytes,{flag:'wx'});return {name,sha256:sha(bytes)};});
+const storage=result.capabilities.storage;
+const manifest={schema,probeVersion:1,probeId:receipt.probeId,createdAt:receipt.createdAt,machine:receipt.machine,sid:receipt.sid,account:'NT AUTHORITY\\SYSTEM',helper:result.helper.sha256,gate:result.gate.sha256,protocol:storage.protocol,version:storage.version,architecture:storage.architecture,filesystem:storage.filesystem,local:storage.local,volume:storage.volume,volumeSerial:storage.volumeSerial,operations,result:result.status,artifacts};
+const bytes=Buffer.from(JSON.stringify(manifest,null,2)+'\n');fs.writeFileSync(join(destination,'manifest.json'),bytes,{flag:'wx'});
+console.log(JSON.stringify({bundle:resolve(destination),approvalHash:sha(bytes),probeId:manifest.probeId}));

@@ -1,0 +1,75 @@
+NEW-ERA-38 — Reference Client create/resume identity fence
+
+POST /api/media-library/reference-clients runs existing operator authentication,
+CSRF/origin validation, request parsing and coordinator-serialized Registry
+registration. Both genuine creation and valid resume return HTTP 201 only
+after the existing canonical JSON persist temporary-write/rename completes.
+
+CREATE recognizes role, version and capabilities; it omits all resume context.
+Supported CONTROL/SCHEDULER at current minimumVersion with required capabilities
+gets active=true, confirmed=true, generation=1, a fresh UUID and 32-byte random
+hex token. Unsupported implementation registration retains existing OBSOLETE /
+unconfirmed semantics. Principal comes from authenticated operator context.
+Only the token hash is persisted. Other registration input fields retain their
+existing handling; this correction does not broaden the schema.
+
+RESUME is selected by own-field presence of resumeId, including null/empty/false
+or explicit undefined in canonical calls. It never falls through to CREATE.
+The target must exist. resumeGeneration must be a positive safe integer exactly
+matching the target generation. resumeToken must be the existing 64-character
+lowercase hex secret and its SHA256 must match persisted resumeHash. Principal
+must equal stored principal; revoked authentication context and SESSION_REVOKED
+records reject. An inactive record is resumable only with EXPLICIT_CLOSE.
+Generation overflow rejects HTTP 409 GENERATION_EXHAUSTED under the shared
+NEW-ERA-39-GENERATION-DOMAIN.txt contract. Other invalid resume contexts share HTTP 409
+CLIENT_GENERATION_CONFLICT; the error does not reveal which credential matched.
+
+This principal fence intentionally replaces the old token-authorized transfer
+to another authenticated session, as explicitly required by NEW-ERA-38. A new
+authentication/session principal cannot adopt the old identity using its token.
+No caller auto-clears credentials or silently retries as CREATE on rejection.
+
+Valid resume keeps UUID and token, advances generation by one, reestablishes
+active/current-supported confirmation, preserves retained legacy references,
+and applies the existing epoch rule: catalog and legacy status PENDING,
+pendingRevision cleared. EXPLICIT_CLOSE can resume through this separately
+authenticated registration operation. Prior unsupported identities can perform
+the existing same-principal supported reload. No Preview release or catalog
+acknowledgment is implied; old Preview references remain until their explicit
+owner acts. Effective presence for the new incarnation follows fresh handshake.
+Handshake/epoch confirmation is published only after successful persistence.
+
+Dispatch table:
+resumeId absent; generation/token absent                  -> CREATE
+resumeId absent; generation or token present              -> REJECT INVALID_CLIENT_STATE
+resumeId present; malformed/null/empty/target absent      -> REJECT CLIENT_GENERATION_CONFLICT
+target present; invalid/missing token or generation       -> REJECT CLIENT_GENERATION_CONFLICT
+target present; foreign/revoked principal or terminal     -> REJECT CLIENT_GENERATION_CONFLICT
+target present; all fences valid, active or EXPLICIT_CLOSE -> RESUME existing UUID, G+1
+
+Same original request after successful resume is stale and rejects: no duplicate
+UUID, generation advancement or confirmation. There is no idempotency receipt
+and no success replay invented. A new request for the new generation represents
+another explicit resume, not retry of the original. Lost response after persist
+therefore retries fail closed at the original generation; caller retains its
+stored recovery identity and requires explicit resolution. No CREATE fallback.
+
+On persistence failure the existing owner restores clients, becomes unavailable
+and returns error. Failed operation cannot publish fresh handshake/epoch. Restart
+loads retained canonical identity conservatively confirmed=false; a still-current
+valid original request may retry explicitly. If persistence already completed,
+restart sees G+1 and rejects old G. No stronger power-loss durability is claimed.
+
+ReferenceClient.initialize in Control/Scheduler sends saved resume context, accepts
+only response.ok/payload.ok and does not write storage on rejection. With no saved
+identity, JSON omits resume fields and uses genuine CREATE. No automatic replacement
+identity is minted as recovery for missing, stale or foreign resume authority.
+
+Shared same-pattern correction: PreviewOwnership.open also selects resume by
+resumeSessionId presence. Null/empty/false/missing target now rejects
+OWNERSHIP_SESSION_EXPIRED rather than CREATE; orphan generation/token rejects
+INVALID_OWNERSHIP. Existing valid Preview resume/token/generation and separately
+authorized transfer semantics are preserved; Preview DELETE fence unchanged.
+
+No new canonical artifact/durable boundary. Matrix remains 510. This contract
+does not authorize real deployment, transition, proof install or staging.

@@ -1,7 +1,8 @@
+import '../test-support/RuntimeStateGuard.mjs';
+import {writeTempDiagnostic} from '../test-support/TempDiagnostics.js';
 import test from "node:test";
 import { AUTOLIVE_POST_TAKE_CONFIRMED_LOSS_MS } from "../public/js/studio/AutoLivePostTakePolicy.js";
 import trace from "../public/js/core/RuntimeTrace.js";
-import { writeFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import EventBus from "../public/js/core/EventBus.js";
 import Events from "../public/js/core/Events.js";
@@ -164,7 +165,7 @@ test('exact continuous 15-second absence restores cue once, then genuine return 
  await h.time.advance(20000);assert.equal(h.scheduler.ends,1);await h.detect();assert.notEqual(h.controller.session.sessionId,session.sessionId);
  await h.advance(29000);assert.equal(h.controller.session.phase,'PREPARING');await h.advance(2000);assert.equal(h.controller.session.phase,'LIVE');
  assert.deepEqual(history(h.published),['A','ENTRY','LIVE','LOSS','A','ENTRY','LIVE']);
- writeFileSync('var/confirmed-loss-persistent-trace.json',trace.exportJSON());
+ writeTempDiagnostic('confirmed-loss-persistent-trace.json',trace.exportJSON());
  }finally{trace.enabled=wasEnabled;trace.clear();}
 }));
 test('recovery invalidates old timer and a second loss gets a full new deadline',async()=>harness(async h=>{
@@ -205,7 +206,7 @@ test('short-loss trace retains ownership and publishes only LOSS then LIVE',asyn
  h.monitor.emit('ONLINE');h.progress();await flush();assert.equal(h.controller.session,session);
  assert.deepEqual(history(h.published),['A','ENTRY','LIVE','LOSS','LIVE']);
  assert.ok(!trace.snapshot().some(e=>e.event==='session-close'));
- writeFileSync('var/confirmed-loss-recovery-trace.json',trace.exportJSON());
+ writeTempDiagnostic('confirmed-loss-recovery-trace.json',trace.exportJSON());
  }finally{trace.enabled=wasEnabled;trace.clear();}
 }));
 

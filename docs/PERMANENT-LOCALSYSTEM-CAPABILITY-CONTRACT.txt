@@ -1,0 +1,58 @@
+NEW-ERA-20 permanent LocalSystem capability contract v1
+Defined before fresh probe. No real deployment installation is authorized.
+
+Schema livezone-permanent-capability/1; probe version 1. Manifest binds a random
+probe UUID and UTC timestamp, machine fingerprint, SYSTEM SID/account, helper/gate
+SHA-256, protocol 1/version 1.0.0/x64, local NTFS volume GUID/serial, six operations,
+PASS and exact fixed inventory of eleven evidence files. SYSTEM receipt binds the
+same UUID/time/machine/PID to exact result/identity bytes and current producer hashes.
+Host identity/child PID/exit/job closure/binary hash/service removal are retained.
+
+Machine source: 64-bit HKLM\SOFTWARE\Microsoft\Cryptography MachineGuid via supported
+reg.exe /reg:64. Lowercase GUID; SHA-256 of UTF-8 bytes, exact source/fingerprint
+comparison. Captured by SYSTEM child, never filled in by interactive packaging.
+Unavailable/malformed identity fails closed. Only fingerprint retained; protect
+against correlation. This identifies a Windows installation, not hardware attestation:
+cloned registry images and administrator spoofing are outside this threat model.
+Volume GUID/serial must match current deployment volume, local NTFS. SYSTEM SID and
+current service account remain mandatory. Architecture is x64.
+
+Provenance: reviewed deployment code contains approved exact manifest SHA-256 in
+PermanentCapabilityApproval.js, OUTSIDE bundle. Approval follows supervised genuine
+SYSTEM execution and cleanup. Manifest hashes all artifacts, receipt hashes result,
+identity and current producer inputs; supervisor records link SYSTEM identity and
+child PID. Under that protected external anchor, edits/substitution/mixing fail.
+This is NOT a digital signature or independent cryptographic Windows token attestation.
+An administrator able to modify approval code can replace approval; reviewed source
+and deployment ACLs protect this boundary. Self-generated bundle hashes cannot approve.
+
+Fixed single-component root-relative references; exact inventory. Reject traversal,
+outside/absolute references, case collisions, extras/missing files, aliases/reparse
+points and nonordinary/hard-linked evidence. Bundle relocatable on tested machine
+and volume. Original paths in raw artifacts are historical context, never opened by
+the verifier. No historical TEMP lookup, discovery or production fallback.
+
+Permanent destination: C:\ProgramData\Livezone\capability-evidence\<probe-id>.
+Outside TEMP/repository/var/ledger/authority. Installation belongs to later explicit
+deployment authorization. Verify complete bundle and approved digest before copy;
+install complete new directory; restrict ACLs: approved Administrators replacement,
+SYSTEM read, no unprivileged write. Protect approval source; verify again before
+activation. Destination ACL enforcement/immutability is NOT claimed by this task.
+Runtime must detect byte changes regardless of ACLs. Never merge partial bundles.
+Replacement requires new reviewed approval pin; retain supersession history for audit.
+
+Invalidation: tamper/missing evidence, different approved manifest, machine/volume/
+account, native pins/protocol/version/architecture or any producer-input hash change.
+No arbitrary time expiry: timestamp identifies execution, does not promise lasting
+capability. Current compatibility checked at each use. Capability-critical changes
+require fresh approved SYSTEM probe; native changes also require reproducibility review.
+Historical TEMP proof becomes archival only. No new durable runtime mutation boundary.
+
+Windows PowerShell 5.1 generation: tools/invoke-permanent-localsystem-probe.ps1
+-ProbeRoot <fresh isolated lz-era05-probe-* OS TEMP root>. Builds existing dedicated
+supervisor template only; one unique demand-start LocalSystem temporary service;
+approved isolated native operations; service removed in finally. No LIVEZONE launch.
+Package: node tools/package-permanent-capability.mjs <probe-root> <fresh-fixture-root>.
+Independently review recorded manifest digest and supervised execution, approve its
+exact digest in PermanentCapabilityApproval.js, verify via canonical verifier with
+LocalSystem service identity. No automatic permanent install or real transition.

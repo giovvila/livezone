@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {registerNativeTestRoot} from '../test-support/NativeTempGuard.mjs';
 import assert from 'node:assert/strict';
 import {mkdtempSync,realpathSync,openSync,closeSync,fsyncSync,writeFileSync,readFileSync,
     renameSync,unlinkSync,existsSync,statfsSync,rmSync} from 'node:fs';
@@ -11,6 +12,7 @@ import Repository from '../server/scheduler/ScheduledEntryLedgerV2Repository.js'
 // Never pass these results as a syncDirectory override to a repository.
 function fixture(t) {
     const root=realpathSync(tmpdir()),dir=mkdtempSync(join(root,'lz-r4-capability-'));
+    registerNativeTestRoot(dir);
     t.after(()=>{
         const rel=relative(root,realpathSync(dir));
         assert.ok(rel&&!rel.startsWith('..')&&!isAbsolute(rel)&&rel.startsWith('lz-r4-capability-'));

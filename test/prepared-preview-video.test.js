@@ -1,3 +1,5 @@
+import '../test-support/RuntimeStateGuard.mjs';
+import {writeTempDiagnostic} from '../test-support/TempDiagnostics.js';
 // Cold fallback contract: reusePreview:false deliberately exercises bounded duplicate preparation.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -229,7 +231,7 @@ test('same large MP4 serves Preview-only, Program-only and simultaneous consumer
         const preview=await get(0),program=await get(Math.floor(size/2));
         const concurrent=await Promise.all([get(0),get(Math.floor(size/2))]);
         assert.deepEqual(concurrent,[preview,program]);
-        fs.writeFileSync('var/preview-program-concurrent-range.json',JSON.stringify({asset:'demo2.mp4',size,
+        writeTempDiagnostic('preview-program-concurrent-range.json',JSON.stringify({asset:'demo2.mp4',size,
             scenarios:['preview-only','program-only','concurrent'],status:206,bytesPerConsumer:65536,identicalResponses:true},null,2));
     } finally {server.closeAllConnections();await new Promise(r=>server.close(r));}
 });

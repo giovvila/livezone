@@ -1,0 +1,43 @@
+LIVEZONE — NEW-ERA-11 READY / LEDGER AUTHORITY BINDING
+
+Scope: ERA08BA2-READY-LEDGER-BINDING-NOT-VALIDATED-AT-ISSUANCE and directly related READY authority validation. No grant identity, publication protocol, native helper/gate, service account, startup mechanism or durable mutation boundary is changed.
+
+Authority-input trace
+issueEraEntry starts by loading executionEraStartup's current offline activation. That synchronous reader validates the eight canonical sealed phase files and their authorization predecessor chain; active snapshot era/Ledger/retirement identity; Schedule executionEra; bootstrap marker; manifest, forensic blobs and retired originals; owner/READY anchor era/transition/activation identities.
+assertEraAuthority then loads current authority lock, authority epoch and the start owner anchor. It compares the live authority descriptor to these durable objects; verifies controlled Start reservation/claim hashes and owner anchor bindings; and checks lock/epoch byte hashes and the single successor epoch/session.
+When ready=true it reads the READY anchor, validates the ControlledStart runtime-owned predecessor and RecoveryLineage, verifies authority.eraReady and anchor ownerHash/epoch/session, then validates READY/Ledger through validateEraReadyLedger. Issuance repeats this same boundary before grant writes/installation and before returning the grant.
+eraAdmits validates an installed canonical grant and its era/request/predecessor/publication history. It does not replace issuance authorization. The invalid grant must be prevented at its source.
+
+Canonical Ledger binding
+The canonical instance identity is authorization.ledgerId from executionEraStartup, corroborated by the active Ledger snapshot, bootstrap kind NEW_ERA marker, transition/executionEra and retirement state. READY's self-declared ledgerId is not authority.
+validateEraReadyLedger requires:
+- READY version 1 and phase READY;
+- READY ledgerId, executionEraId, transitionId and activationHash equal the current era;
+- active canonical snapshot ledgerId, executionEraId and retirementHash equal the same era;
+- exact READY WAL prefix is present in the active WAL and its byte digest matches;
+- that prefix is a valid canonical Ledger-v2 chain without a pending transaction;
+- prefix snapshot belongs to the same ledger/era/retirement and matches READY.snapshotHash;
+- prefix owner authority epoch/session match READY authority epoch/session.
+Live assertEraAuthority reads the current snapshot through the existing decodeEnvelope, verifying envelope repository, checksum and snapshot schema/checksum. Startup already verifies Schedule-era and bootstrap bindings. Existing owner/ControlledStart/READY validation remains in force.
+
+Legitimate evolution
+READY binds an immutable accepted WAL prefix. It does not require the entire current WAL or current snapshot generation to equal the old READY snapshot. Legitimate later consumes and END/restart append records while preserving the same Ledger/era and accepted prefix. PROGRAM and AutoLive readiness evidence is created/validated by the existing ControlledStart workflow; these mutable application stores are not turned into new immutable issuance keys.
+
+Caller audit
+ready=false callers intentionally operate before READY or at Ledger/Scheduled close: publishEraReady (all three owner checks), NewEraRecoveryWorkflow.finishRuntime, ScheduledEntryLedgerV2Repository initialize/verifySnapshot, ScheduledLiveExecutionRepository owner validation, ScheduleStore persistence. They continue to validate owner/era without requiring a READY anchor.
+ready=true callers: issueEraEntry's initial and repeated fences, ScheduleStore's read-only alreadyPublished retry, ScheduledEntryLedgerV2Repository consume and pre-consume check. They now require the shared canonical READY/Ledger relation.
+inspectNewEraRecovery requests ready=true only if a READY record is present. Its descriptor proves durable consistency, not live ownership or mutation permission; no new requirement for its absent in-memory ControlledStart descriptor is introduced.
+completedStart is a read-only historical completion check, including after clean END. It already calls inspectV2 for the current snapshot/WAL. It now reuses validateEraReadyLedger with NEW_ERA_READY_LEDGER_FORK as its error context, and retains its workflow-specific PID, journal, reservation, READY anchor-hash and stored ledger-authority evidence checks. It is not forced through a live-owner requirement.
+
+Regression policy
+The permanent test/new-era-ready-ledger-binding.test.js first reproduces the exact resealed foreign READY ledgerId defect. Each rejection snapshots Ledger/WAL/lock/bootstrap, authority/lock, Schedule, PROGRAM, AutoLive and READY after injecting mismatch; issuance may change none of them or create grant/stage. Foreign-but-valid TEMP Ledger/READY evidence, era/retirement, transition, authority, reservation, claim, runtime predecessor, copied READY, stale WAL prefix and malformed active checksum are covered. Correct authority still issues one admissible grant, preserves Ledger consumption separation and converges across direct duplicate calls. CompletedStart rejects mismatches and valid completed retry remains read-only. An invalid READY also rejects retries of an existing valid pending grant without rewriting it. A hook changes READY after initial authorization; the repeated fence rejects before grant open.
+NEW-ERA-10 schedule-drift regression remains unchanged and must pass, including consume-before-capture and restart/no replay.
+
+Crash matrix
+The fix adds read-only validation and reuses existing canonical decoders. It introduces no new file, write, flush, replace, archive, remove, hook or service/native requirement. The canonical matrix remains 497 unique boundaries; grant/publication hooks remain 14+13. The relevant 27 native grant/publication boundaries were freshly executed for this source revision and have final PASS outcomes; only their evidence rows were refreshed. The initial grant/authorized case was refused by existing Ledger reconciliation with LEDGER_V2_OWNER_ALIVE_OR_AMBIGUOUS. An isolated rerun after all other jobs ended passed unchanged; that retry replaces its outcome rather than adding a distinct boundary. Its initial log/evidence remains retained, and the underlying process-census cause is not claimed to be proven. The other 470 historical rows retain their existing evidence and are not represented as newly executed.
+
+LocalSystem
+Helper/gate pins, binaries, native sources/build/protocol, capability verifier and service-account requirements are unchanged. The existing proof is revalidated before and after this task; no new service-account probe is installed or run.
+
+Review status
+NEW-ERA-11 is a scoped correction. Its completion is not a final independent application-review approval. NEW-ERA-08B-A must restart with fresh independent evidence afterward.

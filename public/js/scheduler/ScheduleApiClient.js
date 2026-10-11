@@ -27,7 +27,7 @@ export default class ScheduleApiClient {
             !Number.isSafeInteger(runtime.scheduleRevision)||!Array.isArray(runtime.activeEvents))return;
         if(this.retired.has(runtime.sessionId))return;
         const previous=this.state.runtime;
-        if(previous?.sessionId===runtime.sessionId&&previous.generation===runtime.generation&&this.state.connection==='online'&&this.state.schedule?.revision===runtime.scheduleRevision)return;
+        if(previous?.sessionId===runtime.sessionId&&previous.generation===runtime.generation&&JSON.stringify(previous)===JSON.stringify(runtime)&&this.state.connection==='online'&&this.state.schedule?.revision===runtime.scheduleRevision)return;
         if(previous&&previous.sessionId!==runtime.sessionId){this.retired.add(previous.sessionId);++this.epoch;this.minimumRevision=0;this.state={...this.state,schedule:null};}
         else if(previous&&runtime.generation<previous.generation)return;
         this.minimumRevision=Math.max(this.minimumRevision,runtime.scheduleRevision);

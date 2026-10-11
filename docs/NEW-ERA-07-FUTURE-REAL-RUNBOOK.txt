@@ -1,0 +1,372 @@
+NEW-ERA-07 — FUTURE REAL RUNBOOK — NOT EXECUTED
+
+Eligibility: focused 49/49; complete native matrix 470/470 (original 261/261);
+broader 1565 distinct tests passed after TEMP-fixture corrections. Independent
+review of this uncommitted source bundle and separate operator authorization
+are required before ANY real mutation. This document is not that authorization.
+
+Authoritative shell: Windows PowerShell 5.1 (powershell.exe, Desktop edition).
+NEW-ERA-18 supersedes the incompatible snapshot path calculation; PowerShell 7
+is not required. Run in a dedicated console under the reviewed deployment
+identity. Keep LivezoneNode Stopped/Disabled and MediaMTX unchanged. Do not
+invoke a normal server entry point. Do not remove locks, kill presumed owners,
+edit historical WAL/Schedule, stage, commit or push. Save evidence outside var.
+The examples below are future commands only; values marked OPERATOR must be
+supplied from the freshly reviewed evidence, never copied from TEMP tests.
+
+NEW-ERA-28 readiness classification (no runtime launch authorized here):
+GET/HEAD /readyz are pure metadata observations. HTTP 200 requires initialized
+Media Library and a readable existing temporary directory; writeability and
+durability are NOT_PROBED. This does not prove execution authority READY or
+replace the permanent LocalSystem proof/current bindings below. Do not query
+an absent service by starting it merely to obtain readiness.
+If an operator separately requires a current-process create/delete diagnostic,
+its owner is an explicitly authorized administrative diagnostic, outside the
+READ_ONLY preflight and before using its result. Keep this separate from every
+transition command and checkpoint; no automatic invocation by status/polling.
+MUTATING_STORAGE_DIAGNOSTIC future example only, NOT EXECUTED:
+$storageDiagnosticDirectory = 'OPERATOR: absolute existing directory approved for create/delete testing'
+node tools/probe-readiness-storage.mjs --directory $storageDiagnosticDirectory --authorize-storage-probe
+if ($LASTEXITCODE -ne 0) { throw 'STOP explicit storage diagnostic failed or cleanup uncertain' }
+This creates/deletes an empty probe under the specified directory; it proves
+only current-process create/delete and no durability. Use the existing proof
+installation/verification steps for LocalSystem native durability. No write
+diagnostic is implied or authorized by a GET/HEAD, status poll, or this runbook.
+
+0. READ_ONLY prerequisites and pure snapshot observation
+$ErrorActionPreference = 'Stop'
+if ($PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1 -or $PSVersionTable.PSEdition -ne 'Desktop') { throw 'STOP Windows PowerShell 5.1 Desktop required' }
+$PSVersionTable.PSVersion
+$PSVersionTable.PSEdition
+Set-Location 'C:\Projects\livezone-broadcast-engine-x'
+$root = (Get-Location).Path
+$proof = 'C:\ProgramData\Livezone\capability-evidence\88443da7-5648-4a73-bda2-68f7db461908'
+$out = 'OPERATOR: absolute existing evidence directory outside repository var'
+$principal = 'OPERATOR: accountable approving identity'
+$head = '0eb3aa2906f574f1da3815f96313678261a3b2ec'
+$branch = 'build/1003.9A1'
+git branch --show-current
+git rev-parse HEAD
+git diff --cached --name-only
+Get-CimInstance Win32_Service -Filter "Name='LivezoneNode' OR Name='LivezoneMediaMtx'"
+Get-CimInstance Win32_Process | Select-Object Name,ProcessId,ExecutablePath,CommandLine
+Get-NetTCPConnection -State Listen | Where-Object LocalPort -eq 8080
+$snapshotText = & tools/test-runtime-snapshot.ps1
+if (-not $?) { throw 'STOP preliminary snapshot failed' }
+$snapshotRows = ($snapshotText -join "`n") | ConvertFrom-Json
+if ($snapshotRows.Count -eq 0 -or @($snapshotRows | Where-Object { $_.error -or -not $_.path -or $_.sha256 -notmatch '^[a-fA-F0-9]{64}$' }).Count -ne 0) { throw 'STOP preliminary snapshot incomplete or unreadable' }
+node tools/new-execution-era.mjs dryrun --root $root --runtime-capability-proof $proof
+STOP: wrong branch/HEAD/source bundle; staged changes; unreadable required state;
+unknown/alive/ambiguous owner; occupied 8080; changed services; altered real
+locks; changed configuration or unexpected inventory. Expected legacy reason:
+LEGACY_LEDGER_LOCK_UNVERIFIABLE. Ordinary clean migration remains rejected.
+Record the returned inventoryHash and exact inventories. No mutation yet.
+
+0a. EVIDENCE_CAPTURE — separately approved diagnostic output persistence
+STOP until the operator approves creation/rewrite of the external evidence file.
+& tools/capture-runtime-snapshot-evidence.ps1 -OutputPath (Join-Path $out 'before-var.json')
+if (-not $?) { throw 'STOP evidence capture failed' }
+$capturedRows = Get-Content -LiteralPath (Join-Path $out 'before-var.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+if ($capturedRows.Count -eq 0 -or @($capturedRows | Where-Object { $_.error -or -not $_.path -or $_.sha256 -notmatch '^[a-fA-F0-9]{64}$' }).Count -ne 0) { throw 'STOP persisted evidence incomplete or unreadable' }
+if (($capturedRows | ConvertTo-Json -Depth 5) -cne ($snapshotRows | ConvertTo-Json -Depth 5)) { throw 'STOP runtime changed between observation and capture' }
+This command creates/rewrites its output: it is not READ_ONLY. Keep its absolute
+destination outside var and free of reparse paths. It recomputes the snapshot
+using the same pure implementation; STOP if runtime evidence changed since step0.
+The external JSON is diagnostic evidence, not the transition's forensic authority
+and not a guarantee of durable namespace publication. Authorization binds the
+canonical dryrun inventory and embedded exact bytes, not this display/export hash.
+Phase3b persists and flushes the canonical forensic blobs and sealed manifest from
+that approved inventory before any physical archival in phase3e. Never replace
+that canonical capture with the diagnostic JSON. No transition ordering changes.
+
+1. LocalSystem proof, before authorization
+$proofText = node --input-type=module -e "import {verifyLocalSystemCapabilityProof} from './server/recovery/LocalSystemCapabilityProof.js'; console.log(JSON.stringify(verifyLocalSystemCapabilityProof(process.argv[1],{serviceIdentity:'LocalSystem'}),null,2));" $proof
+if ($LASTEXITCODE -ne 0) { throw 'STOP permanent LocalSystem proof invalid, missing or stale' }
+$verifiedProof = ($proofText -join "`n") | ConvertFrom-Json
+$approvedProofHash = $verifiedProof.proofHash
+STOP unless PERMANENT DEPLOYABLE PROOF VALID and CAPABILITY TEST PASSED,
+SID S-1-5-18, approved
+LocalSystem account, NTFS volume and unchanged helper/gate/protocol/source pins.
+Helper: 18e6f512134b371a38e2afe4aaf1b24778f4eb38e7656a186b3557ac0c1a8d0b
+Gate: 9b726c3ef2c16ff31478b4d2d5735a325d1418f0358d533faf594363485c5cc3
+A changed pin/protocol/version/architecture/account/machine/volume or capability
+producer input requires a fresh reviewed LocalSystem probe. No TEMP fallback.
+NEW-ERA-20 proof installation is a later explicitly authorized deployment step;
+this path must contain the complete reviewed bundle with protected deployment ACLs
+and the matching reviewed PermanentCapabilityApproval.js digest. See
+docs/PERMANENT-LOCALSYSTEM-CAPABILITY-CONTRACT.txt for installation/supersession.
+Do not run the TEMP isolation guard against real state; this future operator
+operation uses the reviewed production native deployment and its path checks.
+
+2. Explicit operator authorization (planning; no transition yet)
+$inventoryHash = 'OPERATOR: exact fresh dryrun inventoryHash'
+$authFile = Join-Path $out 'new-era-authorization.json'
+$authText = node tools/new-execution-era.mjs authorize --root $root --runtime-capability-proof $proof --principal $principal --approved-head $head --approved-branch $branch --expected-inventory-hash $inventoryHash --authorize-new-era YES --retire-whole-legacy-domain YES
+if ($LASTEXITCODE -ne 0) { throw 'STOP authorization planning failed' }
+$authorization = ($authText -join "`n") | ConvertFrom-Json
+if ($authorization.authorizedProofHash -cne $approvedProofHash) { throw 'STOP permanent proof changed during authorization planning' }
+[IO.File]::WriteAllText($authFile, ($authText -join "`n"), [Text.UTF8Encoding]::new($false))
+$authHash = node --input-type=module -e "import fs from 'node:fs'; import {hash} from './server/scheduler/ScheduledEntryLedgerV2Protocol.js'; console.log(hash(JSON.parse(fs.readFileSync(process.argv[1],'utf8'))));" $authFile
+STOP until an independent reviewer and operator approve the exact JSON object,
+canonical object digest (not raw file SHA), inventory, principal, retirement
+scope, transitionId/executionEraId/ledgerId, root, repository identity, HEAD and
+authorizedProofHash. NEW-ERA-21: planning obtains this identity from the verified
+proof; caller-supplied hashes do not replace verification. proofHash is SHA-256
+of exact manifest bytes, binding its schema/machine/account/native contract and
+every retained artifact through the manifest's exact hashes. No TEMP path binding.
+Retain exact authorization bytes. Never generate another authorization to
+work around an interrupted operation.
+
+3. Authorized offline transition; operator-controlled durable phases
+$finalProofText = node --input-type=module -e "import {verifyLocalSystemCapabilityProof} from './server/recovery/LocalSystemCapabilityProof.js'; console.log(JSON.stringify(verifyLocalSystemCapabilityProof(process.argv[1],{serviceIdentity:'LocalSystem'})));" $proof
+if ($LASTEXITCODE -ne 0) { throw 'STOP final permanent proof verification failed' }
+$finalProof = ($finalProofText -join "`n") | ConvertFrom-Json
+if ($finalProof.proofHash -cne $authorization.authorizedProofHash) { throw 'STOP proof superseded; authorization no longer current' }
+NEW-ERA-22 supersedes the monolithic transition command. The CLI requires
+--phase and --expected-checkpoint-hash. Each invocation completes ONLY the
+verified next phase, returns and releases the offline reservation. No command
+automatically continues. Do not paste all commands as a batch or wrap them in
+a loop. At EVERY return, stop for operator inspection of the status JSON and
+its evidence paths/hashes before approving the next command. Retain status
+JSON in the external evidence directory. No manual runtime file edits.
+
+Read-only initial status (no durable transition directory creation):
+$checkpointText = node tools/new-execution-era.mjs transition-status --root $root --runtime-capability-proof $proof --authorization-file $authFile --authorization-hash $authHash
+if ($LASTEXITCODE -ne 0) { throw 'STOP transition status invalid or authorization stale' }
+$checkpoint = ($checkpointText -join "`n") | ConvertFrom-Json
+STOP unless completedPhase=null, nextPhase=authorized, correct transition/era/
+Ledger IDs, continuationAuthorizationCurrent=true and no unexpected artifacts.
+Approve this exact checkpointHash for the next single command.
+
+3a. Establish the bound authorization record; return before forensic writes.
+node tools/new-execution-era.mjs transition --root $root --runtime-capability-proof $proof --authorization-file $authFile --authorization-hash $authHash --phase authorized --expected-checkpoint-hash $checkpoint.checkpointHash
+if ($LASTEXITCODE -ne 0) { throw 'STOP phase failed; inspect retained state before retry' }
+$checkpointText = node tools/new-execution-era.mjs transition-status --root $root --runtime-capability-proof $proof --authorization-file $authFile --authorization-hash $authHash
+if ($LASTEXITCODE -ne 0) { throw 'STOP checkpoint inspection failed' }
+$checkpoint = ($checkpointText -join "`n") | ConvertFrom-Json
+STOP unless completedPhase=authorized, nextPhase=forensic and the exact approved
+authorization/phase bytes agree. Approve the inspected hash to preserve evidence.
+
+3b. Preserve forensic bytes; return BEFORE any retirement record or archival.
+node tools/new-execution-era.mjs transition --root $root --runtime-capability-proof $proof --authorization-file $authFile --authorization-hash $authHash --phase forensic --expected-checkpoint-hash $checkpoint.checkpointHash
+if ($LASTEXITCODE -ne 0) { throw 'STOP phase failed; inspect retained state before retry' }
+$checkpointText = node tools/new-execution-era.mjs transition-status --root $root --runtime-capability-proof $proof --authorization-file $authFile --authorization-hash $authHash
+if ($LASTEXITCODE -ne 0) { throw 'STOP checkpoint inspection failed' }
+$checkpoint = ($checkpointText -join "`n") | ConvertFrom-Json
+STOP unless completedPhase=forensic, nextPhase=retired, every manifest entry and
+blob matches the approved legacy inventory, old files remain in place and later
+phase records are absent. Approve the inspected hash for logical retirement.
+
+3c. Record retirement of the WHOLE legacy identity domain; return before intent.
+node tools/new-execution-era.mjs transition --root $root --runtime-capability-proof $proof --authorization-file $authFile --authorization-hash $authHash --phase retired --expected-checkpoint-hash $checkpoint.checkpointHash
+if ($LASTEXITCODE -ne 0) { throw 'STOP phase failed; inspect retained state before retry' }
+$checkpointText = node tools/new-execution-era.mjs transition-status --root $root --runtime-capability-proof $proof --authorization-file $authFile --authorization-hash $authHash
+if ($LASTEXITCODE -ne 0) { throw 'STOP checkpoint inspection failed' }
+$checkpoint = ($checkpointText -join "`n") | ConvertFrom-Json
+STOP unless completedPhase=retired, nextPhase=intent and bound retirementHash/
+oldEraId/oldEventIds cover the whole old domain and both historical IDs below.
+This record does not move files; old files remain, fresh Ledger is absent and
+normal startup is blocked while activation is incomplete. Approve intent next.
+
+3d. Record the same transaction intent; return before physical archival.
+node tools/new-execution-era.mjs transition --root $root --runtime-capability-proof $proof --authorization-file $authFile --authorization-hash $authHash --phase intent --expected-checkpoint-hash $checkpoint.checkpointHash
+if ($LASTEXITCODE -ne 0) { throw 'STOP phase failed; inspect retained state before retry' }
+$checkpointText = node tools/new-execution-era.mjs transition-status --root $root --runtime-capability-proof $proof --authorization-file $authFile --authorization-hash $authHash
+if ($LASTEXITCODE -ne 0) { throw 'STOP checkpoint inspection failed' }
+$checkpoint = ($checkpointText -join "`n") | ConvertFrom-Json
+STOP unless completedPhase=intent, nextPhase=archived and the exact predecessor,
+authorization and original forensic bytes agree. Approve physical archival next.
+
+3e. Archive old files; return BEFORE fresh Ledger initialization.
+node tools/new-execution-era.mjs transition --root $root --runtime-capability-proof $proof --authorization-file $authFile --authorization-hash $authHash --phase archived --expected-checkpoint-hash $checkpoint.checkpointHash
+if ($LASTEXITCODE -ne 0) { throw 'STOP phase failed; inspect retained state before retry' }
+$checkpointText = node tools/new-execution-era.mjs transition-status --root $root --runtime-capability-proof $proof --authorization-file $authFile --authorization-hash $authHash
+if ($LASTEXITCODE -ne 0) { throw 'STOP checkpoint inspection failed' }
+$checkpoint = ($checkpointText -join "`n") | ConvertFrom-Json
+STOP unless completedPhase=archived, nextPhase=ledger, every required retired-era
+file is byte-identical to forensic evidence and original archived paths are
+absent. No fresh Ledger/bootstrap/WAL or later records may exist. Approve Ledger.
+
+3f. Initialize the fresh Ledger; return BEFORE Schedule binding.
+node tools/new-execution-era.mjs transition --root $root --runtime-capability-proof $proof --authorization-file $authFile --authorization-hash $authHash --phase ledger --expected-checkpoint-hash $checkpoint.checkpointHash
+if ($LASTEXITCODE -ne 0) { throw 'STOP phase failed; inspect retained state before retry' }
+$checkpointText = node tools/new-execution-era.mjs transition-status --root $root --runtime-capability-proof $proof --authorization-file $authFile --authorization-hash $authHash
+if ($LASTEXITCODE -ne 0) { throw 'STOP checkpoint inspection failed' }
+$checkpoint = ($checkpointText -join "`n") | ConvertFrom-Json
+STOP unless completedPhase=ledger, nextPhase=schedule, one approved ledgerId and
+executionEraId, generation 0, empty fresh v2 domain, BASE/WAL and bootstrap marker
+agree; forensic/archive bytes remain exact. Schedule is STILL the approved old
+Schedule at this checkpoint, with no era binding yet. Approve Schedule next.
+
+3g. Bind Schedule to this era; return BEFORE activation.
+node tools/new-execution-era.mjs transition --root $root --runtime-capability-proof $proof --authorization-file $authFile --authorization-hash $authHash --phase schedule --expected-checkpoint-hash $checkpoint.checkpointHash
+if ($LASTEXITCODE -ne 0) { throw 'STOP phase failed; inspect retained state before retry' }
+$checkpointText = node tools/new-execution-era.mjs transition-status --root $root --runtime-capability-proof $proof --authorization-file $authFile --authorization-hash $authHash
+if ($LASTEXITCODE -ne 0) { throw 'STOP checkpoint inspection failed' }
+$checkpoint = ($checkpointText -join "`n") | ConvertFrom-Json
+STOP unless completedPhase=schedule, nextPhase=activated, exact expected Schedule
+revision/era binding agree and Ledger, forensic and archive bytes remain exact.
+No activated record or runtime ownership may exist. Approve activation next.
+
+3h. Complete offline activation; return WITHOUT ControlledStart/runtime launch.
+node tools/new-execution-era.mjs transition --root $root --runtime-capability-proof $proof --authorization-file $authFile --authorization-hash $authHash --phase activated --expected-checkpoint-hash $checkpoint.checkpointHash
+if ($LASTEXITCODE -ne 0) { throw 'STOP phase failed; inspect retained state before retry' }
+$checkpointText = node tools/new-execution-era.mjs transition-status --root $root --runtime-capability-proof $proof --authorization-file $authFile --authorization-hash $authHash
+if ($LASTEXITCODE -ne 0) { throw 'STOP checkpoint inspection failed' }
+$checkpoint = ($checkpointText -join "`n") | ConvertFrom-Json
+STOP unless completedPhase=activated, nextPhase=null, status=ACTIVATED_OFFLINE
+and all eight byte-exact linked records, forensic/archive, Ledger and Schedule
+bindings agree. ControlledStart requires the SEPARATE approvals in step 4.
+STOP on missing, foreign, partial or mismatched evidence at any checkpoint.
+Status failure requires review; never fabricate a phase record or a status hash.
+Historical IDs: live-01091877-5a16-4986-9ac8-8986504567a6 and
+live-29771f19-e4f2-49ab-b5ac-cde3863a6e6d.
+On interruption: use transition-status first. It derives completedPhase,
+nextPhase, partialPhase and canonicalResumeRequired from actual durable bytes.
+Only an exact validated staging prefix permits same-phase canonical resume.
+Inspect/reapprove its CURRENT checkpointHash, then issue the SAME phase with
+the SAME authorization. A completed-phase retry with its current hash is
+read-only ALREADY_COMPLETED_PHASE; it never advances. Earlier/skipped phases,
+stale checkpoint hashes or changed evidence reject before any file mutation.
+An unclassifiable/foreign prefix requires explicit review, retaining artifacts.
+Never continue merely because recovery reached a completed checkpoint. A restart
+does not resume this maintenance CLI; normal startup rejects incomplete phases.
+The approved original authorization covers all eight phases of this exact
+transaction, with fresh explicit operator consent via each scoped command and
+reviewed checkpointHash. Do not mint another transition identity between phases.
+Production rechecks verified proof identity at admission and inside existing final
+evidence fences after mutation hooks, before namespace creation and file writes.
+Unbound old authorization objects are rejected, never silently upgraded.
+Before any durable NEW ERA mutation, approved replacement P2 with a different
+proofHash requires STOP and a fresh independently approved authorization. A complete
+byte-identical relocated bundle keeps its hash and does not require new authorization.
+After a partial durable transition, never mint a new authorization to bypass the
+saved P1 authorization/lineage: retain same authorization and proof or STOP for review.
+After complete durable activated state, ControlledStart/recovery use that validated
+era/authority lineage and a currently valid deployment proof; the original transition
+proof need not authorize every future runtime operation indefinitely. Their separate
+start/recovery/restart approvals and current-evidence checks still apply.
+
+4. Authority / ControlledStart / READY
+node tools/new-execution-era.mjs start-review --root $root --runtime-capability-proof $proof --authorization-file $authFile --authorization-hash $authHash
+STOP unless committed RecoveryLineage, all offline phases, retirement, fresh
+Ledger, Schedule binding, predecessor authority, PROGRAM and AutoLive agree.
+Operator must separately approve reconciliation AND one controlled start.
+node tools/new-execution-era.mjs controlled-start --root $root --runtime-capability-proof $proof --authorization-file $authFile --authorization-hash $authHash --authorize-start YES --authorize-reconciliation YES
+This is a foreground runtime command: keep this console open. Authority intent,
+successor/epoch and START_RESERVED are allocated inside the exclusive 8080
+reservation. STOP at any failed authority/ownership check; never launch via a
+second command while outcome is uncertain. From a second read-only console run
+start-review with the same arguments and inspect the actual durable READY.
+STOP unless exactly one successor/epoch/session and owner agree with lineage,
+transition, era, Ledger, Schedule, START reservation and actual port-8080 PID.
+STOP unless initial PROGRAM remains generation 47/PRESENT/accepted epoch 20,
+with exact historical content; AutoLive enabled=true, armed=false, source exact.
+Inspect durable READY with READ_ONLY start-review. An explicitly authorized
+controlled-start retry retains durability checks when returning ALREADY_COMPLETED;
+classify that retry as a deliberate durability operation.
+
+5. Explicit interrupted-start recovery; only after actual owner death
+Read start-review and obtain its exact current reviewHash. All relevant owner
+and recovery PIDs must be proven absent; ambiguous means STOP. Exit the prior
+recovery CLI before reviewing from a fresh process. No force-kill or lock unlink.
+$reviewHash = 'OPERATOR: current independently reviewed reviewHash'
+node tools/new-execution-era.mjs recover-start --root $root --runtime-capability-proof $proof --authorization-file $authFile --authorization-hash $authHash --authorize-recovery YES --expected-review-hash $reviewHash
+For a dead owner with already durable READY, add the separately approved
+--authorize-completed-owner-recovery YES flag. STOP if not approved. Verify
+canonical reconciliations close Ledger/Scheduled/authority ownership while
+preserving READY history. Prelaunch retry reuses its existing reservation;
+uncertain launch requires this explicit review before another allowed start.
+NEW-ERA-17: a zero-byte canonical Ledger stage for the sole validated pending
+INTENT resumes through this same authorized recovery, using the exact durable
+INTENT.next bytes. Do not delete stage/locks. Foreign, partial non-empty or
+ambiguous stages remain STOP conditions. See NEW-ERA-17-EMPTY-STAGE-RECOVERY.md.
+
+6. New future Scheduled LIVE, consume-before-capture, END
+Use the existing authenticated operator UI/API, not direct Schedule file edits.
+GET /api/studio/schedule, retain its current revision. POST
+/api/studio/schedule/events with session authentication, matching Origin and
+If-Match: "schedule-REV". Choose a unique NEW id, validated configured live
+sourceId and future UTC start/end after READY. Body:
+{ "version":1,"id":"OPERATOR_NEW_ID","type":"source.live","enabled":true,
+  "startAt":"OPERATOR_FUTURE_UTC","endAt":"OPERATOR_LATER_UTC","priority":0,
+  "payload":{"sourceId":"OPERATOR_VALIDATED_SOURCE","precheckSeconds":0,
+    "unavailableAction":"KEEP_PROGRAM","unavailableSceneId":null,
+    "endAction":"RETURN","endSceneId":null},
+  "createdAt":"OPERATOR_UTC","updatedAt":"OPERATOR_UTC" }
+Do not supply identity grants, incarnation or migration metadata yourself;
+production Schedule assigns its new-era identity. STOP unless event and grant
+bind the current era and neither retired ID is revived. Retain the issued bytes.
+At execution, observe production Ledger WAL consumption durable BEFORE capture,
+exactly one execution and current era identity. STOP on duplicate capture,
+capture without durable consumption or retired-domain replay. New legitimate
+LIVE may change PROGRAM; initial generation-47 continuity is not a lifetime
+freeze. At event end verify RETURN and terminal evidence. Gracefully terminate
+the foreground runtime only through its existing shutdown path. STOP unless
+END/terminal barriers are durable, pending consumption resolved and Ledger,
+Scheduled and authority owners released; MediaMTX/service settings unchanged.
+
+7. Separately approved restart / no replay
+Re-run read-only census and start-review. STOP for active/ambiguous owners,
+occupied 8080, missing END, changed evidence or native proof. If needed perform
+the explicitly approved completed-owner recovery in step 5 first.
+$reviewHash = 'OPERATOR: exact fresh restart reviewHash'
+$restartFile = Join-Path $out 'restart-authorization.json'
+$restartText = node tools/new-execution-era.mjs authorize-restart --root $root --runtime-capability-proof $proof --authorization-file $authFile --authorization-hash $authHash --authorize-restart YES --expected-review-hash $reviewHash --principal $principal
+if ($LASTEXITCODE -ne 0) { throw 'STOP restart planning failed' }
+[IO.File]::WriteAllText($restartFile, ($restartText -join "`n"), [Text.UTF8Encoding]::new($false))
+$restartHash = node --input-type=module -e "import fs from 'node:fs'; import {hash} from './server/scheduler/ScheduledEntryLedgerV2Protocol.js'; console.log(hash(JSON.parse(fs.readFileSync(process.argv[1],'utf8'))));" $restartFile
+STOP until exact restart request/digest is independently approved. Planning
+does not install it. Keep the same approved request on retries.
+node tools/new-execution-era.mjs controlled-start --root $root --runtime-capability-proof $proof --authorization-file $authFile --authorization-hash $authHash --restart-authorization-file $restartFile --restart-authorization-hash $restartHash --authorize-start YES --authorize-reconciliation YES
+STOP unless one new restart operation/epoch, same era/Ledger, byte-bound prior
+READY/terminal history, and no replay of consumed or retired identities are
+proven. Observe the finished event without executing it again. Preserve all
+evidence and obtain the independent post-operation review.
+NEW-ERA-23 READ_ONLY contract: inspection permits reads, OS metadata and
+canonical permanent-proof verification only; no writes, namespace operations,
+file/directory flushes, helper/gate execution, service changes or runtime launch.
+
+VERIFY CAPABILITY PROOF reads the already approved permanent bundle using the
+NEW-ERA-20 verifier, including current machine/LocalSystem/native compatibility.
+start-review returns the canonical proofHash alongside unchanged journal, review
+and completed READY evidence. Missing, stale or incompatible proof means STOP;
+inspection never installs proof, refreshes approval or launches a probe.
+EXERCISE CAPABILITY is an active DURABILITY_BARRIER operation. Explicit supervised
+LocalSystem probe/capability tests are MUTATING/PROBE operations. ControlledStart,
+transition and recovery retain their approved durability operations; review does
+not exercise capability as a substitute for verification.
+
+NEW-ERA-25 — READ_ONLY inspect with independently approved expected context
+Before transition, an optional diagnostic inspection uses the explicit reviewed HEAD:
+node tools/new-execution-era.mjs inspect --root $root --expected-head $head
+if ($LASTEXITCODE -ne 0) { throw 'STOP inspect expected context or evidence invalid' }
+Expect NO_TRANSITION, nextAction=DRYRUN_AND_EXPLICIT_AUTHORIZATION. This result does
+not grant continuation; retain step0 dryrun and the separate proof-bound approval.
+
+At any completed offline phase, use the SAME approved authorization file/digest:
+node tools/new-execution-era.mjs inspect --root $root --expected-head $head --runtime-capability-proof $proof --authorization-file $authFile --authorization-hash $authHash
+if ($LASTEXITCODE -ne 0) { throw 'STOP inspect expected context or evidence invalid' }
+Checkpoint              state                  nextPhase / next explicit operation
+authorized              AUTHORIZED             forensic / approved transition forensic
+forensic                FORENSIC_DURABLE       retired / approved transition retired
+retired                 RETIREMENT_DURABLE     intent / approved transition intent
+intent                  ERA_INTENT_DURABLE     archived / approved transition archived
+archived                LEGACY_ARCHIVED        ledger / approved transition ledger
+ledger                  LEDGER_INITIALIZED     schedule / approved transition schedule
+schedule                SCHEDULE_BOUND         activated / approved transition activated
+activated offline       ERA_ACTIVATED          null / separate start-review and start approval
+durable owner READY     READY_ANCHOR_DURABLE   null / start-review for full READY evidence
+This supplemental diagnostic does not replace the transition-status command and
+checkpointHash approval already required at EVERY step3 return. In incomplete
+transitions it shares that canonical status fence, original identities and current
+authorizedProofHash. No shell history or newly issued authorization supplies context.
+After complete activation it verifies the historical transition and current valid
+deployment proof; a separately approved P2 does not rewrite historical P1 authority.
+READY inspection does not prove a live owner or permit recovery/start. Full READY
+and current reviewHash remain the responsibility of READ_ONLY start-review.
+STOP on nonzero exit, STAGING_REVIEW_REQUIRED, AUTHORITY_TRANSITIONING_REVIEW_REQUIRED,
+canonicalResumeRequired, unexpected phase/identity/hash, or changed/missing evidence.
+Expected-context mismatch, checksum/lineage/namespace corruption and absent proof
+remain distinct nonzero errors. Never drop --expected-head or the approved digest
+to bypass rejection; inspect cannot refresh authorization or advance a phase.

@@ -3,9 +3,10 @@ import {assertHost} from './WindowsRecoveryHost.js';
 import {ledgerAuthority} from './RestoreLedgerAuthority.js';
 import {phaseChain,phaseRecord} from './RecoveryLineage.js';
 
-export async function controlledStart({workflow,authorizeStart=false,authorizeBootstrap=false,launch,timeoutMs=60000}){
+export async function controlledStart({workflow,authorizeStart=false,authorizeBootstrap=false,authorizeReconciliation=false,launch,timeoutMs=60000}){
     if(!authorizeStart)fail('EXPLICIT_START_AUTHORIZATION_REQUIRED');
-    if(await artifact(workflow.audit+'.ready')){
+    if(workflow.newEra){await workflow.installRestartAuthorization({authorizeStart});const completed=await workflow.completedStart();if(completed)return completed;}
+    else if(await artifact(workflow.audit+'.ready')){
         // Completed Start is read-only. An online owner still requires the
         // canonical offline/reconciliation path; it is never adopted by PID.
         const first=await workflow.restoreReview(),fresh=await workflow.restoreReview();
@@ -15,18 +16,23 @@ export async function controlledStart({workflow,authorizeStart=false,authorizeBo
             ['auto','schedule','program'].some(key=>fresh.evidence[key]?.hash!==ready[key+'Hash']))fail('RECOVERY_READY_CURRENT_STATE_CHANGED');
         return {owner:null,result:ready};
     }
+    if(workflow.newEra&&!authorizeReconciliation)fail('EXPLICIT_RESTART_RECONCILIATION_REQUIRED');
     const start=await workflow.reserveStart({authorizeStart,authorizeBootstrap});
     // Last canonical census after releasing the maintenance gate; authority's
     // own exclusive lock still arbitrates startup. No service/manual overlap.
     const checked=await workflow.preflight();
-    const chain=await phaseChain(workflow,'start');
-    if(!same(chain.predecessor.value,start))fail('START_RESERVATION_CHANGED');
-    if(!same(checked.evidence,start.before))fail('START_EVIDENCE_CHANGED');
+    const readChain=()=>workflow.newEra?workflow.startChain():phaseChain(workflow,'start');
+    const chain=await readChain();
+    if(workflow.newEra)await workflow.validateStart(start,chain);
+    else if(!same(chain.predecessor.value,start))fail('START_RESERVATION_CHANGED');
+    const expectedEvidence=workflow.newEra?workflow.expectedEvidence(start,chain):start.before;
+    if(!same(checked.evidence,expectedEvidence))fail('START_EVIDENCE_CHANGED');
     const release=await workflow.host.reserve();await release();
     const p=workflow.p;
     const options={studioStatePath:p.studio,schedulePath:p.schedule,autoLivePath:p.auto,mediaLibraryRoot:p.mediaRoot,
         scheduledLiveExecutionPath:p.scheduled,scheduledEntryLedgerPath:p.ledger,
-        scheduledEntryLedgerBootstrap:start.bootstrap};
+        scheduledEntryLedgerBootstrap:start.bootstrap,
+        ...(workflow.newEra?{executionOwnershipOptions:workflow.ownershipOptions()}: {})};
     if(start.ledgerProtocolVersion===2||start.before.ledger?.value.schemaVersion===2)options.scheduledEntryLedgerOptions={protocolVersion:2};
     if(!launch){
         const {startProgramOutputServer,createProgramOutputServer}=await import('../program-output-server.js');
@@ -38,9 +44,10 @@ export async function controlledStart({workflow,authorizeStart=false,authorizeBo
     let timer;
     try{
         await workflow.hook('before-controlled-launch');
-        if(!same(await phaseChain(workflow,'start'),chain))fail('RECOVERY_PHASE_LINEAGE_CHANGED');
+        if(!same(await readChain(),chain))fail('RECOVERY_PHASE_LINEAGE_CHANGED');
         const fresh=await workflow.preflight();
-        if(!same(fresh.evidence,start.before)||!same(fresh.service,checked.service)||!same(fresh.media,checked.media))fail('START_EVIDENCE_CHANGED');
+        if(!same(fresh.evidence,expectedEvidence)||!same(fresh.service,checked.service)||!same(fresh.media,checked.media))fail('START_EVIDENCE_CHANGED');
+        if(workflow.newEra)await workflow.beforeLaunch();
         const owner=launch(options);
         await workflow.hook('server-started');
         await Promise.race([Promise.all([owner.executionOwnership.ready,owner.scheduler.ready,owner.scheduledLiveExecutionReady,
@@ -48,6 +55,10 @@ export async function controlledStart({workflow,authorizeStart=false,authorizeBo
                 timer=setTimeout(()=>reject(Error('CONTROLLED_START_READINESS_TIMEOUT')),timeoutMs);
             })]);
         const h=await workflow.host.inspect();assertHost(h,p.root,{online:true,expected:workflow.expected});
+        if(workflow.newEra){
+            const result=await workflow.finishRuntime(owner,{authorizeReconciliation,hostSnapshot:h});
+            return {owner,result};
+        }
         const after=await capture(p);
         const result=verifyReadiness({before:start.before,after,runtime:runtimeStatus(owner),processes:h.proof.processes,
             ports:h.ports,service:h.service,startedAt:start.at,bootstrap:start.bootstrap});

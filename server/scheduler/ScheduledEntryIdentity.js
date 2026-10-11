@@ -21,11 +21,14 @@ export function entryTimestamp(value) {
 // Select only executable identity fields. Editorial/global schedule revisions
 // are intentionally irrelevant. No ScheduleContract production format change.
 export function scheduledEntryIdentity(value) {
-    if (!value || (value.identitySchema !== undefined && value.identitySchema !== 1) || !id(value.eventId) || !uuid(value.incarnationId) ||
+    const era=value?.executionEraId!==undefined;
+    if (!value || (value.identitySchema !== undefined && value.identitySchema !== (era?2:1)) ||
+        (era&&(!uuid(value.executionEraId)||typeof value.entryGrantHash!=='string'||!/^[a-f0-9]{64}$/.test(value.entryGrantHash))) ||
+        (!era&&value.entryGrantHash!==undefined) || !id(value.eventId) || !uuid(value.incarnationId) ||
         !Number.isSafeInteger(value.entryRevision) || value.entryRevision < 1 ||
         value.type !== 'source.live' || !id(value.sourceId)) fail();
     const identity = {
-        identitySchema:1, eventId:value.eventId,
+        identitySchema:era?2:1,...(era?{executionEraId:value.executionEraId.toLowerCase(),entryGrantHash:value.entryGrantHash}:{}), eventId:value.eventId,
         incarnationId:value.incarnationId.toLowerCase(), entryRevision:value.entryRevision,
         type:'source.live', sourceId:value.sourceId,
         startAt:entryTimestamp(value.startAt), endAt:entryTimestamp(value.endAt)

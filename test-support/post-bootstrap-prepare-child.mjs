@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {registerNativeTestRoot} from './NativeTempGuard.mjs';
 import net from 'node:net';
 import {syncBuiltinESMExports} from 'node:module';
 import {once} from 'node:events';
@@ -19,7 +20,9 @@ net.createServer=(...args)=>{
     servers.push(server);return server;
 };
 syncBuiltinESMExports();
-const [root,head]=process.argv.slice(2),p=paths(root),before=await capture(p);
+const [root,head]=process.argv.slice(2);
+registerNativeTestRoot(root);
+const p=paths(root),before=await capture(p);
 const service=before.maintenance.value.Original;
 const host={
     inspect:async()=>({root,head,branch:BRANCH,administrator:true,

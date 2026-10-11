@@ -6,6 +6,8 @@ import {repositoryIdentity} from './ScheduledExecutionProvenance.js';
 import {createLedgerV2Durability} from './LedgerV2Durability.js';
 import {append,decodeEnvelope,directorySync,equal,fail,hash,inspectV2,install,makeLock,ordinary,terminalShutdown,validateV2Lock} from './ScheduledEntryLedgerV2Protocol.js';
 import {assertMigrationStartup} from '../recovery/CleanLedgerV1Migration.js';
+import {executionEraStartup,eraAdmits,assertEraAuthority,bindEraLedgerRuntime} from '../recovery/ExecutionEraContract.js';
+import {scheduledEntryIdentity} from './ScheduledEntryIdentity.js';
 
 // Explicit opt-in. A v2 envelope/WAL must never fall back to the v1 writer.
 export default class ScheduledEntryLedgerV2Repository extends LegacyRepository {
@@ -20,6 +22,8 @@ export default class ScheduledEntryLedgerV2Repository extends LegacyRepository {
     async initializeOnce() {
         if(this.closed)return;
         try {
+            this.executionEra=executionEraStartup(this.path);
+            if(this.executionEra)assertEraAuthority(this.executionEra,this.authority);
             const oldLock=await ordinary(this.path+'.lock',{optional:true});
             if(oldLock!==null) {
                 const owner=JSON.parse(oldLock);
@@ -46,6 +50,7 @@ export default class ScheduledEntryLedgerV2Repository extends LegacyRepository {
                 snapshot=ledgerSnapshot();
             }
             this.lockOwner=makeLock(this.path,snapshot,this.authority??{});
+            if(this.executionEra&&(this.authority?.executionEraId!==this.executionEra.executionEraId||snapshot.executionEraId!==this.executionEra.executionEraId))fail('EXECUTION_ERA_AUTHORITY_REQUIRED');
             this.lock=await this.fs.open(this.path+'.lock','wx',0o600);
             // From acquisition onward errors retain the reservation and evidence.
             this.status='DURABILITY_UNCERTAIN';
@@ -60,20 +65,57 @@ export default class ScheduledEntryLedgerV2Repository extends LegacyRepository {
             await append(this.path,this.records,'BEGIN',this.lockOwner,this.protocolOptions);
             await inspectV2(this.path);
             this.snapshot=snapshot;this.status='READY';
+            if(this.executionEra)bindEraLedgerRuntime(this.authority,this);
         } catch(e) {
             if(this.status!=='DURABILITY_UNCERTAIN')this.status='UNAVAILABLE';
             this.error=e.code??e.message;
         }
     }
     async readSnapshot(){return decodeEnvelope(this.path,JSON.parse(await ordinary(this.path)));}
+    inspect(identity){const value=scheduledEntryIdentity(identity);return this.enqueue(()=>{
+        if(!eraAdmits(this.executionEra,value))return Object.freeze({status:'OLD_EXECUTION_DOMAIN_RETIRED'});
+        const record=this.snapshot.entries.find(r=>r.identity.entryKey===value.entryKey);
+        return Object.freeze({status:record?'ALREADY_CONSUMED':'UNCONSUMED',...(record?{record}:{})});
+    });}
+    consume(identity,context,options={}){
+        const value=scheduledEntryIdentity(identity);
+        return this.initialize().then(()=>{
+            if(!eraAdmits(this.executionEra,value))return Object.freeze({status:'OLD_EXECUTION_DOMAIN_RETIRED'});
+            if(this.executionEra)assertEraAuthority(this.executionEra,this.authority,{ready:true});
+            return super.consume(value,context,{...options,check:()=>{
+                if(this.executionEra)assertEraAuthority(this.executionEra,this.authority,{ready:true});
+                return eraAdmits(this.executionEra,value)&&(options.check?.()??true);
+            }});
+        });
+    }
     async verifySnapshot() {
+        const era=executionEraStartup(this.path);
+        if(era)assertEraAuthority(era,this.authority);
+        if(era?.activationHash!==this.executionEra?.activationHash)fail('EXECUTION_ERA_CHANGED');
         const state=await inspectV2(this.path);
+        this.assertObservedState(state,JSON.parse(await ordinary(this.path+'.lock')));
+    }
+    assertObservedState(state,lock) {
         if(!equal(state.owner,this.lockOwner) || state.pending || !equal(state.current,this.snapshot) ||
             state.records.at(-1)?.checksum!==this.records.at(-1)?.checksum)fail('LEDGER_V2_CHANGED_EXTERNALLY');
-        if(!equal(JSON.parse(await ordinary(this.path+'.lock')),this.lockOwner))fail('LEDGER_V2_LOCK_CHANGED');
+        if(!equal(lock,this.lockOwner))fail('LEDGER_V2_LOCK_CHANGED');
+    }
+    assertOperationalAuthority(era,authority,state,lock) {
+        if(this.authority!==authority||this.path!==era.ledgerPath||
+            this.executionEra?.activationHash!==era.activationHash||
+            this.snapshot?.ledgerId!==era.ledgerId||this.snapshot?.executionEraId!==era.executionEraId||
+            !this.initializing||!this.lock||this.closed||this.status!=='READY')
+            fail('EXECUTION_ERA_LEDGER_RUNTIME_NOT_OPERATIONAL');
+        // Compare against the writer's observed head, including coherent forks
+        // and rollbacks. Preserve the same sticky fence used by enqueue().
+        try {this.assertObservedState(state,lock);}
+        catch(error){this.status='UNAVAILABLE';this.error=error.code??error.message;throw error;}
     }
     async writeSnapshot(next,creating=false,check=()=>true) {
         if(creating)fail('LEDGER_V2_BOOTSTRAP_INTERNAL_ONLY');
+        // A verifier can have yielded before issuance fences an external change.
+        // Do not let already queued work clear that sticky UNAVAILABLE state.
+        if(this.status!=='READY')fail(this.error??'LEDGER_V2_RUNTIME_NOT_OPERATIONAL');
         if(this.closed || !check())throw Object.assign(Error('ENTRY_CHECK_REJECTED'),{code:'ENTRY_CHECK_REJECTED'});
         const added=next.entries.filter(e=>!this.snapshot.entries.some(old=>old.identity.entryKey===e.identity.entryKey));
         if(added.length!==1 || added[0].authorityEpoch!==this.lockOwner.authorityEpoch ||

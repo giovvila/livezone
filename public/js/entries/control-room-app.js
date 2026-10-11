@@ -281,7 +281,18 @@ runtime.start({
             if(['preview','program'].includes(surface.consumer))return 'unassigned-'+surface.consumer;
             return surface.consumer;
         });
-        previewOwnershipClient = new PreviewOwnershipClient({ getOwnership: () => {
+        const previewOwnershipNotice=document.createElement('p');
+        previewOwnershipNotice.className='media-library-reference-notice';
+        previewOwnershipNotice.setAttribute('role','status');previewOwnershipNotice.hidden=true;
+        document.getElementById('media-library-status')?.after(previewOwnershipNotice);
+        previewOwnershipClient = new PreviewOwnershipClient({ onStatus:({failure})=>{
+            previewOwnershipNotice.hidden=!failure;
+            previewOwnershipNotice.textContent=!failure?'':failure.code==='GENERATION_EXHAUSTED'
+                ?'Identità Preview esaurita — verifica richiesta.'
+                :failure.classification==='UNCERTAIN_RESULT'
+                    ?'Esito del ripristino Preview incerto — verifica richiesta.'
+                    :'Ripristino Preview non riuscito — verifica richiesta.';
+        }, getOwnership: () => {
             const sceneId = StudioStateManager.getPreviewSceneId();
             const definition = studioCatalogManager.getDefinition(sceneId);
             const source = definition?.renderer?.kind === 'source'

@@ -1,0 +1,13 @@
+/server/recovery/PermanentCapabilityContract.js -text
+/server/scheduler/WindowsLedgerDurability.js -text
+/tools/invoke-localsystem-durability-probe.ps1 -text
+/tools/invoke-permanent-localsystem-probe.ps1 -text
+/tools/localsystem-durability-probe.mjs -text
+/tools/native/localsystem-probe/ProbeService.cs -text
+/tools/native/windows-ledger-durability/ExecutionGate.cs -text
+/tools/native/windows-ledger-durability/build-gate.cmd -text
+/tools/native/windows-ledger-durability/build-x64.cmd -text
+/tools/native/windows-ledger-durability/main.cpp -text
+/tools/package-permanent-capability.mjs -text
+/tools/permanent-localsystem-probe.mjs -text
+/test-support/fixtures/new-execution-era-real/*.bytes -text

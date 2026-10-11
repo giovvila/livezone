@@ -5,6 +5,7 @@ import {join, resolve, relative, isAbsolute} from 'node:path';
 import {createProgramOutputServer} from '../server/program-output-server.js';
 import {createInitializedState} from '../server/studio/AuthoritativeStateContract.js';
 import {createScheduledLiveProgram} from '../server/scheduler/ScheduledLiveProgramFactory.js';
+import {registerNativeTestRoot} from './NativeTempGuard.mjs';
 
 // STEP 8C-2C6A: desired entry contract. Late-entry failures must remain RED
 // until a separately reviewed production change implements the contract.
@@ -33,6 +34,7 @@ const deferred = () => {
 export async function harness(t, {enabled=true, ready=true, sourceUrl='https://example.test/live.m3u8', serverOptions={}, beforeBoot=async()=>{}} = {}) {
     const tempRoot = resolve(tmpdir());
     const dir = await mkdtemp(join(tempRoot, 'lz-c6a-late-entry-'));
+    registerNativeTestRoot(dir);
     const studioStatePath = join(dir, 'studio.json');
     const timers = new Map();
     const jobs = new Set();

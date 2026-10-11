@@ -1,0 +1,48 @@
+NEW-ERA-37 — Preview explicit DELETE generation fence
+
+DELETE /api/media-library/preview-ownership/:sessionId releases the
+specified Preview identity. Production operator authentication, CSRF
+and Reference Client identity middleware remain required. The owner
+principal is the operator principal plus client ID and client generation.
+
+X-Livezone-Ownership-Generation is required: decimal digits representing
+a positive safe integer. Missing, malformed, non-positive or unsafe values
+produce HTTP 409 INVALID_OWNERSHIP before release. The internal close API
+retains its generation=1 default for existing explicit server/test callers;
+it validates the resulting value as a positive safe integer.
+
+For an existing session, the principal must match (otherwise HTTP 409
+OWNERSHIP_SESSION_EXPIRED), then the incarnation generation must match
+(otherwise HTTP 409 OWNERSHIP_STALE_UPDATE). Rejection preserves canonical
+lease, references, generation, sequence and persisted bytes. It never
+reinterprets a newer existing incarnation as an already released target.
+
+Success HTTP 200 follows the existing coordinator-serialized owner mutation
+and persistence. The targeted session and all references owned by it are
+absent in canonical memory and persisted sessions. Other sessions and
+references remain. Release does not increment generation or sequence.
+Derived expiry/unconfirmed status is not release: explicit matching DELETE
+can release confirmed, unconfirmed or effectively expired sessions alike.
+Preview snapshot remains a pure projection and does not perform release.
+
+A valid-generation retry for an absent session remains idempotent success;
+there is no tombstone or historical receipt claiming prior ownership. It
+does not recreate references or emit another release diagnostic. Existing
+mutate/persist may rewrite identical bytes. A resumed existing session has
+generation G+1 and rejects DELETE G. After successful release, resume of
+that deleted session ID fails; a new acquisition allocates a new UUID and
+generation 1. An old absent-ID retry cannot delete the new identity.
+
+Persistence failure rolls memory back and marks Preview unavailable; HTTP
+409 is returned and further mutations fail closed. Restart reloads persisted
+references conservatively with confirmed=false; an explicit retry can then
+complete release. Interruption after persistence but before response leaves
+the session absent, so same-ID retry completes idempotently. No stronger
+atomic diagnostic/disk or power-loss durability claim is introduced.
+
+PreviewOwnershipClient.stop({confirmedGone:true}) already sends the server
+generation and discards browser recovery identity only on response.ok.
+Rejected stale/foreign DELETE retains that browser identity. Reference
+EXPLICIT_CLOSE uses its separate authoritative revokePrincipal path; it
+does not bypass or reuse the per-session generation comparison. Deconfirm
+does not release Preview. No new durable artifact/boundary; matrix stays 510.

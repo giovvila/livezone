@@ -1,0 +1,175 @@
+{
+  "schemaVersion": 1,
+  "revision": 45,
+  "stateId": "d42ff630-0a47-4971-8f98-3360ec5e9d5f",
+  "initialized": true,
+  "updatedAt": "2026-09-28T21:46:43.998Z",
+  "sources": [
+    {
+      "id": "primary-live",
+      "name": "MAIN LIVE",
+      "kind": "hls",
+      "configRef": "stream.primary",
+      "enabled": true
+    },
+    {
+      "id": "media-demo",
+      "name": "MEDIA A",
+      "kind": "media",
+      "url": "http://127.0.0.1:8080/media/demo.mp4"
+    },
+    {
+      "id": "media-demo-2",
+      "name": "MEDIA B",
+      "kind": "media",
+      "url": "http://127.0.0.1:8080/media/demo2.mp4"
+    },
+    {
+      "id": "audio-291e187c-4f7b-452f-adc4-ec81d52274d4",
+      "name": "AUDIO 12 ore",
+      "kind": "audio",
+      "audioAssetId": "asset-583bed1e-99db-4f0a-9eb3-de2af775996e",
+      "motionAssetId": "asset-9a7ea294-4f4f-4705-b7d3-2bd17fb8939e"
+    },
+    {
+      "id": "live-e183eb2c-6b6c-4fa9-8342-b41425949a79",
+      "name": "test rtmp",
+      "kind": "hls",
+      "url": "http://127.0.0.1:8888/livezone-test/index.m3u8",
+      "enabled": true
+    },
+    {
+      "id": "video-9cc49a42-c1df-4d0f-bce6-6014cdc6c0cd",
+      "name": "inverdurata",
+      "kind": "media",
+      "assetId": "asset-b00941b2-13a7-46a0-ba5c-8b86be60388b"
+    },
+    {
+      "id": "live-73e8c51e-1c6d-4481-b351-9f3a9b9d6fe4",
+      "name": "primecast",
+      "kind": "hls",
+      "url": "https://65f16f0fdfc51.streamlock.net/xibilive/livestream/playlist.m3",
+      "enabled": true
+    },
+    {
+      "id": "live-178c0f16-a202-4917-baa4-8d45367f98a3",
+      "name": "testlive",
+      "kind": "hls",
+      "url": "http://xibilive.flashmediacast.com:1935/xibilive/livestream/playlist.m3u8",
+      "enabled": false
+    },
+    {
+      "id": "audio-89aedb9b-9da4-4b17-a4a6-7bcc87c8a166",
+      "name": "AUDIO 12 SENZA",
+      "kind": "audio",
+      "audioAssetId": "asset-583bed1e-99db-4f0a-9eb3-de2af775996e"
+    }
+  ],
+  "scenes": [
+    {
+      "id": "main-live",
+      "name": "MAIN LIVE",
+      "type": "LIVE",
+      "renderer": {
+        "kind": "source",
+        "sourceId": "primary-live"
+      }
+    },
+    {
+      "id": "media-demo-scene",
+      "name": "MEDIA A",
+      "type": "MEDIA",
+      "renderer": {
+        "kind": "source",
+        "sourceId": "media-demo"
+      }
+    },
+    {
+      "id": "media-demo-2-scene",
+      "name": "MEDIA B",
+      "type": "MEDIA",
+      "renderer": {
+        "kind": "source",
+        "sourceId": "media-demo-2"
+      }
+    },
+    {
+      "id": "break",
+      "name": "BREAK",
+      "type": "SLATE",
+      "renderer": {
+        "kind": "slate",
+        "title": "LIVEZONE",
+        "message": "We’ll be right back",
+        "logo": "http://127.0.0.1:8080/assets/logo/logo-lz.svg"
+      }
+    },
+    {
+      "id": "audio-scene-70ca2a2c-86d1-4a2f-b3e7-77bb7ee952da",
+      "name": "12h ore",
+      "type": "AUDIO",
+      "renderer": {
+        "kind": "source",
+        "sourceId": "audio-291e187c-4f7b-452f-adc4-ec81d52274d4"
+      }
+    },
+    {
+      "id": "media-scene-fef8ea15-65ce-4640-ab64-0e57b97e218a",
+      "name": "inv",
+      "type": "VIDEO",
+      "renderer": {
+        "kind": "source",
+        "sourceId": "video-9cc49a42-c1df-4d0f-bce6-6014cdc6c0cd"
+      }
+    },
+    {
+      "id": "live-scene-73e8c51e-1c6d-4481-b351-9f3a9b9d6fe4",
+      "name": "primecast",
+      "type": "LIVE",
+      "renderer": {
+        "kind": "source",
+        "sourceId": "live-73e8c51e-1c6d-4481-b351-9f3a9b9d6fe4"
+      }
+    },
+    {
+      "id": "live-scene-178c0f16-a202-4917-baa4-8d45367f98a3",
+      "name": "testlive",
+      "type": "LIVE",
+      "renderer": {
+        "kind": "source",
+        "sourceId": "live-178c0f16-a202-4917-baa4-8d45367f98a3"
+      }
+    },
+    {
+      "id": "audio-scene-4e76e24e-2c07-479a-9213-a591a61cfec7",
+      "name": "audio-12",
+      "type": "AUDIO",
+      "renderer": {
+        "kind": "source",
+        "sourceId": "audio-89aedb9b-9da4-4b17-a4a6-7bcc87c8a166"
+      }
+    },
+    {
+      "id": "live-scene-647b7bbb-3d6d-4bf1-8b0d-d2a7376695e3",
+      "name": "test rtmp",
+      "type": "LIVE",
+      "renderer": {
+        "kind": "source",
+        "sourceId": "live-e183eb2c-6b6c-4fa9-8342-b41425949a79"
+      }
+    }
+  ],
+  "scheduler": {
+    "version": 1,
+    "timezone": "Europe/Rome",
+    "items": [],
+    "enabled": false
+  },
+  "globalOverlays": {
+    "textCrawl": null
+  },
+  "dominantLive": {
+    "armed": false,
+    "authorizedSourceId": null
+  }
+}

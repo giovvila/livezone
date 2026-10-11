@@ -37,7 +37,7 @@ export class RecoveryWorkflow {
         const [host,evidence]=await Promise.all([this.host.inspect(),capture(this.p)]);
         assertRepository(host,this.p.root,this.expected);
         if(classifyMaintenance(evidence.maintenance?.value,host.service,this.p.root)==='CONFLICT')fail('MAINTENANCE_CONFLICT');
-        return {expected:this.expected,host,evidence,...await this.migration.inspect(),maintenance:classifyMaintenance(evidence.maintenance?.value,host.service,this.p.root),
+        return {expected:this.expected,host,evidence,...await this.migration.inspect({readOnly:true}),maintenance:classifyMaintenance(evidence.maintenance?.value,host.service,this.p.root),
             scheduled:scheduledClassification(evidence,this.p),proposed:[
                 'STOP unless administrator, expected branch/HEAD, canonical census, Stopped/Disabled service and port 8080 free',
                 'Adopt/preserve maintenance record; create separate current-HEAD audit',

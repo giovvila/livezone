@@ -3,7 +3,8 @@ import {validateSchedule} from "../public/js/scheduler/ScheduleContract.js";
 import test from "node:test";
 import { AUTOLIVE_POST_TAKE_CONFIRMED_LOSS_MS } from "../public/js/studio/AutoLivePostTakePolicy.js";
 import trace from "../public/js/core/RuntimeTrace.js";
-import { writeFileSync } from "node:fs";
+import '../test-support/RuntimeStateGuard.mjs';
+import { writeTempDiagnostic } from '../test-support/TempDiagnostics.js';
 import assert from "node:assert/strict";
 import EventBus from "../public/js/core/EventBus.js";
 import Events from "../public/js/core/Events.js";
@@ -185,7 +186,7 @@ test('real schedule-refresh bypass trace documents old closure and fixed same-se
  assert.equal(h.controller.session,session);assert.equal(h.state.getProgramSceneId(),'LIVE');
  assert.ok(trace.snapshot().some(e=>e.event==='program-write-blocked'&&e.consumer==='scheduler'));
  h.monitor.emit('ONLINE');h.progress();await flush();assert.deepEqual(history(h.published),['A','ENTRY','LIVE','LOSS','LIVE']);
- writeFileSync('var/restore-guard-command-trace.json',trace.exportJSON());
+ writeTempDiagnostic('restore-guard-command-trace.json',trace.exportJSON());
  }finally{trace.enabled=old;trace.clear();}
 }));
 
@@ -203,7 +204,7 @@ test('legacy discarded-context path writes A before closing as manual override, 
  assert.equal(h.scheduler.ends,1);assert.equal(h.scheduler.begins,1);assert.ok(remaining>0);
  assert.deepEqual(history(h.published),['A','ENTRY','LIVE','LOSS','A']);
  h.monitor.emit('ONLINE');await h.time.advance(2000);assert.equal(h.controller.session,null);assert.equal(h.state.getProgramSceneId(),'A');
- writeFileSync('var/restore-guard-legacy-path.json',JSON.stringify({sessionId:session.sessionId,at:63000,deadline,remaining,sessionClosed:true,finalLiveSameSession:null,
+ writeTempDiagnostic('restore-guard-legacy-path.json',JSON.stringify({sessionId:session.sessionId,at:63000,deadline,remaining,sessionClosed:true,finalLiveSameSession:null,
   commandPath:'SchedulerEngine.setSchedule -> lost external context -> reconcile(true) -> StudioProgramCommand.execute -> StudioTransitionCoordinator.transition -> StudioStateManager.take',
   origin:'scheduler',restoreReturnTargetCalls:restoreCalls,sessionCloseCount:h.scheduler.ends,history:history(h.published),entries:trace.snapshot()},null,2));
  }finally{trace.enabled=old;trace.clear();}

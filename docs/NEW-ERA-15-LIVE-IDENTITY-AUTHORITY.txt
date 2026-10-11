@@ -1,0 +1,35 @@
+LIVEZONE — NEW-ERA-15 SOURCE.LIVE IDENTITY MUTATION AUTHORITY
+
+The current Scheduled identity is defined by scheduledEntryIdentity, and Schedule mutations are classified through requiresLiveExecutionAuthority(previous,next). The predicate compares canonical entryKeys and also covers disabled-to-enabled LIVE. It does not introduce a second identity format or persist a new identity artifact.
+
+Field / operation                             Identity and authority rule
+event id                                     Part of entryKey; immutable through update; new insert uses issuance.
+type non-LIVE -> source.live                  New incarnation + grant; requires operational issuance and publication.
+type source.live -> non-LIVE                  Removes metadata/executability; owner authority only.
+startAt / endAt                               Part of entryKey; server increments entryRevision; operational publication required, including historical/future/disabled edits.
+payload.sourceId                             Part of entryKey; server increments entryRevision; operational publication required.
+incarnationId / entryRevision                 Part of entryKey; server-owned; reject caller writes.
+executionEraId / entryGrantHash               Part of entryKey; server-owned; reject caller writes.
+identitySchema / entryKey                     Derived; reject caller writes.
+entryMigration                               Server-owned legacy retirement classification; reject caller writes.
+enabled false -> true                         Key unchanged, but execution eligibility added; operational publication required; no new grant/revision.
+enabled true -> false                         Key unchanged; removes eligibility; owner authority only if no other identity change.
+name / priority / createdAt / updatedAt       Not in entryKey; name/priority editing uses existing owner contract; timestamps are server-derived on mutation.
+payload.precheckSeconds                       Not in entryKey; existing validated policy edit, owner contract.
+payload.unavailableAction / unavailableSceneId Not in entryKey; existing validated policy edit, owner contract.
+payload.endAction / endSceneId                Not in entryKey; existing validated policy edit, owner contract.
+Schedule revision / programPlan               Not entry identity; existing owner contract.
+delete / retirement by conversion away       Only removes executability; owner authority, even with UNAVAILABLE/closed/terminal Ledger.
+catalog source fingerprint                    Resolved separately by the current automation health/eligibility gate; sourceId is the Schedule identity field. This patch does not modify catalog/health fingerprint semantics.
+
+Existing bound incarnation revisions reuse the immutable original grant, as explicitly supported by the existing grant/retry protocol. assertEraIdentityMutation requires actual current operational authority and validates the previous complete identity against the currently published target/grant; it preserves id/incarnation/era/grant binding and verifies the server-derived revision increment. It does not compare a legitimate revised interval to the grant's immutable original requestHash. New incarnations still use assertEraPublication and its exact issuance-request validation. No G2 is minted for a healthy revision. An old unbound/historical era identity cannot gain a new executable identity through editing; it can be renamed, disabled, removed or converted away under the existing protective contract.
+
+Default eraAdmits now requires the full canonical entryKey to equal the currently published target. A proposed/rejected or stale revision is not admitted, even if it carries the same grant hash. Explicit requirePublished:false remains historical/pending grant evidence and is never an execution gate. Published admission does not replace operational Ledger/consume/eligibility checks, and disabling still uses the runtime's enabled-state eligibility gate.
+
+The execution authority primitive reuses assertEraAuthority({ready:true,operational:true}) for activation/retirement, historical READY binding, full current Ledger/WAL structural validity, actual bound READY/open writer, observed head and owner locks, and canonical ControlledStart lineage. It never resets sticky UNAVAILABLE.
+
+ScheduleStore reuses the existing publication staging/hook/cleanup sequence for identity-changing edits and enabling. It captures the current Schedule predecessor hash and repeats authority checks before creating a stage, after yielded hooks, after stage/namespace flush, and immediately before synchronous native replace. No await separates the final observation and replacement. The existing mutation queue/coordinator remain in force. Rejection before replace preserves Schedule bytes, in-memory identity, grant, Program, AutoLive, READY and ControlledStart evidence; stage cleanup uses the existing adapter. Failure after attempted replacement retains the existing persistence-uncertain contract and canonical recovery requirements.
+
+No new hook, durable artifact, native helper/gate/protocol or service-account requirement is introduced. The 497 canonical boundary names are unchanged: 14 grant, 13 Schedule publication, 470 other boundaries. The existing 13 Schedule boundaries now also cover revision publication. Fresh native tests exercise all 13 for both original new-incarnation publication and identity revision mutation; those observations share boundary names, not new matrix indices. LocalSystem proof is verified read-only. Real runtime is never launched or mutated.
+
+The final independent NEW-ERA-08B-A review is not resumed by this implementation task.

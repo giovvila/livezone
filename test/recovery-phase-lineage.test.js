@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {registerNativeTestRoot} from '../test-support/NativeTempGuard.mjs';
 import {recoveryIntegrityFixture,completedIntegrityFixture,save as saveFixture} from '../test-support/RecoveryIntegrityFixture.mjs';
 import {phaseChain,lineageContext,phaseRecord} from '../server/recovery/RecoveryLineage.js';
 import {controlledStart} from '../server/recovery/ControlledStart.js';
@@ -18,6 +19,7 @@ test('Exact R11 foreign Prepared regression: zero AutoLive mutation and completi
 // Host proofs and service configuration are injected; all files are TEMP.
 const head='1270d3e5bd17e206b8f8e78d6404ff7e8a978c3b',foreignHead='0'.repeat(40);
 const root=await mkdtemp(join(tmpdir(),'lz-r11-lineage-')),p=paths(root),stamp='2026-10-02T00:00:00.000Z';
+registerNativeTestRoot(root);
 const save=(path,value)=>writeFile(path,JSON.stringify(value));
 try{
     await mkdir(dirname(p.auto),{recursive:true});await mkdir(dirname(p.schedule),{recursive:true});

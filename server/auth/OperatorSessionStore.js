@@ -31,10 +31,9 @@ export default class OperatorSessionStore {
     }
 
     get(id) {
-        this.sweep();
         if (typeof id !== "string" || !id) return null;
         const session = this.sessions.get(id);
-        if (!session) return null;
+        if (!session || session.expiresAt <= this.clock()) return null;
         return session;
     }
 

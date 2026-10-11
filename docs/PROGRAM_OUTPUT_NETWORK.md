@@ -39,8 +39,10 @@ argument, hides terminal input, and prints only the verifier. Production HTTPS
 behind a reverse proxy must configure `LIVEZONE_OPERATOR_ALLOWED_ORIGINS` with
 the exact public origin because forwarded headers are not trusted.
 
-Sessions are memory-only, expire after eight hours by default, are swept on
-session access/creation, and are capped at 64 concurrent entries. Capacity
+Sessions are memory-only, expire after eight hours by default, and are capped
+at 64 concurrent entries. Session reads derive expiry without deleting or
+refreshing records. Expired records are swept by explicit session creation
+or the session store's maintenance operation, never by observational access. Capacity
 fails closed without evicting a valid session. Sessions are invalidated by
 `POST /api/operator/logout`. The cookie is HttpOnly,
 SameSite=Strict, path `/`, and Secure unless explicitly disabled. Media Library
@@ -97,14 +99,28 @@ block. Invalid host or port values fail startup instead of falling back.
 `GET /healthz` is pure Node process liveness. It returns HTTP 200 whenever the
 server can answer, regardless of MediaMTX, OBS or HLS state.
 
-`GET /readyz` checks application readiness. Writable Media Library storage is
-required and its failure returns HTTP 503. Program Output is ready once the
+`GET /readyz` and `HEAD /readyz` observe application readiness without creating,
+writing, deleting or syncing files. Initialized Media Library storage and an
+existing readable temporary directory are required; failure returns HTTP 503.
+The response reports `storage.readability` and explicitly marks storage
+writeability and durability `NOT_PROBED`. HTTP 200 proves usable observed
+dependencies, not write permission, durable storage, execution authority READY
+or current LocalSystem capability. HEAD returns the same status without a body.
+Program Output is reported once the
 server is initialized. MediaMTX Control API availability is an optional ingest
 dependency: its failure returns a sanitized HTTP 200 `degraded` result because
 the web/control and recorded-media application remains usable. An offline OBS
 publisher, including the expected HLS 404 while no publisher exists, does not
 make the application unready. Live ingest state remains available separately
 from `GET /api/media-ingest/status`.
+
+An operator who needs an active create/delete check must invoke the separate
+local command `node tools/probe-readiness-storage.mjs --directory <absolute-existing-directory> --authorize-storage-probe`.
+It is a `MUTATING_STORAGE_DIAGNOSTIC` for that process, path and time. It creates
+and removes one empty file, performs no durability flush, and returns
+`durability: NOT_PROVEN`. It is never invoked by polling or service status.
+NEW ERA permanent LocalSystem evidence and current storage/authority checks
+remain separate prerequisites; this diagnostic cannot substitute for them.
 
 Neither endpoint returns configured URLs, filesystem paths, environment values,
 credentials, tokens or stack traces. See `.env.example` for the supported

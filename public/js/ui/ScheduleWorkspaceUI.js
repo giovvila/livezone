@@ -162,12 +162,13 @@ export default class ScheduleWorkspaceUI {
             this.serverBanner ||= document.createElement("p");
             if (this.root.id !== 'control-schedule-view') this.serverBanner.setAttribute("role", "status");
             const deadline = this.store.runtime?.nextDeadline;
+            const pending = this.store.runtime?.reconciliationRequired ? ' · RICONCILIAZIONE IN ATTESA' : '';
             const connectionDetail = { API_NOT_FOUND: "SCHEDULER API NOT FOUND — CHECK SERVER VERSION / RESTART",
                 AUTH_REQUIRED: "OPERATOR LOGIN REQUIRED", SERVER_UNAVAILABLE: "SCHEDULER SERVER / STORE UNAVAILABLE",
                 API_UNREACHABLE: "SCHEDULER API UNREACHABLE", API_HTTP_ERROR: "SCHEDULER API REQUEST FAILED",
                 INVALID_API_RESPONSE: "INVALID SCHEDULER RESPONSE", SSE_UNAVAILABLE: "LIVE CONNECTION UNAVAILABLE",
                 SSE_DISCONNECTED: "LIVE CONNECTION LOST — RECONNECTING" }[reason] || "";
-            this.serverBanner.textContent = `SERVER ${connection?.toUpperCase()} · REV ${revision ?? "—"} · NEXT ${deadline == null ? "—" : new Date(deadline).toISOString()} · PROGRAM EXECUTION SUSPENDED · ${connectionDetail || feedback || migration || ""}`;
+            this.serverBanner.textContent = `SERVER ${connection?.toUpperCase()} · REV ${revision ?? "—"} · NEXT ${deadline == null ? "—" : new Date(deadline).toISOString()} · PROGRAM EXECUTION SUSPENDED${pending} · ${connectionDetail || feedback || migration || ""}`;
             const compact = this.root.id === 'control-schedule-view';
             if (compact && !this.serverDetails) {
                 this.serverDetails=document.createElement('details');this.serverDetails.className='operator-diagnostics';
@@ -193,7 +194,7 @@ export default class ScheduleWorkspaceUI {
                 const labels={online:'ONLINE',loading:'CONNESSIONE IN CORSO',degraded:'RICONNESSIONE',unavailable:'NON DISPONIBILE'};
                 this.serverConnection.dataset.connection=connection;
                 this.serverConnection.textContent='SERVER ● ' + (labels[connection] || 'NON DISPONIBILE');
-                this.serverNotice.textContent=reason==='AUTH_REQUIRED' ? 'ACCESSO OPERATORE RICHIESTO' : feedback ? 'ATTENZIONE · VERIFICA DETTAGLI' : '';
+                this.serverNotice.textContent=reason==='AUTH_REQUIRED' ? 'ACCESSO OPERATORE RICHIESTO' : this.store.runtime?.reconciliationRequired ? 'RICONCILIAZIONE IN ATTESA' : feedback ? 'ATTENZIONE · VERIFICA DETTAGLI' : '';
                 const definitions=this.store.client?.state?.schedule?.events || [];
                 const operational=connection==='online' ? events.filter(event=>event.type.startsWith('overlay.') && ['ACTIVE','UPCOMING'].includes(event.status)) : [];
                 this.overlayNormal.replaceChildren(...operational.map(event=>{

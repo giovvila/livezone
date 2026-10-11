@@ -399,7 +399,7 @@ test('authenticated Preview lease reports, rejects stale update, and releases',a
     assert.equal((await h.request('PUT',path,{sequence:1,assets:[a.id]})).status,200);
     assert.equal((await h.request('PUT',path,{sequence:1,assets:[]})).status,409);
     assert.equal(h.owner.previewOwnership.snapshot().references[0].assetId,a.id);
-    assert.equal((await h.request('DELETE',path)).status,200);assert.equal(h.owner.previewOwnership.snapshot().references.length,0);
+    assert.equal((await h.request('DELETE',path,undefined,{'X-Livezone-Ownership-Generation':String(opened.payload.ownership.generation)})).status,200);assert.equal(h.owner.previewOwnership.snapshot().references.length,0);
 });
 test('production Sponsor stale draft API fails without committing an event',async t=>{
     const h=await httpHarness(t),missing='asset-00000000-0000-4000-8000-000000000099';
@@ -439,8 +439,8 @@ test('D2 HTTP Control identity isolates Preview close even with a shared authent
     const own=(await h.request('POST','/api/media-library/preview-ownership',{},first)).payload.ownership;
     const path='/api/media-library/preview-ownership/'+own.sessionId;
     assert.equal((await h.request('PUT',path,{sequence:1,generation:own.generation,assets:[a.id]},first)).status,200);
-    await h.request('DELETE',path,undefined,second);assert.equal(h.owner.previewOwnership.snapshot().references.length,1);
-    await h.request('DELETE',path,undefined,first);assert.equal(h.owner.previewOwnership.snapshot().references.length,0);
+    assert.equal((await h.request('DELETE',path,undefined,{...second,'X-Livezone-Ownership-Generation':String(own.generation)})).status,409);assert.equal(h.owner.previewOwnership.snapshot().references.length,1);
+    assert.equal((await h.request('DELETE',path,undefined,{...first,'X-Livezone-Ownership-Generation':String(own.generation)})).status,200);assert.equal(h.owner.previewOwnership.snapshot().references.length,0);
 });
 
 test('DP1 historical durable Program protects managed asset after catalog and runtime references disappear',async t=>{

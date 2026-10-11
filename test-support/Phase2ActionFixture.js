@@ -1,6 +1,8 @@
 import {mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {join,relative,isAbsolute,resolve} from 'node:path';
+import {realpathSync} from 'node:fs';
+import {assertTestMutationAllowed} from './RuntimeStateGuard.mjs';
 import {createProgramOutputEnvelope} from '../public/js/program-output/ProgramOutputEnvelope.js';
 import ProgramStore from '../server/program-output/ProgramOutputStore.js';
 import ProgramRepository from '../server/program-output/DurableProgramRepository.js';
@@ -36,6 +38,9 @@ export function action(origin = binding()) {
 }
 export async function fixture(t, suppliedDirectory) {
     const dir = suppliedDirectory || await mkdtemp(join(tmpdir(), 'lz-phase2-'));
+    const child=relative(realpathSync(tmpdir()),realpathSync(resolve(dir)));
+    if(!child||child.startsWith('..')||isAbsolute(child))throw Error('TEMP_ONLY');
+    assertTestMutationAllowed(dir);
     const path = join(dir, 'action.json'), programPath = join(dir, 'program.json');
     const store = new ProgramStore(), repository = new ProgramRepository({path: programPath});
     const coordinator = new Coordinator({repository, store, validate: async () => true, authorityEpoch: () => 1});
