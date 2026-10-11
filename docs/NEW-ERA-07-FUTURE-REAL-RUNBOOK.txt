@@ -43,7 +43,13 @@ $root = (Get-Location).Path
 $proof = 'C:\ProgramData\Livezone\capability-evidence\88443da7-5648-4a73-bda2-68f7db461908'
 $out = 'OPERATOR: absolute existing evidence directory outside repository var'
 $principal = 'OPERATOR: accountable approving identity'
-$head = '0eb3aa2906f574f1da3815f96313678261a3b2ec'
+# Supply the immutable SHA of the final deployment commit at invocation time.
+# First independently review that commit, record its exact SHA and obtain
+# explicit operator approval. Do not edit this committed file to embed its SHA.
+# Never derive the approved value from observed Git HEAD; production observes
+# HEAD independently and requires exact equality with this approved value.
+$head = '<OPERATOR-APPROVED-DEPLOYMENT-HEAD>'
+if ($head -cnotmatch '^[a-f0-9]{40}$') { throw 'STOP independently reviewed operator-approved deployment HEAD required' }
 $branch = 'build/1003.9A1'
 git branch --show-current
 git rev-parse HEAD
