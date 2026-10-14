@@ -6,7 +6,7 @@ import {helperSha256,gateSha256} from '../scheduler/WindowsLedgerDurability.js';
 // Compare an existing durability attestation with current read-only metadata.
 // This describes previously certified capability, not a newly performed flush.
 export function verifiedCapabilityStorage(directory,proof,proofDirectory){
-    const fail=()=>{throw Object.assign(Error('NEW_ERA_VERIFIED_STORAGE_REQUIRED'),{code:'NEW_ERA_VERIFIED_STORAGE_REQUIRED'});};
+    const fail=reason=>{throw Object.assign(Error('NEW_ERA_VERIFIED_STORAGE_REQUIRED'),{code:'NEW_ERA_VERIFIED_STORAGE_REQUIRED',...(reason?{reason}:{})});};
     if(proof?.status!=='PERMANENT DEPLOYABLE PROOF VALID'||proof.identity!=='S-1-5-18'||
         !/^[a-f0-9]{64}$/.test(proof.proofHash??'')||proof.helperSha256!==helperSha256||proof.gateSha256!==gateSha256)fail();
     directory=resolve(directory);
@@ -22,9 +22,10 @@ export function verifiedCapabilityStorage(directory,proof,proofDirectory){
     const bytes=ordinary(join(resolve(proofDirectory),'manifest.json'));
     if(sha(bytes)!==proof.proofHash)fail();
     const manifest=JSON.parse(bytes),{machine,volume}=currentCompatibility(directory);
-    if(JSON.stringify(machine)!==JSON.stringify(manifest.machine)||volume.volumeSerial!==manifest.volumeSerial||
+    if(JSON.stringify(machine)!==JSON.stringify(manifest.machine))fail();
+    if(volume.volumeSerial!==manifest.volumeSerial||
         volume.volume!==proof.volume||volume.filesystem!=='NTFS'||volume.local!==true||
-        !Number.isSafeInteger(volume.volumeSerial)||volume.volumeSerial<0||volume.volumeSerial>0xffffffff)fail();
+        !Number.isSafeInteger(volume.volumeSerial)||volume.volumeSerial<0||volume.volumeSerial>0xffffffff)fail('VOLUME_MISMATCH');
     return Object.freeze({helper:'livezone-windows-ledger-durability',version:'1.0.0',protocol:1,architecture:'x64',
         command:'capability',ok:true,directory,volume:volume.volume,volumeSerial:volume.volumeSerial,
         filesystem:'NTFS',local:true,barrier:'NTFS_DIRECTORY_FLUSH'});

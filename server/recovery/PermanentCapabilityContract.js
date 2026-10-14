@@ -25,9 +25,17 @@ export function currentCompatibility(volumeDirectory){
     if(!/^[a-z]:$/i.test(drive))fail('PERMANENT_PROOF_LOCAL_DRIVE_REQUIRED');
     // Read-only OS metadata; never flush or mutate real runtime directories.
     const script=`$ErrorActionPreference='Stop';$v=@(Get-CimInstance Win32_Volume -Filter "DriveLetter='${drive}'");if($v.Count -ne 1){throw 'VOLUME_REQUIRED'};[ordered]@{volume=$v[0].DeviceID;volumeSerial=[uint32]$v[0].SerialNumber;filesystem=$v[0].FileSystem;local=($v[0].DriveType -eq 3)}|ConvertTo-Json -Compress`;
-    const r=spawnSync(executionHost,['-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')],{encoding:'utf8',windowsHide:true,timeout:10000,env:{...process.env,PSModulePath:'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\Modules'}});
-    if(r.status!==0)fail('PERMANENT_PROOF_VOLUME_UNAVAILABLE');
-    return {machine:readMachineIdentity(),volume:JSON.parse(r.stdout.trim())};
+    const r=spawnSync(executionHost,['-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')],{encoding:'utf8',windowsHide:true,timeout:45000,env:{...process.env,PSModulePath:'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\Modules'}});
+    const diagnostic={childErrorCode:typeof r.error?.code==='string'?r.error.code.slice(0,64):null,status:Number.isInteger(r.status)?r.status:null,signal:typeof r.signal==='string'?r.signal.slice(0,32):null,timeoutMs:45000};
+    const reject=reason=>{throw Object.assign(Error('PERMANENT_PROOF_VOLUME_UNAVAILABLE'),{code:'PERMANENT_PROOF_VOLUME_UNAVAILABLE',reason,...diagnostic});};
+    if(r.error?.code==='ETIMEDOUT')reject('VOLUME_QUERY_TIMEOUT');
+    if(r.error||r.status!==0||r.signal)reject('VOLUME_QUERY_FAILED');
+    let volume;try{volume=JSON.parse(r.stdout.trim());}catch{reject('VOLUME_OUTPUT_INVALID');}
+    if(!volume||typeof volume!=='object'||Array.isArray(volume)||
+        typeof volume.volume!=='string'||!/^\\\\\?\\Volume\{[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}\}\\$/i.test(volume.volume)||
+        !Number.isSafeInteger(volume.volumeSerial)||volume.volumeSerial<0||volume.volumeSerial>0xffffffff||
+        typeof volume.filesystem!=='string'||!volume.filesystem.trim()||typeof volume.local!=='boolean')reject('VOLUME_OUTPUT_INVALID');
+    return {machine:readMachineIdentity(),volume};
 }
 export function verifyPermanentCapability(directory,{serviceIdentity,volume,approvalHash,compatibility}={}){
     if(!directory)fail('LOCALSYSTEM_CAPABILITY_PROOF_REQUIRED');
@@ -56,6 +64,7 @@ export function verifyPermanentCapability(directory,{serviceIdentity,volume,appr
     for(const [path,pin] of [[helperPath,helperSha256],[gatePath,gateSha256]])if(sha(ordinary(path))!==pin)fail('PERMANENT_PROOF_STALE');
     const current=compatibility||currentCompatibility(parse(repository).root);
     if(process.platform!=='win32'||process.arch!=='x64')fail('PERMANENT_PROOF_PLATFORM');
-    if(JSON.stringify(current.machine)!==JSON.stringify(m.machine)||current.volume.volume!==m.volume||current.volume.volumeSerial!==m.volumeSerial||current.volume.filesystem!=='NTFS'||current.volume.local!==true||(volume&&volume!==m.volume))fail('PERMANENT_PROOF_FOREIGN_MACHINE_VOLUME');
+    if(JSON.stringify(current.machine)!==JSON.stringify(m.machine))fail('PERMANENT_PROOF_FOREIGN_MACHINE_VOLUME');
+    if(current.volume.volume!==m.volume||current.volume.volumeSerial!==m.volumeSerial||current.volume.filesystem!=='NTFS'||current.volume.local!==true||(volume&&volume!==m.volume)){throw Object.assign(Error('PERMANENT_PROOF_FOREIGN_MACHINE_VOLUME'),{code:'PERMANENT_PROOF_FOREIGN_MACHINE_VOLUME',reason:'VOLUME_MISMATCH'});}
     return Object.freeze({status:'PERMANENT DEPLOYABLE PROOF VALID',capability:'CAPABILITY TEST PASSED',identity:m.sid,proofHash:sha(bytes),probeId:m.probeId,volume:m.volume,helperSha256,gateSha256});
 }
