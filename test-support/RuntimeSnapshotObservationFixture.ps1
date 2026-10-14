@@ -34,14 +34,16 @@ foreach($script in @($pure,$capture,$legacy)) {
 }
 $tokens=$null;$errors=$null
 $pureAst=[Management.Automation.Language.Parser]::ParseFile($pure,[ref]$tokens,[ref]$errors)
-$allowedCommands=@('Join-Path','New-Object','Get-ChildItem','Get-Item','Get-FileHash','ConvertTo-Json','Get-SnapshotRelativePath')
-$allowedMembers=@('IsPathRooted','GetFullPath','TrimEnd','StartsWith','Substring','Add','Sort','ToString')
+$allowedCommands=@('Join-Path','New-Object','Get-ChildItem','Get-Item','Get-FileHash','ConvertTo-Json','Get-SnapshotRelativePath','Add-SnapshotFiles','Get-SharedLogHash')
+$allowedMembers=@('IsPathRooted','GetFullPath','TrimEnd','StartsWith','Substring','Add','Sort','ToString','Open','Create','ComputeHash','Replace','Dispose')
 foreach($node in $pureAst.FindAll({param($n) $n -is [Management.Automation.Language.CommandAst]},$true)) {
     if($allowedCommands -notcontains $node.GetCommandName()){throw ('FORBIDDEN_COMMAND: '+$node.Extent.Text)}
     if($node.GetCommandName() -eq 'New-Object' -and $node.CommandElements[1].Value -ne 'System.Collections.Generic.List[string]'){throw 'FORBIDDEN_CONSTRUCTOR'}
 }
 foreach($node in $pureAst.FindAll({param($n) $n -is [Management.Automation.Language.InvokeMemberExpressionAst]},$true)) {
     if($allowedMembers -notcontains $node.Member.Value){throw ('FORBIDDEN_MEMBER: '+$node.Extent.Text)}
+    if($node.Member.Value -eq 'Open' -and $node.Extent.Text -cne "[IO.File]::Open(`$Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]'ReadWrite,Delete')"){throw 'FORBIDDEN_OPEN_MODE'}
+    if($node.Member.Value -eq 'Create' -and $node.Extent.Text -cne '[Security.Cryptography.SHA256]::Create()'){throw 'FORBIDDEN_CREATE_TARGET'}
 }
 if($pureAst.FindAll({param($n) $n -is [Management.Automation.Language.RedirectionAst]},$true).Count){throw 'FORBIDDEN_REDIRECTION'}
 # Observe transient filesystem namespace/byte effects across the entire TEMP root.

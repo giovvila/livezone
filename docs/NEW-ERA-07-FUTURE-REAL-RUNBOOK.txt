@@ -61,6 +61,16 @@ $snapshotText = & tools/test-runtime-snapshot.ps1
 if (-not $?) { throw 'STOP preliminary snapshot failed' }
 $snapshotRows = ($snapshotText -join "`n") | ConvertFrom-Json
 if ($snapshotRows.Count -eq 0 -or @($snapshotRows | Where-Object { $_.error -or -not $_.path -or $_.sha256 -notmatch '^[a-fA-F0-9]{64}$' }).Count -ne 0) { throw 'STOP preliminary snapshot incomplete or unreadable' }
+. tools/Assert-RuntimeSnapshotInventory.ps1
+$expectedInventory = Join-Path $root 'tmp/era46-push/after.json'
+$expectedInventoryHash = '0f472d6d1c7c6def7bdf7ee2d19ebab6a72045d801e182f2f0988a08f83c2623'
+Assert-RuntimeSnapshotInventory -Rows @($snapshotRows) -ExpectedInventoryPath $expectedInventory -ExpectedInventoryHash $expectedInventoryHash -ExpectedCount 492
+The exact-set gate binds to the preserved NEW-ERA-46 certified machine baseline,
+not a newly inferred inventory. Its SHA is independently fixed above. Missing or
+changed baseline means STOP; never regenerate it from the observed runtime.
+Canonical paths are var-relative, exact Windows backslash spelling; 492 rows,
+492 unique expected paths, no aliases, no extras/missing paths, no errors/null SHA,
+valid size/last-write metadata. Both MediaMTX logs require real shared-read hashes.
 node tools/new-execution-era.mjs dryrun --root $root --runtime-capability-proof $proof
 STOP: wrong branch/HEAD/source bundle; staged changes; unreadable required state;
 unknown/alive/ambiguous owner; occupied 8080; changed services; altered real
@@ -69,13 +79,22 @@ LEGACY_LEDGER_LOCK_UNVERIFIABLE. Ordinary clean migration remains rejected.
 Record the returned inventoryHash and exact inventories. No mutation yet.
 
 0a. EVIDENCE_CAPTURE — separately approved diagnostic output persistence
-STOP until the operator approves creation/rewrite of the external evidence file.
-& tools/capture-runtime-snapshot-evidence.ps1 -OutputPath (Join-Path $out 'before-var.json')
+STOP until the operator approves creation of the NEW complete evidence file.
+Historical before-var.json remains immutable; it is never the complete target.
+$completeCapture = Join-Path $out 'before-var-complete-NEW-ERA-54.json'
+if (Test-Path -LiteralPath $completeCapture) { throw 'STOP complete capture target already exists; retain evidence' }
+& tools/capture-runtime-snapshot-evidence.ps1 -OutputPath $completeCapture -CreateOnly
 if (-not $?) { throw 'STOP evidence capture failed' }
-$capturedRows = Get-Content -LiteralPath (Join-Path $out 'before-var.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+$capturedRows = Get-Content -LiteralPath $completeCapture -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($capturedRows.Count -eq 0 -or @($capturedRows | Where-Object { $_.error -or -not $_.path -or $_.sha256 -notmatch '^[a-fA-F0-9]{64}$' }).Count -ne 0) { throw 'STOP persisted evidence incomplete or unreadable' }
+Assert-RuntimeSnapshotInventory -Rows @($capturedRows) -PreviousRows @($snapshotRows) -ExpectedInventoryPath $expectedInventory -ExpectedInventoryHash $expectedInventoryHash -ExpectedCount 492
 if (($capturedRows | ConvertTo-Json -Depth 5) -cne ($snapshotRows | ConvertTo-Json -Depth 5)) { throw 'STOP runtime changed between observation and capture' }
-This command creates/rewrites its output: it is not READ_ONLY. Keep its absolute
+This create-only command is not READ_ONLY. The tool's exclusive CreateNew open,
+not the observational pre-check, is authoritative against destination races.
+Any partial/uncertain newly-created file is retained for independent review;
+never delete, overwrite, rotate or choose an alternate filename on retry.
+Legacy callers without -CreateOnly retain their explicit rewrite contract.
+Keep its absolute
 destination outside var and free of reparse paths. It recomputes the snapshot
 using the same pure implementation; STOP if runtime evidence changed since step0.
 The external JSON is diagnostic evidence, not the transition's forensic authority
@@ -86,6 +105,18 @@ that approved inventory before any physical archival in phase3e. Never replace
 that canonical capture with the diagnostic JSON. No transition ordering changes.
 
 1. LocalSystem proof, before authorization
+NEW-ERA-54 installation is a SEPARATELY authorized operation. Verify the complete
+preserved source first; the installer independently repeats verification BEFORE
+any mutation. Do not invoke the fixture packager as a ProgramData installer.
+Future installation command ONLY after review/explicit installation approval:
+$proofSource = Join-Path $root 'tmp/era20-permanent-proof/deployable-bundle'
+$installationProofHash = 'e6fd9adf549f08ef193812bcccefebe4478f5827101923d60719f3130b881fcd'
+node tools/install-permanent-capability.mjs --source $proofSource --expected-proof-hash $installationProofHash --approved-head $head --authorize-install YES
+if ($LASTEXITCODE -ne 0) { throw 'STOP proof installation retained state requires review' }
+The installer prints a receipt, publishes no authorization and does not start a
+service. EXISTING_MATCHING is observational only and requires exact protected ACLs.
+Any staging residue, conflicting/partial destination or unsafe parent requires STOP.
+See docs/PERMANENT-PROOF-INSTALLATION-54.md for publication/failure/ACL semantics.
 $proofText = node --input-type=module -e "import {verifyLocalSystemCapabilityProof} from './server/recovery/LocalSystemCapabilityProof.js'; console.log(JSON.stringify(verifyLocalSystemCapabilityProof(process.argv[1],{serviceIdentity:'LocalSystem'}),null,2));" $proof
 if ($LASTEXITCODE -ne 0) { throw 'STOP permanent LocalSystem proof invalid, missing or stale' }
 $verifiedProof = ($proofText -join "`n") | ConvertFrom-Json
