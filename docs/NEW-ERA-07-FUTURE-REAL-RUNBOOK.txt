@@ -40,7 +40,7 @@ $PSVersionTable.PSVersion
 $PSVersionTable.PSEdition
 Set-Location 'C:\Projects\livezone-broadcast-engine-x'
 $root = (Get-Location).Path
-$proof = 'C:\ProgramData\Livezone\capability-evidence\88443da7-5648-4a73-bda2-68f7db461908'
+$proof = 'C:\ProgramData\Livezone\capability-evidence\488c7b53-71e4-46d4-a95a-cbb8d218c249'
 $out = 'OPERATOR: absolute existing evidence directory outside repository var'
 $principal = 'OPERATOR: accountable approving identity'
 # Supply the immutable SHA of the final deployment commit at invocation time.
@@ -109,8 +109,8 @@ NEW-ERA-54 installation is a SEPARATELY authorized operation. Verify the complet
 preserved source first; the installer independently repeats verification BEFORE
 any mutation. Do not invoke the fixture packager as a ProgramData installer.
 Future installation command ONLY after review/explicit installation approval:
-$proofSource = Join-Path $root 'tmp/era20-permanent-proof/deployable-bundle'
-$installationProofHash = 'e6fd9adf549f08ef193812bcccefebe4478f5827101923d60719f3130b881fcd'
+$proofSource = 'C:\Users\user\AppData\Local\LiveZonePackagingTemp\lz-era05-probe-NEW-ERA-58-bundle-488c7b53-71e4-46d4-a95a-cbb8d218c249'
+$installationProofHash = '0aec39f8e61d44b06bf78bfbed0c42e528da08901c082d2806c557ed2b639b8a'
 node tools/install-permanent-capability.mjs --source $proofSource --expected-proof-hash $installationProofHash --approved-head $head --authorize-install YES
 if ($LASTEXITCODE -ne 0) { throw 'STOP proof installation retained state requires review' }
 The installer prints a receipt, publishes no authorization and does not start a

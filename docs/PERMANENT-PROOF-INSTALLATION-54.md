@@ -14,7 +14,18 @@ producer inputs and exact twelve-file bundle. Source bytes are captured and chec
 against manifest digests. No proof-bound producer is changed by this implementation.
 
 The production target is fixed at
-`C:\ProgramData\Livezone\capability-evidence\88443da7-5648-4a73-bda2-68f7db461908`.
+`C:\ProgramData\Livezone\capability-evidence\488c7b53-71e4-46d4-a95a-cbb8d218c249`.
+
+The NEW-ERA-58 proof was independently verified for immutable producer B HEAD
+`187bc4faa5a91b70401906ce3925e3d08c79cb07`, probeId
+`488c7b53-71e4-46d4-a95a-cbb8d218c249`, with manifest SHA256
+`0aec39f8e61d44b06bf78bfbed0c42e528da08901c082d2806c557ed2b639b8a`.
+The current operator source is
+`C:\Users\user\AppData\Local\LiveZonePackagingTemp\lz-era05-probe-NEW-ERA-58-bundle-488c7b53-71e4-46d4-a95a-cbb8d218c249`.
+The old ERA20 proof is retained as historical evidence for its old certified lineage;
+it is stale under B. The new destination above is reserved for the NEW-ERA-58 proof;
+this candidate does not install it. A later reviewed integration/deployment HEAD may
+differ from B while all twelve certified producer inputs remain byte-identical.
 Parent directories, if absent, are created individually with the protected descriptor.
 Existing parents must have Administrators/SYSTEM ownership and no other principal's
 allow write/delete/change-permissions/take-ownership ACE. Unsafe existing parents

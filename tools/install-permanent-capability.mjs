@@ -17,6 +17,6 @@ assertHost(h,root,{expected:recoveryIdentity(options['--approved-head'])});
 if(h.service.StartName!=='LocalSystem')throw Error('INSTALL_LOCALSYSTEM_REQUIRED');
 const index=spawnSync('git',['--no-optional-locks','diff','--cached','--no-ext-diff','--no-textconv','--name-only'],{cwd:root,encoding:'utf8',windowsHide:true});
 if(index.status!==0||index.stdout.trim())throw Error('INSTALL_INDEX_REQUIRED_EMPTY');
-    const result=await installPermanentProof({source:options['--source'],destination:'C:\\ProgramData\\Livezone\\capability-evidence\\88443da7-5648-4a73-bda2-68f7db461908',expectedHash:options['--expected-proof-hash'],host:{platform:process.platform,administrator:h.administrator,serviceIdentity:h.service.StartName},verify:directory=>verifyLocalSystemCapabilityProof(directory,{serviceIdentity:h.service.StartName}),security:windowsSecurity()});
+    const result=await installPermanentProof({source:options['--source'],destination:'C:\\ProgramData\\Livezone\\capability-evidence\\488c7b53-71e4-46d4-a95a-cbb8d218c249',expectedHash:options['--expected-proof-hash'],host:{platform:process.platform,administrator:h.administrator,serviceIdentity:h.service.StartName},verify:directory=>verifyLocalSystemCapabilityProof(directory,{serviceIdentity:h.service.StartName}),security:windowsSecurity()});
     console.log(JSON.stringify(result,null,2));
 } catch(error) {console.log(JSON.stringify({status:'INSTALL_REVIEW_REQUIRED',reason:error.code||error.message,...error.installState},null,2));process.exitCode=1;}
